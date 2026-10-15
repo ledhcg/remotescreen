@@ -2,6 +2,11 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = "Cryptographic test vectors (public/random AES keys generated with OpenSSL), not secrets"
 paths = ['''Tests/.*Vectors\.swift''']
+
+[[allowlists]]
+description = "Swift declarations of CryptoKit key properties (type names, not key material)"
+regexTarget = "line"
+regexes = ['''^\s*(?:public |private |internal |fileprivate )?(?:let|var) \w*[kK]ey: (?:Curve25519|P256|P384|P521)\.[A-Za-z.]+$''']

@@ -1,5 +1,4 @@
 import Foundation
-import RFBKit
 
 /// State of one modifier key on the sidebar / accessory bar, in the style of Sidecar.
 public enum ModifierState: Sendable, Equatable {
@@ -52,10 +51,10 @@ public struct ModifierKeys: Sendable, Equatable {
         Dictionary(uniqueKeysWithValues: entries.map { ($0.modifier, $0.state) })
     }
 
-    public mutating func touchDown(_ modifier: StickyModifier, at time: Double) -> [ClientMessage] {
+    public mutating func touchDown(_ modifier: StickyModifier, at time: Double) -> [InputIntent] {
         guard let index = entries.firstIndex(where: { $0.modifier == modifier }) else {
             entries.append(Entry(modifier: modifier, state: .held, pressedAt: time))
-            return [.keyEvent(isDown: true, keysym: modifier.keysym)]
+            return [.key(modifier.keysym, macKeyCode: modifier.macKeyCode, isDown: true)]
         }
         switch entries[index].state {
         case .oneShot:
@@ -64,7 +63,7 @@ public struct ModifierKeys: Sendable, Equatable {
                 entries[index].tappedAt = nil
             } else {
                 entries.remove(at: index) // tap again on a latched key: drop it
-                return [.keyEvent(isDown: false, keysym: modifier.keysym)]
+                return [.key(modifier.keysym, macKeyCode: modifier.macKeyCode, isDown: false)]
             }
         case .locked:
             entries[index].unlocking = true
@@ -74,7 +73,7 @@ public struct ModifierKeys: Sendable, Equatable {
         return []
     }
 
-    public mutating func touchUp(_ modifier: StickyModifier, at time: Double) -> [ClientMessage] {
+    public mutating func touchUp(_ modifier: StickyModifier, at time: Double) -> [InputIntent] {
         guard let index = entries.firstIndex(where: { $0.modifier == modifier }) else { return [] }
         let entry = entries[index]
         switch entry.state {
@@ -85,22 +84,22 @@ public struct ModifierKeys: Sendable, Equatable {
                 return []
             }
             entries.remove(at: index)
-            return [.keyEvent(isDown: false, keysym: modifier.keysym)]
+            return [.key(modifier.keysym, macKeyCode: modifier.macKeyCode, isDown: false)]
         case .locked where entry.unlocking:
             entries.remove(at: index)
-            return [.keyEvent(isDown: false, keysym: modifier.keysym)]
+            return [.key(modifier.keysym, macKeyCode: modifier.macKeyCode, isDown: false)]
         case .locked, .oneShot, .up:
             return []
         }
     }
 
     /// A regular key or a click has just finished: release keys latched once, and mark keys being held as used.
-    public mutating func actionCompleted() -> [ClientMessage] {
-        var released: [ClientMessage] = []
+    public mutating func actionCompleted() -> [InputIntent] {
+        var released: [InputIntent] = []
         for index in entries.indices.reversed() {
             switch entries[index].state {
             case .oneShot:
-                released.append(.keyEvent(isDown: false, keysym: entries[index].modifier.keysym))
+                released.append(.key(entries[index].modifier.keysym, macKeyCode: entries[index].modifier.macKeyCode, isDown: false))
                 entries.remove(at: index)
             case .held:
                 entries[index].usedWhileHeld = true
@@ -112,13 +111,13 @@ public struct ModifierKeys: Sendable, Equatable {
     }
 
     /// Releases everything (focus loss, backgrounding, disconnect), in reverse order of pressing.
-    public mutating func releaseAll() -> [ClientMessage] {
+    public mutating func releaseAll() -> [InputIntent] {
         defer { entries.removeAll() }
-        return entries.reversed().map { .keyEvent(isDown: false, keysym: $0.modifier.keysym) }
+        return entries.reversed().map { .key($0.modifier.keysym, macKeyCode: $0.modifier.macKeyCode, isDown: false) }
     }
 
     /// A complete tap (down then immediately up), for the accessory bar and the simulated hardware keyboard.
-    public mutating func tap(_ modifier: StickyModifier, at time: Double) -> [ClientMessage] {
+    public mutating func tap(_ modifier: StickyModifier, at time: Double) -> [InputIntent] {
         touchDown(modifier, at: time) + touchUp(modifier, at: time)
     }
 }

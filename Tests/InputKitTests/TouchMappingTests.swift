@@ -109,7 +109,7 @@ struct TouchMoveDragTests {
     @Test func releaseAllFreesAHeldButton() {
         var mapper = TouchMapper()
         _ = mapper.handle(.longPress(CGPoint(x: 100, y: 150), .began), in: space, isZoomed: false)
-        #expect(mapper.releaseAll() == [pointer(0, 200, 200)])
+        #expect(mapper.releaseAll().rfb == [pointer(0, 200, 200)])
         #expect(mapper.releaseAll().isEmpty)
     }
 
@@ -299,7 +299,7 @@ struct PointerDeviceTests {
     @Test func releaseAllFreesAHeldMouseButton() {
         var mapper = TouchMapper()
         _ = mapper.handle(.mouseButton(CGPoint(x: 100, y: 150), .primary, .began), in: space, isZoomed: false)
-        #expect(mapper.releaseAll() == [pointer(0, 200, 200)])
+        #expect(mapper.releaseAll().rfb == [pointer(0, 200, 200)])
     }
 }
 

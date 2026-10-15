@@ -1,1 +1,3 @@
 /* Vietnamese translation. The key is the exact English source string. */
+
+"%@ is not responding." = "%@ không phản hồi.";

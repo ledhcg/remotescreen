@@ -11,14 +11,27 @@ struct ScreonApp: App {
         store: ConnectionStore(fileURL: ConnectionStore.defaultURL()), secrets: KeychainSecretStore()
     )
 
+    /// Link sessions of App Mode, shared by every App Mode window.
+    @State private var linkSessions = LinkSessionRegistry()
+
     init() {
         // English-only build: messages from the packages follow the same language as the app's own strings.
         Localization.forcedLanguage = "en"
     }
 
     var body: some Scene {
+        // Desktop role: today's whole-screen view, the default scene.
         WindowGroup {
             RootView(model: model)
+                .environment(linkSessions)
+        }
+        // Launcher and remote-window roles (App Mode).
+        appModeScenes
+    }
+
+    @SceneBuilder private var appModeScenes: some Scene {
+        if #available(iOS 26, *) {
+            AppModeScenes()
         }
     }
 }

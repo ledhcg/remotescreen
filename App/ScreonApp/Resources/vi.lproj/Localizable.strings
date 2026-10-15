@@ -2,6 +2,8 @@
 
 "%@, %@. Tap to collapse the toolbar" = "%1$@, %2$@. Chạm để thu gọn thanh công cụ";
 "Account name" = "Tên tài khoản";
+"App Mode" = "Chế độ ứng dụng";
+"App Mode is not available yet." = "Chế độ ứng dụng chưa khả dụng.";
 "Allow Screon to search the network so it can find Macs automatically, or enter an address above." = "Cho phép Screon tìm máy trong mạng để tự thấy các Mac, hoặc nhập địa chỉ ở trên.";
 "Applying the new quality mode…" = "Đang áp dụng chế độ chất lượng mới…";
 "Automatic" = "Tự động";

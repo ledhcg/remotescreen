@@ -63,6 +63,7 @@ targets:
         NSLocalNetworkUsageDescription: Screon needs local network access to find and connect to your Mac.
         NSBonjourServices:
           - _rfb._tcp
+          - _screon-link._udp
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ledinhcuong.screon

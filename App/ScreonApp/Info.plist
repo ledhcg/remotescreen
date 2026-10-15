@@ -27,6 +27,7 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_rfb._tcp</string>
+		<string>_screon-link._udp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Screon needs local network access to find and connect to your Mac.</string>

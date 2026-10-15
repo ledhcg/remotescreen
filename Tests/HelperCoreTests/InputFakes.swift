@@ -39,8 +39,15 @@ final class FakeFocuser: WindowFocuser, @unchecked Sendable {
     var raised: [WindowID] { lock.withLock { _raised } }
     func setFrontmost(_ windows: Set<WindowID>) { lock.withLock { _frontmost = windows } }
 
+    private var _front: WindowID?
+    private var _refuseRaise = false
+    /// The window with keyboard focus. Raising a window makes it frontmost unless `refuseRaise` is set.
+    var front: WindowID? { get { lock.withLock { _front } } set { lock.withLock { _front = newValue } } }
+    var refuseRaise: Bool { get { lock.withLock { _refuseRaise } } set { lock.withLock { _refuseRaise = newValue } } }
+    func frontmostWindow() async -> WindowID? { front }
+
     func isFrontmost(_ window: WindowID, at point: LinkPoint) async -> Bool { lock.withLock { _frontmost.contains(window) } }
-    func raiseAndActivate(_ window: WindowID) async { lock.withLock { _raised.append(window) } }
+    func raiseAndActivate(_ window: WindowID) async { lock.withLock { _raised.append(window); if !_refuseRaise { _front = window } } }
 }
 
 final class FakeSecureInput: SecureInputProbe, @unchecked Sendable {

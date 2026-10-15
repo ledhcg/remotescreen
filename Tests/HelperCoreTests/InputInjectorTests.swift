@@ -18,7 +18,7 @@ import Testing
         let log = self.log
         let clock = self.clock
         injector = InputInjector(
-            poster: poster, geometry: geometry, focuser: focuser, secureInput: secure,
+            poster: poster, geometry: geometry, focuser: focuser, secureInput: secure, authorizedWindows: [7],
             now: { clock.now() }, onEvent: { log.add($0) }
         )
         geometry.set(window, LinkRect(x: 100, y: 200, width: 400, height: 300))
@@ -226,6 +226,7 @@ import Testing
     // MARK: Keys and text
 
     @Test func keysAreTrackedAndReleasedOnDisconnect() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 55, down: true, modifiers: .command)))
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 8, down: true, modifiers: .command)))
         await injector.handle(pointer(10, 10, .left))
@@ -257,12 +258,14 @@ import Testing
     }
 
     @Test func releasedKeyIsForgotten() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 0, down: true, modifiers: [])))
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 0, down: false, modifiers: [])))
         #expect(await injector.pressedKeycodes.isEmpty)
     }
 
     @Test func textIsPostedInChunks() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
         await injector.handle(.inputText(String(repeating: "a", count: 45)))
         #expect(poster.events == [
             .unicode(String(repeating: "a", count: 20)), .unicode(String(repeating: "a", count: 20)), .unicode("aaaaa"),
@@ -282,6 +285,7 @@ import Testing
     // MARK: Status
 
     @Test func secureInputChangeIsReportedOnceEachWay() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
         secure.enabled = true
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 0, down: true, modifiers: [])))
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 0, down: false, modifiers: [])))
@@ -314,6 +318,97 @@ import Testing
             }
         }.filter { $0 != "other" }
         #expect(kinds == ["down", "up"])
+    }
+
+    // MARK: Authorization
+
+    @Test func inputForAnUnauthorizedWindowIsDropped() async {
+        let other: WindowID = 8
+        geometry.set(other, LinkRect(x: 0, y: 0, width: 100, height: 100))
+        await injector.handle(pointer(1, 1, window: other))
+        await injector.handle(pointer(1, 1, .left, window: other))
+        await injector.handle(.inputScroll(LinkScrollEvent(window: other, dx: 0, dy: 5, phase: .changed, momentumPhase: .none, continuous: true)))
+        await injector.handle(.inputGesture(LinkGestureEvent(window: other, kind: .magnify, value: 1, phase: .changed)))
+        #expect(poster.events.isEmpty)
+        #expect(focuser.raised.isEmpty)
+    }
+
+    @Test func nothingIsAuthorizedByDefault() async {
+        let bare = InputInjector(poster: poster, geometry: geometry, focuser: focuser, secureInput: secure)
+        await bare.handle(pointer(1, 1))
+        await bare.handle(.inputKey(LinkKeyEvent(keycode: 1, down: true, modifiers: [])))
+        await bare.handle(.inputText("x"))
+        #expect(poster.events.isEmpty)
+    }
+
+    @Test func releaseIsStillDeliveredAfterDeauthorization() async {
+        await injector.handle(pointer(10, 10, .left))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 5, down: true, modifiers: [])))
+        await injector.setAuthorizedWindows([])
+        poster.clear()
+        await injector.handle(pointer(10, 10, []))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 5, down: false, modifiers: [])))
+        #expect(poster.events == [
+            .mouseUp(button: .left, at: LinkPoint(x: 110, y: 210), clickCount: 1, modifiers: [], pen: nil),
+            .key(keycode: 5, down: false, modifiers: []),
+        ])
+        #expect(await injector.pressedButtons.isEmpty)
+        #expect(await injector.pressedKeycodes.isEmpty)
+    }
+
+    @Test func pressesAfterDeauthorizationAreDropped() async {
+        await injector.setAuthorizedWindows([])
+        await injector.handle(pointer(10, 10, .left))
+        #expect(poster.events.isEmpty)
+    }
+
+    @Test func keysAndTextAreDroppedWithoutAKeyboardWindow() async {
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: true, modifiers: [])))
+        await injector.handle(.inputText("hi"))
+        #expect(poster.events.isEmpty)
+        // De-authorizing the keyboard window forgets it.
+        await injector.setKeyboardWindow(window)
+        focuser.front = window
+        await injector.setAuthorizedWindows([])
+        await injector.handle(.inputText("hi"))
+        #expect(poster.events.isEmpty)
+    }
+
+    @Test func aPressMakesItsWindowTheKeyboardWindow() async {
+        await injector.handle(pointer(10, 10, .left))
+        await injector.handle(pointer(10, 10, []))
+        focuser.front = window
+        poster.clear()
+        await injector.handle(.inputText("a"))
+        #expect(poster.events == [.unicode("a")])
+    }
+
+    @Test func keysRefocusTheKeyboardWindowWhenAnotherAppIsFrontmost() async {
+        await injector.setKeyboardWindow(window)
+        focuser.front = 99 // a terminal the iPad is not showing
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: true, modifiers: [])))
+        #expect(focuser.raised == [window])
+        #expect(poster.events == [.key(keycode: 1, down: true, modifiers: [])])
+    }
+
+    @Test func keysDoNotRaiseWhenAnAuthorizedWindowIsAlreadyFrontmost() async {
+        await injector.setKeyboardWindow(window)
+        focuser.front = window
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: true, modifiers: [])))
+        #expect(focuser.raised.isEmpty)
+    }
+
+    @Test func textIsNotPostedWhenRefocusFails() async {
+        await injector.setKeyboardWindow(window)
+        focuser.front = 99
+        focuser.refuseRaise = true
+        await injector.handle(.inputText("secret"))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: true, modifiers: [])))
+        #expect(poster.events.isEmpty)
+        #expect(await injector.pressedKeycodes.isEmpty)
+        // A key-up is never blocked.
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: false, modifiers: [])))
+        #expect(poster.events == [.key(keycode: 1, down: false, modifiers: [])])
     }
 }
 

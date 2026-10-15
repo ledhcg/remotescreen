@@ -55,6 +55,8 @@ public protocol WindowGeometryProvider: Sendable {
 public protocol WindowFocuser: Sendable {
     /// Whether `window` is the topmost window at the global point `point`.
     func isFrontmost(_ window: WindowID, at point: LinkPoint) async -> Bool
+    /// The topmost window that has keyboard focus, or nil when it is not a window the helper tracks (or is unknown).
+    func frontmostWindow() async -> WindowID?
     /// Raise the window and activate its application.
     func raiseAndActivate(_ window: WindowID) async
 }

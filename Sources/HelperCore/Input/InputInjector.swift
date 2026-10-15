@@ -42,6 +42,10 @@ public actor InputInjector {
     private var currentClickCount = 1
     private var secureInputActive = false
     private var reportedNoPermission = false
+    /// Windows the session is viewing. Input for any other window is dropped (releases excepted). Empty means nothing is allowed.
+    private var authorized: Set<WindowID> = []
+    /// The authorized window the keyboard is aimed at: the one the client last pressed in or focused.
+    private var keyboardWindow: WindowID?
     /// Bumped by `releaseAll()`: an event that was waiting for the window server when the session ended must not be posted.
     private var epoch = 0
 
@@ -50,11 +54,12 @@ public actor InputInjector {
         geometry: any WindowGeometryProvider,
         focuser: any WindowFocuser,
         secureInput: any SecureInputProbe,
+        authorizedWindows: Set<WindowID> = [],
         now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         onEvent: @escaping @Sendable (InputInjectorEvent) -> Void = { _ in }
     ) {
         self.poster = poster; self.geometry = geometry; self.focuser = focuser; self.secureInput = secureInput
-        self.now = now; self.onEvent = onEvent
+        self.now = now; self.onEvent = onEvent; authorized = authorizedWindows
     }
 
     // MARK: Entry points
@@ -73,8 +78,8 @@ public actor InputInjector {
         case .inputPointer(let event): await pointer(event, epoch: startEpoch)
         case .inputScroll(let event): await scroll(event, epoch: startEpoch)
         case .inputGesture(let event): await gesture(event, epoch: startEpoch)
-        case .inputKey(let event): key(event)
-        case .inputText(let text): inputText(text)
+        case .inputKey(let event): await key(event, epoch: startEpoch)
+        case .inputText(let text): await inputText(text, epoch: startEpoch)
         default: break
         }
     }
@@ -114,6 +119,19 @@ public actor InputInjector {
             onEvent(.secureInputChanged(enabled))
         }
         return enabled
+    }
+
+    /// The session calls this whenever it subscribes to or unsubscribes from a window.
+    public func setAuthorizedWindows(_ windows: Set<WindowID>) {
+        authorized = windows
+        if let keyboardWindow, !windows.contains(keyboardWindow) { self.keyboardWindow = nil }
+        lastRelativePoint = lastRelativePoint.filter { windows.contains($0.key) }
+    }
+
+    /// The client focused this window: keys and text go there. Ignored for windows that are not authorized.
+    public func setKeyboardWindow(_ window: WindowID?) {
+        if let window, !authorized.contains(window) { return }
+        keyboardWindow = window
     }
 
     public var pressedButtons: LinkMouseButtons { heldButtons }
@@ -194,7 +212,8 @@ public actor InputInjector {
         let pressing = !event.buttons.subtracting(heldButtons).isEmpty
         let releasing = !heldButtons.subtracting(event.buttons).isEmpty
 
-        let initialFrame = await usableFrame(of: event.window)
+        let isAuthorized = authorized.contains(event.window)
+        let initialFrame = isAuthorized ? await usableFrame(of: event.window) : nil
         guard startEpoch == epoch else { return }
         guard var frame = initialFrame else {
             // The window is gone. A release must still reach the system or the button stays down.
@@ -214,6 +233,7 @@ public actor InputInjector {
 
         let target = global(event.point, in: frame)
         lastRelativePoint[event.window] = clamp(event.point, to: frame)
+        if pressing { keyboardWindow = event.window }
         let pen = Self.pen(for: event)
         if pen != nil { enterProximityIfNeeded(at: target) }
 
@@ -304,6 +324,7 @@ public actor InputInjector {
     private func scroll(_ event: LinkScrollEvent, epoch startEpoch: Int) async {
         guard event.dx.isFinite, event.dy.isFinite, abs(event.dx) <= LinkLimits.maxCoordinate, abs(event.dy) <= LinkLimits.maxCoordinate
         else { return }
+        guard authorized.contains(event.window) else { return }
         let resolved = await usableFrame(of: event.window)
         guard startEpoch == epoch, let frame = resolved else { return }
         let target = anchor(in: event.window, frame: frame)
@@ -313,7 +334,7 @@ public actor InputInjector {
     }
 
     private func gesture(_ event: LinkGestureEvent, epoch startEpoch: Int) async {
-        guard event.value.isFinite else { return }
+        guard event.value.isFinite, authorized.contains(event.window) else { return }
         let resolved = await usableFrame(of: event.window)
         guard startEpoch == epoch, let frame = resolved else { return }
         let target = anchor(in: event.window, frame: frame)
@@ -331,19 +352,40 @@ public actor InputInjector {
 
     // MARK: Keyboard
 
-    private func key(_ event: LinkKeyEvent) {
-        // A key-up always gets through, otherwise a key stays down.
+    /// Keys and text carry no window and go to whatever is frontmost on the Mac. Make sure that is a window of this session:
+    /// otherwise bring the keyboard window forward, and if that does not work, refuse.
+    private func keyboardTargetIsReady(epoch startEpoch: Int) async -> Bool {
+        guard let target = keyboardWindow, authorized.contains(target) else { return false }
+        if let front = await frontmostAuthorized(), front { return startEpoch == epoch }
+        guard startEpoch == epoch else { return false }
+        let instant = now()
+        if let last = lastFocus, last.window == target, instant - last.at < Self.focusCoalesceInterval { return false }
+        await focuser.raiseAndActivate(target)
+        lastFocus = (target, now())
+        guard startEpoch == epoch, authorized.contains(target) else { return false }
+        return await frontmostAuthorized() == true && startEpoch == epoch
+    }
+
+    private func frontmostAuthorized() async -> Bool? {
+        guard let front = await focuser.frontmostWindow() else { return false }
+        return authorized.contains(front)
+    }
+
+    private func key(_ event: LinkKeyEvent, epoch startEpoch: Int) async {
         if event.down {
+            guard await keyboardTargetIsReady(epoch: startEpoch) else { return }
             pollSecureInput() // synthetic keys are still posted: some secure fields accept them, and the banner tells the user
             heldKeys[event.keycode] = event.modifiers
         } else {
+            // A key-up always gets through, otherwise a key stays down.
             heldKeys[event.keycode] = nil
         }
         post(.key(keycode: event.keycode, down: event.down, modifiers: event.modifiers))
     }
 
-    private func inputText(_ text: String) {
+    private func inputText(_ text: String, epoch startEpoch: Int) async {
         guard text.utf8.count <= LinkLimits.maxTextInputBytes else { return }
+        guard await keyboardTargetIsReady(epoch: startEpoch) else { return }
         pollSecureInput()
         for chunk in TextChunker.chunks(text) { post(.unicode(chunk)) }
     }

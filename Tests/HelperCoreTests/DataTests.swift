@@ -483,6 +483,32 @@ final class TestClock: @unchecked Sendable {
         #expect(opener.opened.isEmpty)
     }
 
+    /// The iPad chooses the application, so a harmless-looking document must not reach an app that runs or installs things.
+    @Test(arguments: ["com.apple.Terminal", "com.googlecode.iterm2", "com.apple.ScriptEditor2", "com.apple.Installer",
+                      "com.apple.archiveutility", "org.python.PythonLauncher", "com.apple.Finder"])
+    func documentsAreNeverHandedToCodeRunningApps(handler: String) async throws {
+        defer { cleanUp() }
+        let inbox = try makeInbox()
+        try await deliver(inbox, 1, "notes.txt", target: handler)
+        await #expect(throws: FileInboxError.notOpenable) { try await inbox.open(transfer: 1) }
+        #expect(opener.opened.isEmpty)
+    }
+
+    /// Only plain document types are opened; anything else is refused even with a harmless application.
+    @Test(arguments: ["archive.zip", "page.html", "tool.py", "data.bin", "noextension", "image.dmg", "script.swift", "bundle.tar.gz"])
+    func nonDocumentTypesAreRefused(name: String) async throws {
+        defer { cleanUp() }
+        let inbox = try makeInbox()
+        try await deliver(inbox, 1, name, target: "com.apple.TextEdit")
+        await #expect(throws: FileInboxError.notOpenable) { try await inbox.open(transfer: 1) }
+        #expect(opener.opened.isEmpty)
+    }
+
+    @Test(arguments: ["photo.jpeg", "scan.pdf", "clip.mov", "notes.txt", "letter.rtf", "Báo cáo.docx", "sheet.numbers"])
+    func documentTypesAreAllowed(name: String) {
+        #expect(FileInbox.isAllowedDocument(name: name))
+    }
+
     @Test func opensNothingWithoutATargetOrForUnknownTransfers() async throws {
         defer { cleanUp() }
         let inbox = try makeInbox()

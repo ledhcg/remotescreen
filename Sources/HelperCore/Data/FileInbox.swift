@@ -3,6 +3,7 @@ import AppKit
 import CryptoKit
 import Darwin
 import Foundation
+import UniformTypeIdentifiers
 import LinkProtocol
 import os
 
@@ -184,11 +185,17 @@ public actor FileInbox {
 
     // MARK: Opening
 
-    /// Opens a delivered file with the application the iPad named. Refused for executable and script types.
+    /// Opens a delivered file with the application the iPad named. Allowed only when the file is a plain document type
+    /// (allow-list, `isAllowedDocument`), no extension segment is executable or a script, the named application is not
+    /// one that runs code or installs things (`refusedHandlers`), and the opener confirms that application declares it can
+    /// open the file. The iPad never gets to pick an arbitrary handler for an arbitrary file.
     public func open(transfer id: TransferID) async throws {
         guard let file = completed[id], let opener else { throw FileInboxError.unknownTransfer }
-        guard let bundleID = file.targetBundleID, Self.isPlausibleBundleID(bundleID) else { throw FileInboxError.notOpenable }
-        guard !Self.isDangerousToOpen(name: file.name) else { throw FileInboxError.notOpenable }
+        guard let bundleID = file.targetBundleID, Self.isPlausibleBundleID(bundleID),
+              !Self.refusedHandlers.contains(bundleID.lowercased()) else { throw FileInboxError.notOpenable }
+        guard !Self.isDangerousToOpen(name: file.name), Self.isAllowedDocument(name: file.name) else {
+            throw FileInboxError.notOpenable
+        }
         let path = file.url
         guard Self.isContained(path, in: root), !Self.isSymlink(path.deletingLastPathComponent()), !Self.isSymlink(path),
               Self.isRegularFile(path) else { throw FileInboxError.unsafePath }
@@ -283,6 +290,33 @@ public actor FileInbox {
         "url", "mobileconfig", "configprofile", "definition", "osax", "lpx", "qlgenerator", "mdimporter", "appex", "framework",
     ]
 
+    /// Applications that run code, scripts or installers, or change system settings, whatever file they are given.
+    /// Lower-cased bundle identifiers.
+    static let refusedHandlers: Set<String> = [
+        "com.apple.terminal", "com.googlecode.iterm2", "com.apple.scripteditor2", "com.apple.automator",
+        "com.apple.automator.automator-application-stub", "com.apple.installer", "com.apple.archiveutility",
+        "org.python.pythonlauncher", "com.apple.systempreferences", "com.apple.systemsettings", "com.apple.shortcuts",
+        "com.apple.dt.xcode", "com.apple.diskimagemounter", "com.apple.keychainaccess",
+        "com.apple.finder",
+    ].reduce(into: Set<String>()) { $0.insert($1.lowercased()) }
+
+    /// The content allow-list: images, PDF, audio/video, office documents, rich text and plain text that is not source
+    /// code or a script. The type comes from the last extension; archives, HTML, disk images and anything unknown are refused.
+    static func isAllowedDocument(name: String) -> Bool {
+        let parts = name.split(separator: ".", omittingEmptySubsequences: true)
+        guard parts.count > 1, let ext = parts.last, let type = UTType(filenameExtension: String(ext)) else { return false }
+        if type.conforms(to: .sourceCode) || type.conforms(to: .script) || type.conforms(to: .executable)
+            || type.conforms(to: .archive) || type.conforms(to: .diskImage) || type.conforms(to: .html)
+            || type.conforms(to: .applicationBundle) || type.conforms(to: .package) {
+            return false
+        }
+        let allowed: [UTType] = [.image, .pdf, .audiovisualContent, .presentation, .spreadsheet, .rtf, .rtfd, .plainText]
+        if allowed.contains(where: { type.conforms(to: $0) }) { return true }
+        // Office and iWork documents that do not declare one of the generic types above.
+        let documentExtensions: Set<String> = ["doc", "docx", "pages", "numbers", "key", "odt", "ods", "odp", "epub"]
+        return documentExtensions.contains(ext.lowercased())
+    }
+
     static func isDangerousToOpen(name: String) -> Bool {
         let parts = name.lowercased().split(separator: ".", omittingEmptySubsequences: true)
         guard parts.count > 1 else { return false }
@@ -299,6 +333,9 @@ public struct WorkspaceFileOpener: FileOpening {
         guard let application = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
             throw FileInboxError.notOpenable
         }
+        // The named application must declare that it opens this kind of file.
+        let capable = NSWorkspace.shared.urlsForApplications(toOpen: file).map(\.standardizedFileURL)
+        guard capable.contains(application.standardizedFileURL) else { throw FileInboxError.notOpenable }
         var values = URLResourceValues()
         values.quarantineProperties = ["LSQuarantineType": "LSQuarantineTypeOtherDownload"]
         var target = file

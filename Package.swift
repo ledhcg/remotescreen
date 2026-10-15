@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "RemoteScreen",
+    name: "Screon",
     defaultLocalization: "en",
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [

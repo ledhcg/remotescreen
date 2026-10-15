@@ -78,7 +78,7 @@ struct SessionView: View {
 
     private var screenArea: some View {
         ZStack {
-            RemoteScreenRepresentable(controller: controller, excludedRegions: excludedRegions)
+            ScreonRepresentable(controller: controller, excludedRegions: excludedRegions)
                 .ignoresSafeArea()
             if case .reconnecting = controller.state {
                 // Dim and block touches: there is no session left to receive input.
@@ -441,17 +441,17 @@ private extension View {
     }
 }
 
-struct RemoteScreenRepresentable: UIViewRepresentable {
+struct ScreonRepresentable: UIViewRepresentable {
     let controller: SessionController
     var excludedRegions: [CGRect] = []
 
-    func makeUIView(context: Context) -> RemoteScreenView {
-        let view = RemoteScreenView(frame: .zero, device: nil)
+    func makeUIView(context: Context) -> ScreonView {
+        let view = ScreonView(frame: .zero, device: nil)
         controller.attach(view)
         return view
     }
 
-    func updateUIView(_ uiView: RemoteScreenView, context: Context) {
+    func updateUIView(_ uiView: ScreonView, context: Context) {
         uiView.excludedRegions = excludedRegions
     }
 }

@@ -3,7 +3,7 @@ import Localization
 import SwiftUI
 
 @main
-struct RemoteScreenApp: App {
+struct ScreonApp: App {
     /// One computer list for EVERY window of the app. If each window kept its own copy, the window that saves last would overwrite
     /// the file with its stale list, losing the computer the other window just saved (leaving that computer's password
     /// orphaned in the Keychain).

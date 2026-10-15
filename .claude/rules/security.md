@@ -3,7 +3,7 @@ paths:
   - "Sources/RFBKit/**/*.swift"
   - "Sources/RFBCrypto/**/*.swift"
   - "Sources/SessionKit/**/*.swift"
-  - "App/RemoteScreenApp/**/*.swift"
+  - "App/ScreonApp/**/*.swift"
 ---
 
 # Security rules

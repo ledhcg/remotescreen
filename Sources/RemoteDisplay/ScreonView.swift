@@ -5,8 +5,8 @@ import RFBKit
 import UIKit
 
 @MainActor
-public protocol RemoteScreenViewDelegate: AnyObject {
-    func remoteScreenView(_ view: RemoteScreenView, didChangeGeometry geometry: ViewportGeometry)
+public protocol ScreonViewDelegate: AnyObject {
+    func screonView(_ view: ScreonView, didChangeGeometry geometry: ViewportGeometry)
 }
 
 /// View that shows the Mac screen using Metal and captures the user's input: touch, hardware keyboard, on-screen keyboard.
@@ -15,8 +15,8 @@ public protocol RemoteScreenViewDelegate: AnyObject {
 /// - Input: touch gestures are converted to mouse events by `InputKit.TouchMapper`, keys are converted to keysyms by `KeyboardState`.
 /// Every outgoing message goes through `onInput`, which the view's user connects to `RFBSession.post`.
 @MainActor
-public final class RemoteScreenView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate, UIKeyInput {
-    public weak var geometryDelegate: RemoteScreenViewDelegate?
+public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate, UIKeyInput {
+    public weak var geometryDelegate: ScreonViewDelegate?
 
     /// Receives every mouse/key message to send to the Mac, in order.
     public var onInput: (([ClientMessage]) -> Void)?
@@ -97,7 +97,7 @@ public final class RemoteScreenView: MTKView, MTKViewDelegate, UIGestureRecogniz
 
         // A single accessibility element that allows direct interaction (VoiceOver does not intercept touch gestures).
         isAccessibilityElement = true
-        accessibilityIdentifier = "remoteScreen"
+        accessibilityIdentifier = "screon"
         accessibilityLabel = tr("Remote screen")
         accessibilityTraits = .allowsDirectInteraction
 
@@ -304,7 +304,7 @@ public final class RemoteScreenView: MTKView, MTKViewDelegate, UIGestureRecogniz
             "Mac screen %lld×%lld, shown at %lld×%lld points",
             Int(geometry.remoteSize.width), Int(geometry.remoteSize.height),
             Int(shown.width.rounded()), Int(shown.height.rounded()))
-        geometryDelegate?.remoteScreenView(self, didChangeGeometry: geometry)
+        geometryDelegate?.screonView(self, didChangeGeometry: geometry)
     }
 
     /// The viewport is smaller than the content in at least one dimension, so it can be dragged to see the hidden part.
@@ -787,9 +787,9 @@ public final class RemoteScreenView: MTKView, MTKViewDelegate, UIGestureRecogniz
 }
 /// Target of `CADisplayLink`, holding the view weakly (the display link strongly retains its target).
 private final class DisplayLinkProxy: NSObject {
-    private weak var view: RemoteScreenView?
+    private weak var view: ScreonView?
 
-    init(_ view: RemoteScreenView) {
+    init(_ view: ScreonView) {
         self.view = view
     }
 
@@ -804,7 +804,7 @@ private final class DisplayLinkProxy: NSObject {
 
 // MARK: - iPad pointer, pencil double tap
 
-extension RemoteScreenView: UIPointerInteractionDelegate, UIPencilInteractionDelegate {
+extension ScreonView: UIPointerInteractionDelegate, UIPencilInteractionDelegate {
     /// Hides the iPad's round pointer over the Mac screen: the Mac's cursor (drawn locally or by the server) already follows the mouse, and two
     /// overlapping cursors would only confuse. In view-only mode or with the Mac cursor off, keep the iPad pointer so you can tell where the mouse is.
     public func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {

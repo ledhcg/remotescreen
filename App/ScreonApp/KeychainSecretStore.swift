@@ -16,7 +16,7 @@ struct KeychainError: Error, LocalizedError {
 struct KeychainSecretStore: SecretStore {
     let service: String
 
-    init(service: String = "com.ledhcg.remotescreen.connection") {
+    init(service: String = "com.ledinhcuong.screon.connection") {
         self.service = service
     }
 

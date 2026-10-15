@@ -20,7 +20,7 @@ final class InputUITests: XCTestCase {
         app.launch()
 
         // The element type of a view with `allowsDirectInteraction` is not fixed, so look it up by identifier across all types.
-        let screen = app.descendants(matching: .any).matching(identifier: "remoteScreen").firstMatch
+        let screen = app.descendants(matching: .any).matching(identifier: "screon").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 30), "remote screen view not found. Element tree:\n\(app.debugDescription)")
         Thread.sleep(forTimeInterval: 4) // wait for the connection, the first frame and the layout to settle
 

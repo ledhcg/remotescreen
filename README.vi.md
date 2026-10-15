@@ -1,9 +1,9 @@
-# RemoteScreen
+# Screon
 
 **Điều khiển máy Mac từ iPhone hoặc iPad.** Ứng dụng Swift thuần, không phụ thuộc thư viện ngoài, kết nối tới Apple
 Screen Sharing (RFB / VNC, gồm cả đăng nhập type 30 của Apple), thiết kế cho cảm ứng, Apple Pencil, chuột và trackpad.
 
-[![CI](https://github.com/ledhcg/remotescreen/actions/workflows/ci.yml/badge.svg)](https://github.com/ledhcg/remotescreen/actions/workflows/ci.yml)
+[![CI](https://github.com/ledhcg/screon/actions/workflows/ci.yml/badge.svg)](https://github.com/ledhcg/screon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 [English](README.md) · [Tiếng Việt](README.vi.md)
@@ -41,7 +41,7 @@ Cần Xcode 26+ (Swift 6), iOS 18+.
 
 ```bash
 swift build && swift test            # các gói (macOS), 55 test, không cần thiết bị
-cd App && xcodegen generate          # sinh RemoteScreenApp.xcodeproj (không commit)
+cd App && xcodegen generate          # sinh ScreonApp.xcodeproj (không commit)
 ```
 
 Chạy trên thiết bị thật cần team Apple Developer, đặt trong `App/Signing.local.xcconfig` (đã gitignore):
@@ -59,7 +59,7 @@ Cấu trúc thư mục và công cụ (`rfbprobe`, `mock-rfb-server`) được m
 ## Nhãn hiệu
 
 Apple, Mac, macOS, iPad, iPhone, Screen Sharing, Apple Remote Desktop là nhãn hiệu của Apple Inc. VNC là nhãn hiệu của
-RealVNC Ltd. RemoteScreen là dự án độc lập, không liên kết với hay được bảo trợ bởi Apple hoặc RealVNC.
+RealVNC Ltd. Screon là dự án độc lập, không liên kết với hay được bảo trợ bởi Apple hoặc RealVNC.
 
 ## Giấy phép
 

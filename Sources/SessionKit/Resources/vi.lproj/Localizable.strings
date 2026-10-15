@@ -14,7 +14,7 @@
 "Couldn't reconnect to %@: the username or password is no longer accepted." = "Không nối lại được %@: tên tài khoản hoặc mật khẩu không còn được chấp nhận.";
 "Couldn't reconnect to %@: the server is not compatible. (%@)" = "Không nối lại được %1$@: máy chủ không tương thích. (%2$@)";
 "Lost connection to %@ and couldn't reconnect after %lld attempts. Check that the Mac is on, awake and on the same network. (%@)" = "Mất kết nối với %1$@ và không nối lại được sau %2$lld lần thử. Kiểm tra Mac còn bật, không ngủ và cùng mạng. (%3$@)";
-"This device has no network route to that address. Check that Wi-Fi is on and on the same network as the Mac, and that Settings › RemoteScreen › Local Network is on. (code %@)" = "Thiết bị chưa có đường mạng tới địa chỉ này. Kiểm tra: Wi-Fi đang bật và cùng mạng với Mac; Cài đặt › RemoteScreen › Mạng cục bộ đang bật. (mã %@)";
+"This device has no network route to that address. Check that Wi-Fi is on and on the same network as the Mac, and that Settings › Screon › Local Network is on. (code %@)" = "Thiết bị chưa có đường mạng tới địa chỉ này. Kiểm tra: Wi-Fi đang bật và cùng mạng với Mac; Cài đặt › Screon › Mạng cục bộ đang bật. (mã %@)";
 "The Mac refused the connection. Turn on Screen Sharing: System Settings › General › Sharing. (code %@)" = "Mac từ chối kết nối. Bật Chia sẻ màn hình: Cài đặt hệ thống › Chung › Chia sẻ. (mã %@)";
 "The Mac did not answer. Check the address, and that the Mac is on and not asleep. (code %@)" = "Mac không trả lời. Kiểm tra địa chỉ, và Mac đang bật, không ngủ. (mã %@)";
 
@@ -30,7 +30,7 @@
 /* ClipboardBridge notices */
 "The device clipboard is empty." = "Clipboard của thiết bị đang trống.";
 "Sent %lld characters to the Mac." = "Đã gửi %lld ký tự tới Mac.";
-"Couldn't paste: iOS is blocking clipboard access. Turn on Settings › RemoteScreen › Paste from Other Apps." = "Không dán được: iOS đang chặn đọc clipboard. Bật Cài đặt › RemoteScreen › Dán từ ứng dụng khác.";
+"Couldn't paste: iOS is blocking clipboard access. Turn on Settings › Screon › Paste from Other Apps." = "Không dán được: iOS đang chặn đọc clipboard. Bật Cài đặt › Screon › Dán từ ứng dụng khác.";
 "The clipboard is too large to send to the Mac." = "Clipboard quá lớn để gửi lên Mac.";
 "No clipboard received from the Mac yet. This computer sends it automatically when you copy on the Mac." = "Chưa nhận được clipboard nào từ Mac. Máy này tự gửi khi bạn sao chép trên Mac.";
 "Couldn't read the clipboard from the Mac." = "Không đọc được clipboard từ Mac.";

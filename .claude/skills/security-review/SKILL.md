@@ -1,6 +1,6 @@
 ---
 name: security-review
-description: Review a change to RemoteScreen's authentication, key exchange, decoders, clipboard, Keychain or any code that reads lengths from the server. Use before committing such a change.
+description: Review a change to Screon's authentication, key exchange, decoders, clipboard, Keychain or any code that reads lengths from the server. Use before committing such a change.
 ---
 
 # Security review

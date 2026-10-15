@@ -1,6 +1,6 @@
 ---
 name: release
-description: Prepare a RemoteScreen release. Use only when the maintainer explicitly asks for a release.
+description: Prepare a Screon release. Use only when the maintainer explicitly asks for a release.
 ---
 
 # Release

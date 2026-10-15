@@ -4,7 +4,7 @@
 
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation
   in `vi.lproj` tables and `README.vi.md`. New `Localization` target; the iOS permission prompt is localized too.
-- Bundle identifier is now `com.ledhcg.remotescreen`.
+- The app is now called **Screon** (Screen + On: a screen that stays connected), with a new app icon. Bundle identifier is `com.ledinhcuong.screon`.
 - Project documentation and automation: `CLAUDE.md`, `AGENTS.md`, `.claude/` rules and skills, CI, issue and pull request templates,
   Dependabot, `CODEOWNERS`, `.editorconfig`.
 

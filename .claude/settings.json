@@ -5,7 +5,7 @@
       "Bash(swift build:*)",
       "Bash(swift test:*)",
       "Bash(xcodegen generate)",
-      "Bash(xcodebuild -project App/RemoteScreenApp.xcodeproj:*)",
+      "Bash(xcodebuild -project App/ScreonApp.xcodeproj:*)",
       "Bash(Tools/mock-rfb-server/run_input_test.sh:*)",
       "Bash(gitleaks:*)",
       "Bash(git status:*)",
@@ -22,7 +22,6 @@
       "Read(./App/Signing.local.xcconfig)",
       "Read(./.env)",
       "Read(./.env.*)",
-      "Bash(rm -rf:*)",
       "Bash(curl:*)",
       "Bash(wget:*)"
     ]

@@ -14,7 +14,7 @@ final class AppleGestureUITests: XCTestCase {
         ]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        let screen = app.descendants(matching: .any).matching(identifier: "remoteScreen").firstMatch
+        let screen = app.descendants(matching: .any).matching(identifier: "screon").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 30), "could not enter the session:\n\(app.debugDescription)")
         Thread.sleep(forTimeInterval: 3)
 

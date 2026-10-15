@@ -39,6 +39,24 @@ extension SavedConnection.Target {
 @Observable
 public final class ServiceBrowser {
     public nonisolated static let serviceType = "_rfb._tcp"
+    /// Bonjour type of the Mac helper link (UDP).
+    public nonisolated static let linkServiceType = "_screon-link._udp"
+
+    /// Transport protocol of the browsed service.
+    public enum Transport: Sendable, Equatable {
+        case tcp, udp
+
+        var parameters: NWParameters {
+            switch self {
+            case .tcp: .tcp
+            case .udp: .udp
+            }
+        }
+    }
+
+    /// The Bonjour service type this browser looks for, for example `_rfb._tcp`.
+    public nonisolated let browsedType: String
+    public nonisolated let transport: Transport
 
     public private(set) var hosts: [DiscoveredHost] = []
     /// `true` when iOS blocks discovery because Local Network permission is missing.
@@ -49,7 +67,11 @@ public final class ServiceBrowser {
     @ObservationIgnored private var wantsBrowsing = false
     static let restartDelay: Duration = .seconds(3)
 
-    public init() {}
+    /// Defaults browse `_rfb._tcp`, as before. Pass `ServiceBrowser.linkServiceType` with `.udp` for the Mac helper.
+    public init(serviceType: String = ServiceBrowser.serviceType, transport: Transport = .tcp) {
+        self.browsedType = serviceType
+        self.transport = transport
+    }
 
     /// Turns `NWBrowser` results into the display list: only Bonjour services, duplicates removed, sorted by name.
     nonisolated static func hosts(from endpoints: some Sequence<NWEndpoint>) -> [DiscoveredHost] {
@@ -64,7 +86,7 @@ public final class ServiceBrowser {
     public func start() {
         wantsBrowsing = true
         guard browser == nil else { return }
-        let browser = NWBrowser(for: .bonjour(type: Self.serviceType, domain: nil), using: .tcp)
+        let browser = NWBrowser(for: .bonjour(type: browsedType, domain: nil), using: transport.parameters)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = Self.hosts(from: results.map(\.endpoint))
             Task { @MainActor in self?.hosts = found }

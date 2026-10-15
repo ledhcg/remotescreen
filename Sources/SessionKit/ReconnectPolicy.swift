@@ -1,6 +1,13 @@
 import Foundation
 import RFBKit
 
+/// An error that knows retrying is useless, so non-RFB transports (for example the Mac helper link: revoked pairing, protocol
+/// version mismatch, identity mismatch) can stop `ReconnectPolicy` without it importing their error types.
+public protocol PermanentConnectionFailure: Error {
+    /// Why retrying is pointless. Never `.attemptsExhausted`; that one is decided by the policy itself.
+    var permanentReason: ReconnectPolicy.GiveUpReason { get }
+}
+
 /// When to try reconnecting after a connection is lost, and when to stop.
 ///
 /// This is an **experience decision**, not only a technical one: retrying often and for long keeps the session seamless but
@@ -51,6 +58,7 @@ public struct ReconnectPolicy: Equatable, Sendable {
 
     /// Errors where retrying is certainly useless (or harmful), unlike a transient network error.
     static func permanentReason(for error: Error) -> GiveUpReason? {
+        if let permanent = error as? any PermanentConnectionFailure { return permanent.permanentReason }
         guard let error = error as? RFBError else { return nil } // network error (NWError, POSIX, cancellation): transient
         switch error {
         case .authenticationFailed, .serverRejected, .credentialTooLong:

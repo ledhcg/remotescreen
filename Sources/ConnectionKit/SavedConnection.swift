@@ -1,5 +1,26 @@
 import Foundation
 
+/// The paired Mac helper (App Mode) of a saved computer. Public data only: the identity private key lives in the Keychain.
+public struct HelperEndpoint: Codable, Equatable, Sendable {
+    /// SHA-256 of the helper's SubjectPublicKeyInfo, lowercase hex (64 characters). Pins the helper's identity.
+    public var identityHash: String
+    /// Last address the helper answered on; a hint only, Bonjour is preferred.
+    public var lastKnownHost: String?
+    public var lastKnownPort: UInt16?
+    /// Bonjour instance name of the `_screon-link._udp` service.
+    public var bonjourName: String?
+    public var pairedAt: Date
+
+    public init(identityHash: String, lastKnownHost: String? = nil, lastKnownPort: UInt16? = nil,
+                bonjourName: String? = nil, pairedAt: Date) {
+        self.identityHash = identityHash
+        self.lastKnownHost = lastKnownHost
+        self.lastKnownPort = lastKnownPort
+        self.bonjourName = bonjourName
+        self.pairedAt = pairedAt
+    }
+}
+
 /// A saved computer. The password is **not** stored here but in `SecretStore` (Keychain), keyed by `id`.
 public struct SavedConnection: Codable, Identifiable, Equatable, Sendable {
     /// How to find the computer: by address, or by Bonjour service (independent of an IP that changes with DHCP).
@@ -14,8 +35,12 @@ public struct SavedConnection: Codable, Identifiable, Equatable, Sendable {
     public var target: Target
     public var username: String
     public var lastUsed: Date?
+    /// Set once the Mac helper is paired. Absent in files written before App Mode: they decode with `nil`.
+    public var helper: HelperEndpoint?
 
-    public init(id: UUID = UUID(), name: String, target: Target, username: String, lastUsed: Date? = nil) {
+    public init(id: UUID = UUID(), name: String, target: Target, username: String, lastUsed: Date? = nil,
+                helper: HelperEndpoint? = nil) {
+        self.helper = helper
         self.id = id
         self.name = name
         self.target = target

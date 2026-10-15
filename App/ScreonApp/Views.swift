@@ -4,6 +4,19 @@ import RemoteDisplay
 import SessionKit
 import SwiftUI
 
+#if DEBUG
+/// Hands the environment auto-connect to exactly one scene per launch.
+@MainActor
+enum DebugAutoConnect {
+    private static var claimed = false
+
+    static func claim() -> Bool {
+        defer { claimed = true }
+        return !claimed
+    }
+}
+#endif
+
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var controller = SessionController(defaults: SessionController.environmentDefaults())
@@ -31,7 +44,8 @@ struct RootView: View {
             #if DEBUG
             // Auto-connect for test runs: environment variables RFB_HOST, RFB_PORT, RFB_USER, RFB_PASSWORD.
             let environment = ProcessInfo.processInfo.environment
-            if let host = environment["RFB_HOST"] {
+            // Only the first scene connects: a window opened later must not start a second session.
+            if let host = environment["RFB_HOST"], DebugAutoConnect.claim() {
                 let port = UInt16(environment["RFB_PORT"] ?? "") ?? 5900
                 let username = environment["RFB_USER"] ?? ""
                 let password = environment["RFB_PASSWORD"] ?? ""

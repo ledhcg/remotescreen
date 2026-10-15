@@ -81,4 +81,23 @@ struct ReconnectPolicyTests {
         #expect(policy.delays.first! < .seconds(1), "the first attempt must be almost immediate: most drops come from just returning from the background")
         #expect(policy.delays == policy.delays.sorted(), "delays must not decrease")
     }
+
+    private struct LinkRevoked: PermanentConnectionFailure {
+        var permanentReason: ReconnectPolicy.GiveUpReason { .authenticationFailed }
+    }
+
+    private struct LinkVersionMismatch: PermanentConnectionFailure {
+        var permanentReason: ReconnectPolicy.GiveUpReason { .incompatible }
+    }
+
+    private struct LinkTransient: Error {}
+
+    @Test func nonRFBErrorsCanDeclareThemselvesPermanent() {
+        #expect(policy.decision(after: LinkRevoked(), attemptsMade: 0) == .giveUp(.authenticationFailed))
+        #expect(policy.decision(after: LinkVersionMismatch(), attemptsMade: 2) == .giveUp(.incompatible))
+    }
+
+    @Test func otherNonRFBErrorsStayTransient() {
+        #expect(policy.decision(after: LinkTransient(), attemptsMade: 0) == .retry(after: .milliseconds(500), attempt: 1))
+    }
 }

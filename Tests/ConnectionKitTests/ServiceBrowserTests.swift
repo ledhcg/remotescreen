@@ -4,6 +4,7 @@ import RFBKit
 import Testing
 @testable import ConnectionKit
 
+@MainActor
 @Suite("ServiceBrowser: filtering results")
 struct ServiceBrowserFilterTests {
     private func service(_ name: String, type: String = "_rfb._tcp", domain: String = "local.") -> NWEndpoint {
@@ -34,6 +35,24 @@ struct ServiceBrowserFilterTests {
         #expect(host.target.endpoint == .service(name: "Mac mini", type: "_rfb._tcp", domain: "local.", interface: nil))
     }
 
+    @Test func browserDefaultsPreserveRFBOverTCP() {
+        let browser = ServiceBrowser()
+        #expect(browser.browsedType == "_rfb._tcp")
+        #expect(browser.transport == .tcp)
+    }
+
+    @Test func browserCanBeParameterisedForTheHelperLink() {
+        let browser = ServiceBrowser(serviceType: ServiceBrowser.linkServiceType, transport: .udp)
+        #expect(browser.browsedType == "_screon-link._udp")
+        #expect(browser.transport == .udp)
+    }
+
+    @Test func linkServicesKeepTheirTypeInTheDiscoveredHost() {
+        let hosts = ServiceBrowser.hosts(from: [service("mac", type: "_screon-link._udp")])
+        #expect(hosts.first?.type == "_screon-link._udp")
+        #expect(hosts.first?.target == .bonjour(name: "mac", type: "_screon-link._udp", domain: "local."))
+    }
+
     @Test func hostTargetMapsToHostAndPort() {
         let endpoint = SavedConnection.Target.host("mac.local", port: 5901).endpoint
         #expect(endpoint == .hostPort(host: "mac.local", port: 5901))
@@ -50,9 +69,11 @@ struct ServiceBrowserFilterTests {
 @MainActor
 @Suite("ServiceBrowser: real Bonjour", .timeLimit(.minutes(1)))
 struct ServiceBrowserLiveTests {
-    private func advertise(name: String) async throws -> NWListener {
-        let listener = try NWListener(using: .tcp)
-        listener.service = NWListener.Service(name: name, type: ServiceBrowser.serviceType)
+    private func advertise(
+        name: String, type: String = ServiceBrowser.serviceType, parameters: NWParameters = .tcp
+    ) async throws -> NWListener {
+        let listener = try NWListener(using: parameters)
+        listener.service = NWListener.Service(name: name, type: type)
         listener.newConnectionHandler = { connection in
             connection.start(queue: .global())
             connection.send(content: Data("RFB 003.008\n".utf8), completion: .contentProcessed { _ in })
@@ -98,6 +119,20 @@ struct ServiceBrowserLiveTests {
             try await Task.sleep(for: .milliseconds(100))
         }
         #expect(!browser.hosts.contains { $0.name == name }, "a service that went away must disappear from the list")
+    }
+
+    @Test func browserFindsAnAdvertisedUDPService() async throws {
+        let name = "ScreonLinkTest-\(UUID().uuidString.prefix(8))"
+        let listener = try await advertise(name: name, type: ServiceBrowser.linkServiceType, parameters: .udp)
+        defer { listener.cancel() }
+
+        let browser = ServiceBrowser(serviceType: ServiceBrowser.linkServiceType, transport: .udp)
+        browser.start()
+        defer { browser.stop() }
+
+        let host = await waitForHost(named: name, in: browser)
+        #expect(host != nil, "UDP service \(name) not found. Seen: \(browser.hosts.map(\.name))")
+        #expect(host?.type == "_screon-link._udp")
     }
 
     @Test func connectingThroughTheBonjourEndpointReachesTheService() async throws {

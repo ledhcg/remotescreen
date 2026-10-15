@@ -1,0 +1,117 @@
+# Manual release of the Screon Helper (Developer ID signing, notarization, stapled .dmg, signed update manifest).
+# Skeleton: run it only when the maintainer asks for a helper release. It never runs on push or pull_request.
+#
+# Required repository secrets (values are never stored in this file):
+#   DEVELOPER_ID_CERT_P12       base64 of the Developer ID Application certificate + key (.p12)
+#   DEVELOPER_ID_CERT_PASSWORD  password of that .p12
+#   NOTARY_KEY_ID               App Store Connect API key id
+#   NOTARY_ISSUER_ID            App Store Connect issuer id
+#   NOTARY_KEY_P8               contents of the API key (.p8)
+#   UPDATE_SIGNING_KEY          base64 raw Ed25519 private key for the update manifest
+name: Helper release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Helper version, e.g. 0.1.0 (must match Helper/project.yml)"
+        required: true
+        type: string
+      xcode:
+        description: "Xcode version to select, e.g. 26.0 (empty = runner default)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Sign, notarize, package
+    runs-on: macos-15
+    environment: helper-release   # protect this environment with required reviewers
+    env:
+      KEYCHAIN_NAME: helper-release.keychain-db
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Require Helper/project.yml
+        run: test -f Helper/project.yml || { echo "Helper/project.yml is missing"; exit 1; }
+      - name: Select Xcode
+        env:
+          XCODE_VERSION: ${{ inputs.xcode }}
+        run: |
+          if [ -n "$XCODE_VERSION" ] && [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          fi
+          xcodebuild -version
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Test
+        run: swift test --no-parallel
+      - name: Import the signing certificate into a temporary keychain
+        env:
+          DEVELOPER_ID_CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
+          CERT="$RUNNER_TEMP/developer-id.p12"
+          echo "$DEVELOPER_ID_CERT_P12" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN_NAME"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security import "$CERT" -k "$KEYCHAIN_NAME" -P "$DEVELOPER_ID_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security list-keychains -d user -s "$KEYCHAIN_NAME" login.keychain-db
+          rm -f "$CERT"
+      - name: Archive and sign the helper
+        run: |
+          set -euo pipefail
+          (cd Helper && xcodegen generate)
+          xcodebuild -project Helper/ScreonHelper.xcodeproj -scheme ScreonHelper \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/ScreonHelper.xcarchive" \
+            CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="Developer ID Application" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_NAME --timestamp" \
+            ENABLE_HARDENED_RUNTIME=YES archive
+          ditto "$RUNNER_TEMP/ScreonHelper.xcarchive/Products/Applications/ScreonHelper.app" "$RUNNER_TEMP/ScreonHelper.app"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/ScreonHelper.app"
+      - name: Notarize and staple
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/notary-key.p8"
+          printf '%s' "$NOTARY_KEY_P8" > "$KEY"
+          ditto -c -k --keepParent "$RUNNER_TEMP/ScreonHelper.app" "$RUNNER_TEMP/ScreonHelper.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/ScreonHelper.zip" \
+            --key "$KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+          rm -f "$KEY"
+          xcrun stapler staple "$RUNNER_TEMP/ScreonHelper.app"
+          xcrun stapler validate "$RUNNER_TEMP/ScreonHelper.app"
+      - name: Build the disk image
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          scripts/make-helper-dmg.sh "$RUNNER_TEMP/ScreonHelper.app" "$RUNNER_TEMP/ScreonHelper-$VERSION.dmg"
+          # The app inside is already stapled. TODO: also notarize and staple the .dmg itself (same notarytool call as above).
+      - name: Sign the update manifest
+        env:
+          VERSION: ${{ inputs.version }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          # TODO: generate the manifest (version, url, sha256, minimum macOS, release notes) from the dmg.
+          DMG="$RUNNER_TEMP/ScreonHelper-$VERSION.dmg"
+          SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
+          printf '{"version":"%s","sha256":"%s"}\n' "$VERSION" "$SHA" > "$RUNNER_TEMP/update-manifest.json"
+          swift scripts/sign-update-manifest.swift "$RUNNER_TEMP/update-manifest.json" "$RUNNER_TEMP/update-manifest.json.sig"
+      - name: Remove the temporary keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN_NAME" || true
+      # TODO: upload the dmg, manifest and signature to the GitHub Release (only when the maintainer asks to publish).

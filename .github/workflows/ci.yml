@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Xcode used on the runners, e.g. "26.0". Empty (or a version that is not installed) falls back to the runner default.
+  XCODE_VERSION: ""
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -18,6 +22,14 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select Xcode
+        run: |
+          if [ -n "$XCODE_VERSION" ] && [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          else
+            echo "Xcode ${XCODE_VERSION:-<unset>} not selected; using the runner default"
+          fi
+          xcodebuild -version
       - name: Toolchain
         run: swift --version && xcodebuild -version
       - name: Build
@@ -26,12 +38,28 @@ jobs:
         # Serial on purpose: some tests assert wall-clock timing and 4096-bit big-number tests are CPU heavy, so they
         # starve each other on a 3-core runner when run in parallel.
         run: swift test --no-parallel
+      - name: Mock link helper self-test
+        # Runs only once the tool implements --self-test.
+        run: |
+          if grep -q self-test Tools/mock-link-helper/*.swift; then
+            swift run mock-link-helper --self-test
+          else
+            echo "mock-link-helper has no --self-test yet; skipped"
+          fi
 
   ios-app:
     name: iOS app (simulator build)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Select Xcode
+        run: |
+          if [ -n "$XCODE_VERSION" ] && [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          else
+            echo "Xcode ${XCODE_VERSION:-<unset>} not selected; using the runner default"
+          fi
+          xcodebuild -version
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
@@ -40,6 +68,37 @@ jobs:
         run: |
           xcodebuild -project App/ScreonApp.xcodeproj -scheme ScreonApp \
             -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO build
+
+  helper-macos:
+    name: Screon Helper (macOS build, unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check for the helper project
+        id: present
+        run: |
+          if [ -f Helper/project.yml ]; then echo "present=true" >> "$GITHUB_OUTPUT"
+          else echo "Helper/project.yml not found yet; skipping"; echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Select Xcode
+        run: |
+          if [ -n "$XCODE_VERSION" ] && [ -d "/Applications/Xcode_${XCODE_VERSION}.app" ]; then
+            sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          else
+            echo "Xcode ${XCODE_VERSION:-<unset>} not selected; using the runner default"
+          fi
+          xcodebuild -version
+      - name: Install XcodeGen
+        if: steps.present.outputs.present == 'true'
+        run: brew install xcodegen
+      - name: Generate project
+        if: steps.present.outputs.present == 'true'
+        run: cd Helper && xcodegen generate
+      - name: Build (no signing)
+        if: steps.present.outputs.present == 'true'
+        run: |
+          xcodebuild -project Helper/ScreonHelper.xcodeproj -scheme ScreonHelper \
+            -destination 'generic/platform=macOS' -derivedDataPath "$RUNNER_TEMP/dd-helper" \
             CODE_SIGNING_ALLOWED=NO build
 
   secrets-scan:

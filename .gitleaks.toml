@@ -1,0 +1,7 @@
+# Mở rộng bộ luật mặc định của gitleaks.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Vector kiểm thử mật mã (khoá AES công khai/ngẫu nhiên sinh bằng OpenSSL), không phải bí mật"
+paths = ['''Tests/.*Vectors\.swift''']

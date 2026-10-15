@@ -1,0 +1,22 @@
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+xcuserdata/
+DerivedData/
+.DS_Store
+.snapshots/
+# Bản ghi byte RFB và khung hình xuất ra chứa nội dung màn hình
+*.bgra
+session*.bin
+App/*.xcodeproj
+App/build/
+App/Signing.local.xcconfig
+
+# Build riêng cho thiết bị (chạy song song với build simulator)
+App/build-device/
+
+# Nhật ký của server giả và bản ghi chụp từ rfbprobe (có thể chứa phím gõ / nội dung màn hình)
+*.jsonl
+*.bin
+__pycache__/
+*.pyc

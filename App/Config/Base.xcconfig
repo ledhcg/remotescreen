@@ -1,0 +1,3 @@
+// Cấu hình dùng chung. Thông tin ký mã riêng của từng máy nằm trong Signing.local.xcconfig (không commit).
+// Dấu `?` làm cho việc include không bắt buộc: thiếu file thì build simulator vẫn chạy.
+#include? "../Signing.local.xcconfig"

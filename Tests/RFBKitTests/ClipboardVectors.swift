@@ -1,0 +1,27 @@
+import Foundation
+// Sinh bởi Tools/replay-check (bước clipboard). KHÔNG sửa tay.
+// `realServerPayload`: payload nén THẬT do screensharingd trả lời một ClipboardRequest (loại 11) ngày 2026-10-14,
+// khi clipboard Mac chứa "rfbprobe-marker-request đệ café". Chỉ chứa marker của người thử, không có dữ liệu cá nhân.
+enum ClipboardVectors {
+    static let realServerPayload = "78da74503b4e0331109d000708147c1ab41269bd284d8484a0a34548d982d676c66065bd76c65e094e40cd31380325489c83925b30de046d11d6859f67e679debc01805d00380cadaaad2edb642e44a8a56d44c2a704eb931963ed5d2943a8b1f4313d07e4dc5ea6331ef5b52606e5252dc48672703b9f27b2cdc35d97aed6d9f146ce59877fcce32c78de695fea474911d315f71759e08c8c0ae4150a2769892408572dc6547cbe7ebfbf145a9a8f37a64dfa3912c9854dd637b2e63f7adbd368c85375735fe5718624b3df7e5bd3d976eb9de175759cffdc9f0cb89fceb8780d0406140446cf8820c081e468c96fe2881857d0f21d214131da3ffd820234730cfcfc020000ffff"
+    static let realServerUncompressedSize: UInt32 = 484
+    static let realServerToken: UInt32 = 0xDEADBEEF
+
+    /// Văn bản và payload do zlib của Python tạo, không đóng luồng (cùng kiểu server Apple).
+    static let vietnameseText = "Xin chào, Việt Nam đẹp lắm ệ ố ữ 🙂"
+    static let pythonSyncFlushPayload = "78da62606060626060102b284dcac94cd62b2d49b3d02dc849ccccd32d49ad2861800046201680aac8cdcc4dd52da92c48058a4980d4e883955b2767241615a796d8024dd0b500ca194764e62924671c5e90afa31096f970777b89825f62aec291890f77ed2c50c879b86b7dae025014882702f17a850ff3673601b589231c626886e9121070638860c864c86350604866c86078c090cfa00364873164ca1d672801b2fc1812197219141805e576321400f93972eb417ca0ac82dc45207ecfa070c3f69e13000000ffff"
+    /// Cùng nội dung nhưng luồng đã đóng (`Z_FINISH`), để chắc cả hai dạng đều giải được.
+    static let pythonClosedPayload = "78da63606060626060102b284dcac94cd62b2d49b3d02dc849ccccd32d49ad2861800046201680aac8cdcc4dd52da92c48058a4980d4e883955b2767241615a796d8024dd0b500ca194764e62924671c5e90afa31096f970777b89825f62aec291890f77ed2c50c879b86b7dae025014882702f17a850ff3673601b589231c626886e9121070638860c864c86350604866c86078c090cfa00364873164ca1d672801b2fc1812197219141805e576321400f93972eb417ca0ac82dc45207ecfa070c3f69e1300db994b1a"
+    static let pythonUncompressedSize: UInt32 = 250
+}
+
+func bytes(hex: String) -> Data {
+    var data = Data()
+    var index = hex.startIndex
+    while index < hex.endIndex {
+        let next = hex.index(index, offsetBy: 2)
+        data.append(UInt8(hex[index..<next], radix: 16)!)
+        index = next
+    }
+    return data
+}

@@ -13,6 +13,10 @@ let package = Package(
         .library(name: "ConnectionKit", targets: ["ConnectionKit"]),
         .library(name: "SessionKit", targets: ["SessionKit"]),
         .library(name: "Localization", targets: ["Localization"]),
+        .library(name: "LinkProtocol", targets: ["LinkProtocol"]),
+        .library(name: "LinkTransport", targets: ["LinkTransport"]),
+        .library(name: "WindowKit", targets: ["WindowKit"]),
+        .library(name: "HelperCore", targets: ["HelperCore"]),
     ],
     targets: [
         .systemLibrary(name: "CZlib", path: "Sources/CZlib"),
@@ -44,6 +48,25 @@ let package = Package(
             name: "SessionKit", dependencies: ["RFBKit", "InputKit", "Localization"],
             resources: [.process("Resources")]
         ),
+        // App Mode: wire format of the Screon link between the iPad app and the Mac helper. Pure, iOS + macOS.
+        .target(name: "LinkProtocol"),
+        // App Mode transport: QUIC/TLS over Network.framework, identities, pairing, resume. iOS + macOS.
+        .target(name: "LinkTransport", dependencies: ["LinkProtocol"]),
+        // App Mode client model: apps, windows, surfaces, coordinates, input routing. Pure logic.
+        .target(
+            name: "WindowKit", dependencies: ["LinkProtocol", "InputKit", "Localization"],
+            resources: [.process("Resources")]
+        ),
+        // App Mode Mac side: window tracking, capture, encoding, input injection, stage. macOS only (#if os(macOS)).
+        .target(
+            name: "HelperCore", dependencies: ["LinkProtocol", "LinkTransport", "Localization"],
+            resources: [.process("Resources")]
+        ),
+        .executableTarget(
+            name: "mock-link-helper",
+            dependencies: ["LinkProtocol", "LinkTransport"],
+            path: "Tools/mock-link-helper"
+        ),
         .executableTarget(
             name: "rfbprobe",
             dependencies: ["RFBKit"],
@@ -55,5 +78,9 @@ let package = Package(
         .testTarget(name: "InputKitTests", dependencies: ["InputKit", "RFBKit", "Localization"]),
         .testTarget(name: "SessionKitTests", dependencies: ["SessionKit", "RFBKit", "InputKit", "CZlib", "Localization"]),
         .testTarget(name: "ConnectionKitTests", dependencies: ["ConnectionKit", "RFBKit", "Localization"]),
+        .testTarget(name: "LinkProtocolTests", dependencies: ["LinkProtocol"]),
+        .testTarget(name: "LinkTransportTests", dependencies: ["LinkTransport", "LinkProtocol"]),
+        .testTarget(name: "WindowKitTests", dependencies: ["WindowKit", "LinkProtocol", "InputKit", "Localization"]),
+        .testTarget(name: "HelperCoreTests", dependencies: ["HelperCore", "LinkProtocol", "LinkTransport", "Localization"]),
     ]
 )

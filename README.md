@@ -26,6 +26,21 @@
   (`WhenUnlockedThisDeviceOnly`), never in the connection list.
 - **Stream quality modes**, automatic reconnect, and a clipboard bridge.
 
+## App Mode (beta)
+
+Besides the full-screen RFB mode, Screon is growing an **App Mode**: individual Mac windows appear on the iPad as separate,
+resizable windows. It needs the free **Screon Helper** menu-bar app on the Mac (Accessibility and Screen Recording
+permissions) and **iPadOS 26**. RFB mode is unchanged and still works on iOS 18.
+
+- The link between iPad and helper is always encrypted and mutually authenticated with pinned keys; there is no unencrypted mode.
+- Pairing only works while you have the pairing window open on the Mac and approve the new device there. Later sessions from a
+  paired device connect without asking (an "ask before each session" setting is available).
+- You can revoke any device from the helper menu at any time; its live sessions close immediately.
+- The helper does not run commands or open arbitrary files: it can only show, move and resize windows you authorize,
+  forward input to them, and exchange clipboard and allow-listed documents.
+
+App Mode is in development: see [docs/app-status.md](docs/app-status.md) for what is verified.
+
 ## Security notes — please read
 
 - Only Apple's type 30 login protects your credentials. **The screen, keystrokes and clipboard travel

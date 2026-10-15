@@ -14,13 +14,21 @@ Sources/RemoteDisplay  viewport geometry, Metal renderer, ScreonView (UIKit)
 Sources/InputKit       keyboard/touch/pencil → RFB events. Pure logic, no UIKit
 Sources/SessionKit     reconnect policy, clipboard bridge, stream quality, user-facing messages. Pure logic
 Sources/ConnectionKit  saved computers (JSON), Bonjour browser, form validation
+Sources/LinkProtocol   App Mode wire format: frames, messages, bounded codecs. Pure, no I/O
+Sources/LinkTransport  App Mode link: QUIC + TCP/TLS fallback, pinned identities, pairing, session machine
+Sources/WindowKit      iPad-side window model, stream/input glue for App Mode
+Sources/HelperCore     Mac-side helper logic (macOS only): capture, window control, authorization, files
 Sources/CZlib          system zlib module map
 Tools/rfbprobe         diagnostic CLI against a real server        Tools/mock-rfb-server  fake server for E2E tests (127.0.0.1)
-Tools/replay-check     independent Python ZRLE encoder/decoder
+Tools/replay-check     independent Python ZRLE encoder/decoder     Tools/mock-link-helper  fake Screon Helper for App Mode (127.0.0.1)
+Helper/                macOS menu-bar helper app (project.yml = source of truth; ScreonHelper.xcodeproj is generated)
+scripts/               helper release skeletons (make-helper-dmg.sh, sign-update-manifest.swift)
 App/                   SwiftUI app (project.yml = source of truth; the .xcodeproj is generated and git-ignored)
 docs/                  protocol-notes.md (what Apple's server does), app-status.md (what is verified)
 ```
-Dependency direction: `App` → `SessionKit`/`RemoteDisplay`/`ConnectionKit` → `InputKit` → `RFBKit` → `RFBCrypto`. Never import upward.
+Dependency direction: `App` → `SessionKit`/`RemoteDisplay`/`ConnectionKit` → `InputKit` → `RFBKit` → `RFBCrypto`.
+App Mode: `App` → `WindowKit` → `LinkTransport` → `LinkProtocol`; `Helper` → `HelperCore` → `LinkTransport` → `LinkProtocol`
+(`HelperCore` is macOS-only). Never import upward.
 
 ## Commands
 
@@ -31,6 +39,9 @@ xcodebuild -project App/ScreonApp.xcodeproj -scheme ScreonApp \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 Tools/mock-rfb-server/run_input_test.sh <simulator-UDID>    # E2E input against the fake server (never a real Mac)
 RFB_USER=… RFB_PASSWORD=… swift run rfbprobe <host> --login 30   # real server; credentials only via env
+(cd Helper && xcodegen generate) && xcodebuild -project Helper/ScreonHelper.xcodeproj -scheme ScreonHelper \
+  -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO build   # helper (needs Helper/project.yml)
+swift run mock-link-helper                                  # fake helper on 127.0.0.1 for App Mode E2E (--self-test when supported)
 ```
 
 ## Non-negotiables
@@ -45,7 +56,9 @@ RFB_USER=… RFB_PASSWORD=… swift run rfbprobe <host> --login 30   # real serv
 5. **No third-party dependencies.** `unsafeFlags` in `Package.swift` make the libraries local-only: do not add more.
 6. **Do not decompile or paste Apple code** into the repo. Protocol findings are behavioural observations only
    (see the `protocol-finding` skill).
-7. Do not rewrite git history, force-push, make the repo public/private or cut a release unless explicitly asked.
+7. **App Mode link is hostile in both directions.** Pinned identities only, no unauthenticated link mode, pairing only
+   while a Mac-side window is open and approved locally. See `.claude/rules/security.md`.
+8. Do not rewrite git history, force-push, make the repo public/private or cut a release unless explicitly asked.
 
 ## Conventions
 
@@ -75,3 +88,5 @@ RFB_USER=… RFB_PASSWORD=… swift run rfbprobe <host> --login 30   # real serv
   the mock server.
 - iOS holds the connection in `.waiting` while the Local Network permission prompt is open; do not treat it as fatal.
 - `RFB_HOST/USER/PASSWORD` auto-connect exists in DEBUG builds only.
+- App Mode needs iPadOS/iOS 26 (RFB mode keeps iOS 18). The helper needs Accessibility and Screen Recording on the Mac
+  (on macOS 27 the latter sits under the Remote Desktop category); tests must never depend on those grants (use fakes).

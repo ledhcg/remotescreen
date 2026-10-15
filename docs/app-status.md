@@ -256,6 +256,20 @@ A vertical bar beside the Mac screen (iPad: on the left, on by default; iPhone: 
   - `rfbprobe --apple-raw FILE --apple-gesture-test X,Y` sends arbitrary hex payloads (each line `delay_ms hex`), used to try variants.
 - Still unknown: the x, y coordinates while scaled down on the server side (same question as for `PointerEvent`); type 4 (smart zoom) and 6 (swipe) not tried.
 
+## App Mode transport (`LinkTransport`, macOS loopback tests only)
+
+Verified by `swift test` on 127.0.0.1 with identities generated per run (tests `LoopbackTests`, `MaliciousPeerTests`,
+`BackpressureTests`, `SessionMachineTests`, `TransportPureTests`), over QUIC and over the TCP+TLS fallback:
+
+- QR pairing, SAS pairing, reconnect by pinned SPKI, session resume with a single-use token, revoke while connected,
+  "ask before each session", close codes, session replacement, automatic QUIC to TCP fallback.
+- Three window streams carrying 150 KB frames concurrently, in order; input moves coalesced while presses/releases survive;
+  video queue drops to the next key frame when the receiver stalls and reports it.
+- Hostile peer: garbage, oversized/unknown frames, bad preambles, wrong stream or direction, wrong stream ids, silent
+  connections; the connection is closed and the server keeps serving.
+- Not verified: anything on a real iPad/iOS, Keychain-backed identities, Wi-Fi behaviour, Local Network prompt, throughput over
+  time. Test identities use `SecIdentityCreate` (a Security function missing from the public headers; tests only) and fall back to a temporary keychain if it is missing.
+
 ## Not yet verified, do not treat as done
 
 - **No real mouse/keys have been sent to a real Mac from this machine** (it is a working machine). Every input check on a real device used the fake server. It is also **unknown** whether the Apple server understands `Meta_L` (0xFFE7) as the Command key (see `KeysymMapper.commandLeft`). The app sends exactly `Meta_L`, measured with the fake server. A trial with a person sitting next to it is needed.

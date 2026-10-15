@@ -403,7 +403,21 @@ glass-to-glass rig (photo-diode or high-speed camera on a flashing test window f
 - Helper notarized; install on a clean macOS 15, 26 and 27 user passes the onboarding script.
 
 ### Spike results
-_To be filled during M0._
+_To be filled during M0. Partial, from the `LinkTransport` loopback tests (macOS 27, Xcode 27 SDK, no iPad involved):_
+
+- **S7 (partial, macOS only).** A hand-built DER certificate plus its P-256 key becomes a `SecIdentity` and does mutual TLS 1.3
+  over QUIC (`NWConnectionGroup`) and over TCP+TLS, with SPKI pin validators in `sec_protocol_options_set_verify_block`.
+  The TLS exporter (`sec_protocol_metadata_create_secret`, label `EXPORTER-screon-pair`, 32 bytes) is available on **both**
+  transports and equal on both ends, so the `helperChallenge` transcript is only a fallback. Still open: the same on **iOS**
+  (identity from the Keychain, `KeychainIdentityStore`), which unit tests on macOS cannot show.
+- **S6 (partial, macOS only).** Classic API behaviour found on loopback, all handled in `QUICWire`:
+  a group never leaves `setup` unless `newConnectionHandler`/`setReceiveHandler` is set; a stream is invisible to the peer
+  until its first byte, so every stream starts with a preamble; the server receives one extra silent `NWConnection` per QUIC
+  connection and **cancelling it kills the QUIC connection** (observed as `failed(EINVAL)` exactly at the timeout), so slow
+  or silent streams are never cancelled; after the peer closes, cancelling the streams before the group lets the other side
+  notice within milliseconds (`group.cancel()` alone is not noticed). Unidirectional streams (`direction = .unidirectional`)
+  and helper-opened streams work. Still open: Wi-Fi throughput/HOL over 30 min, Local Network prompt timing on iOS, iOS client
+  against a macOS listener.
 
 ---
 

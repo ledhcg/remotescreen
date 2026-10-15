@@ -1,0 +1,527 @@
+import CryptoKit
+import Foundation
+import LinkProtocol
+
+// Pure session state machines for the handshake of one link connection. They take decoded messages and user decisions in,
+// and return actions (messages to send, events for the app, termination). No networking, no timers, no UI: the connection
+// actors drive them. Handshake order, all on the control stream:
+//
+//   reconnect:  C: hello, resume(token | zeros)                      H: welcome (+ snapshot from the app)
+//   QR pairing: C: hello, pair.prove(mac)    H: [approval on the Mac] pair.ok, welcome
+//   SAS pairing:C: hello, sas.commit  H: sas.commit  C: sas.reveal  H: sas.reveal
+//               (both show the six digits)  C: pair.prove(confirmation)  H: [approval on the Mac] pair.ok, welcome
+//
+// The first message after `hello` always says what the client wants, so the helper never has to guess or wait on a timer.
+
+/// What the iPad wants from this connection.
+public enum LinkClientMode: Sendable {
+    /// The Mac is already paired. `credentials` resumes a session when present.
+    case reconnect(LinkResumeCredentials?)
+    /// First contact by QR code.
+    case pairWithQR(PairingQRPayload)
+    /// First contact without a camera: compare six digits on both screens.
+    case pairWithSAS
+}
+
+/// What the app learns when the handshake succeeds.
+public struct LinkSessionInfo: Sendable, Equatable {
+    public var protocolVersion: UInt16
+    /// Features both sides support.
+    public var capabilities: LinkCapabilities
+    public var sessionID: UInt64
+    /// Single use; present it in `LinkClientMode.reconnect` after a connection loss (valid 10 minutes).
+    public var resumeToken: Data
+    public var macName: String
+    public var displays: [LinkDisplayInfo]
+}
+
+enum SessionText {
+    /// Peer-supplied device name made safe to show: no control characters, trimmed, at most `PairingProof.maxDeviceNameBytes`.
+    static func sanitizedDeviceName(_ s: String) -> String {
+        var out = ""
+        var bytes = 0
+        for scalar in s.unicodeScalars {
+            if scalar.properties.generalCategory == .control || scalar.properties.generalCategory == .format
+                || scalar.properties.generalCategory == .lineSeparator || scalar.properties.generalCategory == .paragraphSeparator {
+                continue
+            }
+            let n = String(scalar).utf8.count
+            guard bytes + n <= PairingProof.maxDeviceNameBytes else { break }
+            out.unicodeScalars.append(scalar)
+            bytes += n
+        }
+        let trimmed = out.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "iPad" : trimmed
+    }
+}
+
+/// Values derived from a confirmed SAS code, so the confirmation can travel as an ordinary `pair.prove`.
+enum SASConfirmation {
+    static func values(code: String, revealA: Data, revealB: Data) -> (secret: Data, nonce: Data, challenge: Data) {
+        let keys = [revealA, revealB].sorted { $0.lexicographicallyPrecedes($1) }
+        func h(_ label: String, _ parts: Data...) -> Data {
+            var input = Data(label.utf8)
+            for p in parts { input.append(p) }
+            return Data(SHA256.hash(data: input))
+        }
+        let secret = h("screon sas confirm v1", Data(code.utf8)).prefix(16)
+        let nonce = h("screon sas nonce v1", keys[0], keys[1]).prefix(16)
+        let challenge = h("screon sas challenge v1", keys[0], keys[1], Data(code.utf8))
+        return (Data(secret), Data(nonce), challenge)
+    }
+
+    /// Both sides compute the code over the helper's hash first, then the iPad's.
+    static func transcript(macSPKIHash: Data, ipadSPKIHash: Data) -> Data { macSPKIHash + ipadSPKIHash }
+}
+
+// MARK: - Client
+
+struct ClientSessionMachine {
+    enum Event: Equatable, Sendable {
+        /// The Mac asked its user to approve this session; keep waiting.
+        case awaitingMacApproval
+        /// Show these six digits and ask the user whether they match the Mac.
+        case sasCode(String)
+        case paired(macName: String, helperID: Data)
+        case ready(LinkSessionInfo)
+    }
+
+    enum Action: Equatable {
+        case send(LinkMessage)
+        case event(Event)
+        /// End the connection. `notifyPeer`: send `close` with the error's code first.
+        case terminate(LinkSessionError, notifyPeer: Bool)
+    }
+
+    private enum Phase {
+        case idle, awaitingWelcome, awaitingChallenge, awaitingPairResult
+        case sasAwaitPeerCommit, sasAwaitPeerReveal, sasAwaitUser, finished
+    }
+
+    let hello: LinkHello
+    let mode: LinkClientMode
+    let ownSPKIHash: Data
+    let peerSPKIHash: Data
+    let exporter: Data?
+
+    private var phase = Phase.idle
+    private var sas: SASExchange?
+    private var sasValues: (secret: Data, nonce: Data, challenge: Data)?
+    private var paired = false
+
+    init(hello: LinkHello, mode: LinkClientMode, ownSPKIHash: Data, peerSPKIHash: Data, exporter: Data?) {
+        precondition(hello.protocolRange != nil)
+        self.hello = hello
+        self.mode = mode
+        self.ownSPKIHash = ownSPKIHash
+        self.peerSPKIHash = peerSPKIHash
+        self.exporter = exporter
+    }
+
+    var isFinished: Bool { phase == .finished }
+
+    /// Seconds the current phase may take, or `nil` when it waits for a person.
+    var phaseTimeout: TimeInterval? {
+        switch phase {
+        case .sasAwaitUser, .finished: nil
+        default: 10
+        }
+    }
+
+    private var pairName: String { SessionText.sanitizedDeviceName(hello.deviceName) }
+
+    private mutating func fail(_ error: LinkSessionError, notify: Bool = true) -> [Action] {
+        phase = .finished
+        return [.terminate(error, notifyPeer: notify)]
+    }
+
+    mutating func start() -> [Action] {
+        guard phase == .idle else { return [] }
+        var actions: [Action] = [.send(.hello(hello))]
+        switch mode {
+        case .reconnect(let credentials):
+            let token = credentials.flatMap { try? LinkBytes32($0.token) } ?? LinkBytes32(repeating: 0)
+            actions.append(.send(.resume(LinkResume(resumeToken: token, lastStateVersion: credentials?.lastStateVersion ?? 0))))
+            phase = .awaitingWelcome
+        case .pairWithQR(let payload):
+            // The QR pins the Mac. The TLS layer already enforced it; this is the belt to those braces.
+            guard constantTimeEqual(payload.macSPKIHash, peerSPKIHash) else { return fail(.pinMismatch, notify: false) }
+            if exporter != nil {
+                actions.append(contentsOf: sendProve(payload: payload, challenge: nil))
+                if phase != .finished { phase = .awaitingPairResult }
+            } else {
+                phase = .awaitingChallenge
+            }
+        case .pairWithSAS:
+            let exchange = SASExchange()
+            sas = exchange
+            if let commit = try? LinkBytes32(exchange.commit) { actions.append(.send(.sasCommit(commit))) }
+            phase = .sasAwaitPeerCommit
+        }
+        return actions
+    }
+
+    private mutating func sendProve(payload: PairingQRPayload, challenge: Data?) -> [Action] {
+        let binding: PairingBinding
+        if let exporter, challenge == nil { binding = .exporter(exporter) }
+        else if let challenge { binding = .helperChallenge(nonce: payload.nonce, challenge: challenge) }
+        else { return fail(.pairingFailed("no channel binding")) }
+        guard let mac = try? PairingProof.mac(
+            secret: payload.secret, nonce: payload.nonce, binding: binding, macSPKIHash: peerSPKIHash,
+            ipadSPKIHash: ownSPKIHash, deviceName: pairName),
+            let prove = try? LinkPairProve(deviceName: pairName, ipadSPKIHash: LinkBytes32(ownSPKIHash), mac: LinkBytes32(mac))
+        else { return fail(.pairingFailed("cannot build proof")) }
+        return [.send(.pairProve(prove))]
+    }
+
+    mutating func receive(_ message: LinkMessage) -> [Action] {
+        guard phase != .finished, phase != .idle else { return [] }
+        if case .close(let code, _) = message { return fail(.fromPeerClose(code), notify: false) }
+        if case .pairDenied(let reason) = message, phase != .awaitingWelcome {
+            return fail(.pairingDenied(reason), notify: false)  // the helper may refuse at any pairing step
+        }
+        switch (phase, message) {
+        case (.awaitingWelcome, .welcome(let w)):
+            return handleWelcome(w)
+        case (.awaitingWelcome, .approvalRequired):
+            return [.event(.awaitingMacApproval)]
+        case (.awaitingWelcome, .pairChallenge), (.awaitingPairResult, .pairChallenge):
+            return []  // a helper without a TLS exporter sends one unconditionally; only QR pairing needs it
+        case (.awaitingChallenge, .pairChallenge(let c)):
+            guard case .pairWithQR(let payload) = mode else { return fail(.protocolViolation("unexpected challenge")) }
+            let actions = sendProve(payload: payload, challenge: c.data)
+            if phase != .finished { phase = .awaitingPairResult }
+            return actions
+        case (.awaitingPairResult, .pairOK(let ok)):
+            paired = true
+            phase = .awaitingWelcome
+            return [.event(.paired(macName: ok.macName, helperID: ok.helperID.data))]
+        case (.awaitingPairResult, .pairDenied(let reason)):
+            return fail(.pairingDenied(reason), notify: false)
+        case (.sasAwaitPeerCommit, .sasCommit(let c)):
+            guard var exchange = sas, (try? exchange.receivePeerCommit(c.data)) != nil,
+                  let reveal = try? LinkBytes32(exchange.reveal)
+            else { return fail(.protocolViolation("sas commit")) }
+            sas = exchange
+            phase = .sasAwaitPeerReveal
+            return [.send(.sasReveal(reveal))]
+        case (.sasAwaitPeerReveal, .sasReveal(let r)):
+            guard var exchange = sas, (try? exchange.receivePeerReveal(r.data)) != nil,
+                  let code = try? exchange.code(transcript: SASConfirmation.transcript(macSPKIHash: peerSPKIHash, ipadSPKIHash: ownSPKIHash))
+            else { return fail(.pairingFailed("sas reveal does not match its commit")) }
+            sas = exchange
+            sasValues = SASConfirmation.values(code: code, revealA: exchange.reveal, revealB: r.data)
+            phase = .sasAwaitUser
+            return [.event(.sasCode(code))]
+        default:
+            return fail(.protocolViolation("unexpected \(message.type)"))
+        }
+    }
+
+    /// The user's answer to `Event.sasCode`.
+    mutating func sasDecision(confirmed: Bool) -> [Action] {
+        guard phase == .sasAwaitUser, let values = sasValues else { return [] }
+        guard confirmed else { return fail(.sasRejected) }
+        guard let mac = try? PairingProof.mac(
+            secret: values.secret, nonce: values.nonce, binding: .helperChallenge(nonce: values.nonce, challenge: values.challenge),
+            macSPKIHash: peerSPKIHash, ipadSPKIHash: ownSPKIHash, deviceName: pairName),
+            let prove = try? LinkPairProve(deviceName: pairName, ipadSPKIHash: LinkBytes32(ownSPKIHash), mac: LinkBytes32(mac))
+        else { return fail(.pairingFailed("cannot build confirmation")) }
+        phase = .awaitingPairResult
+        return [.send(.pairProve(prove))]
+    }
+
+    private mutating func handleWelcome(_ w: LinkWelcome) -> [Action] {
+        guard let range = hello.protocolRange,
+              range.contains(w.protocolVersion), LinkProtocolVersion.supported.contains(w.protocolVersion)
+        else { return fail(.versionMismatch(.remoteTooNew(remoteMin: w.protocolVersion))) }
+        phase = .finished  // the machine's job is done
+        let info = LinkSessionInfo(
+            protocolVersion: w.protocolVersion, capabilities: w.capabilities.intersection(hello.capabilities),
+            sessionID: w.sessionID, resumeToken: w.resumeToken.data, macName: w.macName, displays: w.displays)
+        return [.event(.ready(info))]
+    }
+}
+
+// MARK: - Helper
+
+/// What the helper's UI is asked to approve.
+public struct PairingApprovalRequest: Sendable, Equatable {
+    public enum Reason: Sendable, Equatable {
+        /// A new iPad wants to pair (`method` says how it proved itself).
+        case newPairing(Method)
+        /// A paired iPad connects and the Mac is set to "ask before each session".
+        case session
+    }
+    public enum Method: Sendable, Equatable { case qr, sas }
+
+    public var reason: Reason
+    /// Sanitised: no control characters, at most 64 bytes. Still untrusted text: show it, never act on it.
+    public var deviceName: String
+    public var deviceSPKIHash: Data
+    /// In SAS pairing, the six digits the Mac user should see matching on the iPad.
+    public var sasCode: String?
+}
+
+/// What the helper app learns when a session is established.
+public struct HelperSessionReady: Sendable, Equatable {
+    public var deviceName: String
+    public var deviceSPKIHash: Data
+    public var clientHello: LinkHello
+    public var protocolVersion: UInt16
+    public var capabilities: LinkCapabilities
+    public var sessionID: UInt64
+    /// The iPad presented a valid resume token (single use, bound to its identity).
+    public var resumed: Bool
+    /// `lastStateVersion` the iPad sent with a valid resume token.
+    public var lastStateVersion: UInt64?
+    /// The device was paired during this connection.
+    public var newlyPaired: Bool
+}
+
+struct HelperSessionMachine {
+    struct Configuration: Sendable {
+        var macName: String
+        var helperSPKIHash: Data
+        var capabilities: LinkCapabilities
+        var displays: [LinkDisplayInfo]
+        var askBeforeEachSession: Bool
+        /// Whether SAS pairing is currently allowed (only while the pairing window is open on the Mac).
+        var sasPairingEnabled: Bool
+    }
+
+    enum Action: Equatable {
+        case send(LinkMessage)
+        case ready(HelperSessionReady)
+        case requestApproval(PairingApprovalRequest)
+        case terminate(LinkSessionError, notifyPeer: Bool)
+    }
+
+    private enum Phase {
+        case awaitingHello, awaitingFirst
+        case sasAwaitReveal, sasAwaitProve
+        case awaitingApproval, finished
+    }
+
+    private enum PendingApproval {
+        case pairing(name: String, method: PairingApprovalRequest.Method)
+        case session(resumed: Bool, lastStateVersion: UInt64?)
+    }
+
+    let configuration: Configuration
+    let peerSPKIHash: Data
+    let exporter: Data?
+    private let devices: any PairedDeviceStore
+    private let ledger: PairingSecretLedger
+    private let resumeTokens: ResumeTokenStore
+    private let clock: LinkClock
+
+    private var phase = Phase.awaitingHello
+    private var clientHello: LinkHello?
+    private var version: UInt16 = 0
+    private var challenge: Data?
+    private var sas: SASExchange?
+    private var sasValues: (secret: Data, nonce: Data, challenge: Data)?
+    private var sasCode: String?
+    private var sasName: String?
+    private var pending: PendingApproval?
+
+    init(
+        configuration: Configuration, peerSPKIHash: Data, exporter: Data?, devices: any PairedDeviceStore,
+        ledger: PairingSecretLedger, resumeTokens: ResumeTokenStore, clock: @escaping LinkClock = { Date() }
+    ) {
+        self.configuration = configuration
+        self.peerSPKIHash = peerSPKIHash
+        self.exporter = exporter
+        self.devices = devices
+        self.ledger = ledger
+        self.resumeTokens = resumeTokens
+        self.clock = clock
+    }
+
+    var isFinished: Bool { phase == .finished }
+
+    /// Seconds the current phase may take, or `nil` when it waits for a person (approval has its own deadline).
+    var phaseTimeout: TimeInterval? { phase == .awaitingApproval || phase == .finished ? nil : 10 }
+
+    private mutating func fail(_ error: LinkSessionError, notify: Bool = true) -> [Action] {
+        phase = .finished
+        return [.terminate(error, notifyPeer: notify)]
+    }
+
+    private mutating func deny(_ reason: LinkPairDenyReason) -> [Action] {
+        phase = .finished
+        return [.send(.pairDenied(reason)), .terminate(.pairingDenied(reason), notifyPeer: false)]
+    }
+
+    mutating func receive(_ message: LinkMessage) -> [Action] {
+        if phase == .finished { return [] }
+        if case .close(let code, _) = message { return fail(.fromPeerClose(code), notify: false) }
+        switch (phase, message) {
+        case (.awaitingHello, .hello(let h)): return handleHello(h)
+        case (.awaitingFirst, .resume(let r)): return handleResume(r)
+        case (.awaitingFirst, .pairProve(let p)): return handleQRProve(p)
+        case (.awaitingFirst, .sasCommit(let c)): return handleSASCommit(c)
+        case (.sasAwaitReveal, .sasReveal(let r)): return handleSASReveal(r)
+        case (.sasAwaitProve, .pairProve(let p)): return handleSASProve(p)
+        default: return fail(.protocolViolation("unexpected \(message.type)"))
+        }
+    }
+
+    private mutating func handleHello(_ h: LinkHello) -> [Action] {
+        guard let range = h.protocolRange else { return fail(.protocolViolation("hello version range")) }
+        switch LinkVersionNegotiation.evaluate(local: LinkProtocolVersion.supported, remote: range) {
+        case .agreed(let v): version = v
+        case let other: return fail(.versionMismatch(other))
+        }
+        clientHello = h
+        phase = .awaitingFirst
+        guard exporter == nil else { return [] }
+        // No TLS exporter on this transport: bind the pairing proof to a fresh challenge instead.
+        guard let c = try? LinkRandom.bytes(32), let bytes = try? LinkBytes32(c) else { return fail(.transport("random")) }
+        challenge = c
+        return [.send(.pairChallenge(bytes))]
+    }
+
+    // MARK: Reconnect
+
+    private mutating func handleResume(_ r: LinkResume) -> [Action] {
+        guard let device = devices.device(spkiHash: peerSPKIHash) else { return fail(.notAuthorized) }
+        var resumed = false
+        // An all-zero token means "no token": nothing to consume.
+        if r.resumeToken.data != Data(repeating: 0, count: 32) {
+            resumed = resumeTokens.consume(r.resumeToken.data, identityHash: peerSPKIHash)
+        }
+        let version = resumed ? r.lastStateVersion : nil
+        if configuration.askBeforeEachSession {
+            pending = .session(resumed: resumed, lastStateVersion: version)
+            phase = .awaitingApproval
+            return [
+                .send(.approvalRequired),
+                .requestApproval(PairingApprovalRequest(reason: .session, deviceName: device.name, deviceSPKIHash: peerSPKIHash, sasCode: nil)),
+            ]
+        }
+        return welcome(deviceName: device.name, resumed: resumed, lastStateVersion: version, newlyPaired: false, extra: [])
+    }
+
+    // MARK: QR pairing
+
+    private mutating func handleQRProve(_ p: LinkPairProve) -> [Action] {
+        let name = p.deviceName
+        guard constantTimeEqual(p.ipadSPKIHash.data, peerSPKIHash),
+              name.utf8.count <= PairingProof.maxDeviceNameBytes, !name.isEmpty
+        else { return deny(.badProof) }
+        let exporter = self.exporter, challenge = self.challenge
+        let macHash = configuration.helperSPKIHash, ipadHash = peerSPKIHash, received = p.mac.data
+        do {
+            try ledger.attemptAny { offer in
+                let binding: PairingBinding
+                if let exporter { binding = .exporter(exporter) }
+                else if let challenge { binding = .helperChallenge(nonce: offer.nonce, challenge: challenge) }
+                else { return false }
+                return PairingProof.verify(
+                    mac: received, secret: offer.secret, nonce: offer.nonce, binding: binding,
+                    macSPKIHash: macHash, ipadSPKIHash: ipadHash, deviceName: name)
+            }
+        } catch let e as PairingError {
+            switch e {
+            case .tooManyAttempts: return deny(.tooManyAttempts)
+            case .rateLimited: return deny(.busy)
+            case .unknownOrUsedSecret, .expired: return deny(.expired)
+            default: return deny(.badProof)
+            }
+        } catch { return deny(.badProof) }
+        let safeName = SessionText.sanitizedDeviceName(name)
+        pending = .pairing(name: safeName, method: .qr)
+        phase = .awaitingApproval
+        return [.requestApproval(PairingApprovalRequest(
+            reason: .newPairing(.qr), deviceName: safeName, deviceSPKIHash: peerSPKIHash, sasCode: nil))]
+    }
+
+    // MARK: SAS pairing
+
+    private mutating func handleSASCommit(_ c: LinkBytes32) -> [Action] {
+        guard configuration.sasPairingEnabled else { return deny(.unsupported) }
+        var exchange = SASExchange()
+        guard (try? exchange.receivePeerCommit(c.data)) != nil, let commit = try? LinkBytes32(exchange.commit) else {
+            return fail(.protocolViolation("sas commit"))
+        }
+        sas = exchange
+        phase = .sasAwaitReveal
+        return [.send(.sasCommit(commit))]
+    }
+
+    private mutating func handleSASReveal(_ r: LinkBytes32) -> [Action] {
+        guard var exchange = sas, (try? exchange.receivePeerReveal(r.data)) != nil,
+              let mine = try? LinkBytes32(exchange.reveal),
+              let code = try? exchange.code(transcript: SASConfirmation.transcript(
+                  macSPKIHash: configuration.helperSPKIHash, ipadSPKIHash: peerSPKIHash))
+        else { return fail(.pairingFailed("sas reveal does not match its commit")) }
+        sas = exchange
+        sasCode = code
+        sasValues = SASConfirmation.values(code: code, revealA: exchange.reveal, revealB: r.data)
+        phase = .sasAwaitProve
+        return [.send(.sasReveal(mine))]
+    }
+
+    private mutating func handleSASProve(_ p: LinkPairProve) -> [Action] {
+        guard let values = sasValues, let code = sasCode else { return fail(.protocolViolation("sas state")) }
+        guard constantTimeEqual(p.ipadSPKIHash.data, peerSPKIHash), p.deviceName.utf8.count <= PairingProof.maxDeviceNameBytes,
+              !p.deviceName.isEmpty,
+              PairingProof.verify(
+                  mac: p.mac.data, secret: values.secret, nonce: values.nonce,
+                  binding: .helperChallenge(nonce: values.nonce, challenge: values.challenge),
+                  macSPKIHash: configuration.helperSPKIHash, ipadSPKIHash: peerSPKIHash, deviceName: p.deviceName)
+        else { return deny(.badProof) }
+        let safeName = SessionText.sanitizedDeviceName(p.deviceName)
+        pending = .pairing(name: safeName, method: .sas)
+        phase = .awaitingApproval
+        return [.requestApproval(PairingApprovalRequest(
+            reason: .newPairing(.sas), deviceName: safeName, deviceSPKIHash: peerSPKIHash, sasCode: code))]
+    }
+
+    // MARK: Approval and welcome
+
+    /// The local approval (LocalAuthentication on the Mac) finished.
+    mutating func approvalResult(_ approved: Bool) -> [Action] {
+        guard phase == .awaitingApproval, let pending else { return [] }
+        self.pending = nil
+        switch pending {
+        case .pairing(let name, _):
+            guard approved else { return deny(.userDenied) }
+            do { try devices.add(PairedDevice(spkiHash: peerSPKIHash, name: name, pairedAt: clock())) } catch { return deny(.busy) }
+            guard let helperID = try? LinkBytes32(configuration.helperSPKIHash) else { return fail(.transport("helper id")) }
+            return welcome(
+                deviceName: name, resumed: false, lastStateVersion: nil, newlyPaired: true,
+                extra: [.send(.pairOK(LinkPairOK(macName: configuration.macName, helperID: helperID)))])
+        case .session(let resumed, let lastStateVersion):
+            guard approved else { return fail(.approvalDenied) }
+            let name = devices.device(spkiHash: peerSPKIHash)?.name ?? "iPad"
+            // Revoked while the prompt was open?
+            guard devices.device(spkiHash: peerSPKIHash) != nil else { return fail(.notAuthorized) }
+            return welcome(deviceName: name, resumed: resumed, lastStateVersion: lastStateVersion, newlyPaired: false, extra: [])
+        }
+    }
+
+    private mutating func welcome(
+        deviceName: String, resumed: Bool, lastStateVersion: UInt64?, newlyPaired: Bool, extra: [Action]
+    ) -> [Action] {
+        guard let hello = clientHello,
+              let token = try? resumeTokens.issue(for: peerSPKIHash), let tokenBytes = try? LinkBytes32(token),
+              let idBytes = try? LinkRandom.bytes(8)
+        else { return fail(.transport("cannot issue session")) }
+        let sessionID = idBytes.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) } | 1  // never zero
+        let caps = configuration.capabilities.intersection(hello.capabilities)
+        phase = .finished
+        let welcome = LinkWelcome(
+            protocolVersion: version, sessionID: sessionID, resumeToken: tokenBytes, macName: configuration.macName,
+            displays: configuration.displays, capabilities: caps)
+        return extra + [
+            .send(.welcome(welcome)),
+            .ready(HelperSessionReady(
+                deviceName: deviceName, deviceSPKIHash: peerSPKIHash, clientHello: hello, protocolVersion: version,
+                capabilities: caps, sessionID: sessionID, resumed: resumed, lastStateVersion: lastStateVersion,
+                newlyPaired: newlyPaired)),
+        ]
+    }
+}

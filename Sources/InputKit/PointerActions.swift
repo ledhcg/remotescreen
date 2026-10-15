@@ -14,3 +14,22 @@ public enum PointerActions {
         return completed
     }
 }
+
+extension PointerActions {
+    /// Same as the `ClientMessage` version, over intents: `true` if the mouse buttons went from pressed to all released. Wheel-line scroll
+    /// intents carry the held buttons too, as their RFB wheel ticks always did.
+    public static func completesAButtonAction(_ intents: [InputIntent], previousButtons: inout PointerButtons) -> Bool {
+        var completed = false
+        for intent in intents {
+            let pressed: PointerButtons
+            switch intent {
+            case .pointer(_, let buttons, _): pressed = buttons
+            case .scroll(_, let buttons, _, _, _, _, false): pressed = buttons
+            default: continue
+            }
+            if !previousButtons.isEmpty, pressed.isEmpty { completed = true }
+            previousButtons = pressed
+        }
+        return completed
+    }
+}

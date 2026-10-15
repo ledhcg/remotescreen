@@ -1,12 +1,11 @@
-import RFBKit
 import Testing
 @testable import InputKit
 
 @Suite("ModifierKeys: held, latched once, locked (Sidecar style)")
 struct ModifierKeysTests {
     private let cmd = StickyModifier.command
-    private func down(_ m: StickyModifier) -> ClientMessage { .keyEvent(isDown: true, keysym: m.keysym) }
-    private func up(_ m: StickyModifier) -> ClientMessage { .keyEvent(isDown: false, keysym: m.keysym) }
+    private func down(_ m: StickyModifier) -> InputIntent { .key(KeyStroke(keysym: m.keysym, macKeyCode: m.macKeyCode, isDown: true)) }
+    private func up(_ m: StickyModifier) -> InputIntent { .key(KeyStroke(keysym: m.keysym, macKeyCode: m.macKeyCode, isDown: false)) }
 
     @Test func holdingPressesImmediatelySoCommandClickWorks() {
         var keys = ModifierKeys()
@@ -71,8 +70,8 @@ struct ModifierKeysTests {
     @Test func everyPressHasExactlyOneRelease() {
         var keys = ModifierKeys()
         var balance = 0
-        func count(_ messages: [ClientMessage]) {
-            for case .keyEvent(let isDown, _) in messages { balance += isDown ? 1 : -1 }
+        func count(_ messages: [InputIntent]) {
+            for case .key(let stroke) in messages { balance += stroke.isDown ? 1 : -1 }
         }
         count(keys.touchDown(cmd, at: 0)); count(keys.touchUp(cmd, at: 0.1)) // latch
         count(keys.touchDown(cmd, at: 0.2)); count(keys.touchUp(cmd, at: 0.25)) // lock

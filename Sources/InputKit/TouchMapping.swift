@@ -107,13 +107,13 @@ public enum MouseButton: Sendable, Equatable {
 
 /// What to do after a gesture.
 public struct TouchOutput: Equatable, Sendable {
-    /// Messages to send to the Mac, in order.
-    public var messages: [ClientMessage] = []
+    /// What to do on the Mac, in order, independent of the wire protocol (`RFBInputEncoder` turns it into RFB messages).
+    public var intents: [InputIntent] = []
     /// If present, the viewport must pan by this many points.
     public var viewportPan: CGPoint?
 }
 
-/// Turns touch gestures into RFB mouse events.
+/// Turns touch gestures into protocol-neutral pointer, scroll and gesture intents.
 public struct TouchMapper: Sendable {
     public var policy: TouchPolicy
 
@@ -124,7 +124,7 @@ public struct TouchMapper: Sendable {
     /// `true` once the app has placed the pointer for the first time. Before that we do not know where the Mac's real pointer is
     /// (RFB does not report the position), so we should not draw a fake pointer at (0, 0).
     public private(set) var hasPointer = false
-    private var buttons: UInt8 = 0
+    private var buttons: PointerButtons = []
     private var lastLocation: CGPoint?
     private var scrollAccumulator = CGPoint.zero
     private var isDragging = false
@@ -132,12 +132,8 @@ public struct TouchMapper: Sendable {
     private var appleScrollState = AppleScrollState.idle
     private var appleScrollRemainder = CGPoint.zero
 
-    static let leftButton: UInt8 = 1 << 0
-    static let rightButton: UInt8 = 1 << 2
-    static let wheelUp: UInt8 = 1 << 3
-    static let wheelDown: UInt8 = 1 << 4
-    static let wheelLeft: UInt8 = 1 << 5
-    static let wheelRight: UInt8 = 1 << 6
+    static let leftButton = PointerButtons.left
+    static let rightButton = PointerButtons.right
 
     /// - Parameter initialPointer: pointer position if known. Omitting it means unknown (`hasPointer == false`).
     public init(policy: TouchPolicy = TouchPolicy(), initialPointer: (x: Int, y: Int)? = nil) {
@@ -151,23 +147,23 @@ public struct TouchMapper: Sendable {
         switch event {
         case .tap(let point, let count):
             guard let target = target(at: point, in: space) else { return output }
-            for _ in 0..<max(1, count) { output.messages += click(Self.leftButton, at: target) }
+            for _ in 0..<max(1, count) { output.intents += click(Self.leftButton, at: target) }
 
         case .twoFingerTap(let point):
             guard let target = target(at: point, in: space) else { return output }
-            output.messages += click(Self.rightButton, at: target)
+            output.intents += click(Self.rightButton, at: target)
 
         case .longPress(let point, let phase):
-            output.messages += dragStep(to: point, phase: phase, in: space)
+            output.intents += dragStep(to: point, phase: phase, in: space)
 
         case .pan(let location, let translation, let phase):
             switch policy.oneFingerDrag(isZoomed: isZoomed) {
             case .moveCursor:
                 if let target = movedTarget(location: location, translation: translation, phase: phase, in: space) {
-                    output.messages.append(pointerMessage(target))
+                    output.intents.append(pointerIntent(target))
                 }
             case .dragWithLeftButton:
-                output.messages += dragStep(to: location, phase: phase, in: space)
+                output.intents += dragStep(to: location, phase: phase, in: space)
             case .panViewport:
                 if phase == .changed { output.viewportPan = translation }
             }
@@ -175,52 +171,52 @@ public struct TouchMapper: Sendable {
         case .twoFingerPan(let location, let translation, let phase):
             switch policy.twoFingerPan(isZoomed: isZoomed) {
             case .scroll:
-                output.messages += scroll(location: location, translation: translation, phase: phase, in: space)
+                output.intents += scroll(location: location, translation: translation, phase: phase, in: space)
             case .panViewport:
                 if phase == .changed { output.viewportPan = translation }
             }
 
         case .pencil(let action):
-            output.messages += pencil(action, in: space)
+            output.intents += pencil(action, in: space)
 
         case .hover(let location):
-            if let target = absoluteTarget(location, in: space) { output.messages.append(pointerMessage(target)) }
+            if let target = absoluteTarget(location, in: space) { output.intents.append(pointerIntent(target)) }
 
         case .mouseButton(let location, let button, let phase):
             let bit = button == .primary ? Self.leftButton : Self.rightButton
             guard let target = absoluteTarget(location, in: space) else { return output }
             switch phase {
             case .began:
-                output.messages.append(pointerMessage(target))
-                buttons |= bit
+                output.intents.append(pointerIntent(target))
+                buttons.insert(bit)
             case .changed:
                 break
             case .ended:
-                buttons &= ~bit
+                buttons.remove(bit)
             }
-            output.messages.append(pointerMessage(target))
+            output.intents.append(pointerIntent(target))
 
         case .scroll(let location, let translation, let phase):
-            output.messages += scroll(location: location, translation: translation, phase: phase, in: space, atLocation: true)
+            output.intents += scroll(location: location, translation: translation, phase: phase, in: space, atLocation: true)
 
         case .secondaryClickAtPointer:
             guard hasPointer else { return output }
-            output.messages += click(Self.rightButton, at: pointer)
+            output.intents += click(Self.rightButton, at: pointer)
 
         case .magnify(let location, let delta, let phase):
-            output.messages += gesture(at: location, value: delta, phase: phase, in: space) { .magnify($0, phase: $1, x: $2, y: $3) }
+            output.intents += gesture(.magnify, at: location, value: delta, phase: phase, in: space)
 
         case .rotate(let location, let degrees, let phase):
-            output.messages += gesture(at: location, value: degrees, phase: phase, in: space) { .rotate($0, phase: $1, x: $2, y: $3) }
+            output.intents += gesture(.rotate, at: location, value: degrees, phase: phase, in: space)
         }
         return output
     }
 
     /// Releases every held button (when a gesture is cancelled, on backgrounding, on disconnect) so the Mac is not left with a stuck mouse button.
-    public mutating func releaseAll() -> [ClientMessage] {
-        defer { buttons = 0; isDragging = false; lastLocation = nil; scrollAccumulator = .zero }
-        guard buttons != 0 else { return [] }
-        return [.pointerEvent(buttons: 0, x: clampedX(pointer.x), y: clampedY(pointer.y))]
+    public mutating func releaseAll() -> [InputIntent] {
+        defer { buttons = []; isDragging = false; lastLocation = nil; scrollAccumulator = .zero }
+        guard !buttons.isEmpty else { return [] }
+        return [.pointer(at: RemotePoint(x: Double(pointer.x), y: Double(pointer.y)), buttons: [], modifiers: nil)]
     }
 
     // MARK: - Choosing a position
@@ -272,38 +268,38 @@ public struct TouchMapper: Sendable {
 
     /// Pinch/rotate on the Mac: first move the pointer to the midpoint between the two fingers (Mac apps zoom around the pointer), then send each step.
     private mutating func gesture(
-        at location: CGPoint, value: Double, phase: GesturePhase, in space: some RemoteCoordinateSpace,
-        _ make: (Double, AppleGesturePhase, UInt16, UInt16) -> AppleInputEvent
-    ) -> [ClientMessage] {
+        _ kind: GestureKind, at location: CGPoint, value: Double, phase: GesturePhase, in space: some RemoteCoordinateSpace
+    ) -> [InputIntent] {
         guard let target = space.remotePixel(forView: location, clamped: true) else { return [] }
-        var messages: [ClientMessage] = []
-        if phase == .began, buttons == 0 {
+        var messages: [InputIntent] = []
+        if phase == .began, buttons.isEmpty {
             pointer = target
-            messages.append(pointerMessage(target))
+            messages.append(pointerIntent(target))
         }
-        let x = clampedX(pointer.x), y = clampedY(pointer.y)
+        let at = RemotePoint(x: Double(pointer.x), y: Double(pointer.y))
+        func step(_ value: Double, _ phase: InputPhase) -> InputIntent { .gesture(kind: kind, at: at, value: value, phase: phase) }
         // The Mac receives began and ended carrying no value (the form verified on a real machine); the change UIKit reports along with began/ended (fingers have
         // already pinched a little before the recognizer starts) is sent separately as a changed step so it is not lost.
-        if phase == .began { messages.append(.appleEvent(make(0, .began, x, y))) }
-        if phase == .changed || value != 0 { messages.append(.appleEvent(make(value, .changed, x, y))) }
-        if phase == .ended { messages.append(.appleEvent(make(0, .ended, x, y))) }
+        if phase == .began { messages.append(step(0, .began)) }
+        if phase == .changed || value != 0 { messages.append(step(value, .changed)) }
+        if phase == .ended { messages.append(step(0, .ended)) }
         return messages
     }
 
-    private mutating func pencil(_ action: PencilAction, in space: some RemoteCoordinateSpace) -> [ClientMessage] {
+    private mutating func pencil(_ action: PencilAction, in space: some RemoteCoordinateSpace) -> [InputIntent] {
         switch action {
         case .press(let point):
             guard let target = absoluteTarget(point, in: space) else { return [] }
-            let move = pointerMessage(target)
-            buttons |= Self.leftButton
-            return [move, pointerMessage(target)]
+            let move = pointerIntent(target)
+            buttons.insert(Self.leftButton)
+            return [move, pointerIntent(target)]
         case .move(let point):
             guard let target = absoluteTarget(point, in: space) else { return [] }
-            return [pointerMessage(target)]
+            return [pointerIntent(target)]
         case .release(let point):
-            buttons &= ~Self.leftButton
+            buttons.remove(Self.leftButton)
             let target = absoluteTarget(point, in: space) ?? pointer
-            return [pointerMessage(target)]
+            return [pointerIntent(target)]
         case .click(let point), .rightClick(let point):
             // Pencil touching the black border outside the Mac screen: no click (like a finger).
             guard let pixel = space.remotePixel(forView: point, clamped: false) else { return [] }
@@ -315,30 +311,30 @@ public struct TouchMapper: Sendable {
 
     // MARK: - Click, drag, scroll
 
-    private func pointerMessage(_ target: (x: Int, y: Int)) -> ClientMessage {
-        .pointerEvent(buttons: buttons, x: clampedX(target.x), y: clampedY(target.y))
+    private func pointerIntent(_ target: (x: Int, y: Int)) -> InputIntent {
+        .pointer(at: RemotePoint(x: Double(target.x), y: Double(target.y)), buttons: buttons, modifiers: nil)
     }
 
     /// One click: move to the position, press, release.
-    private mutating func click(_ button: UInt8, at target: (x: Int, y: Int)) -> [ClientMessage] {
-        let x = clampedX(target.x), y = clampedY(target.y)
+    private mutating func click(_ button: PointerButtons, at target: (x: Int, y: Int)) -> [InputIntent] {
+        let point = RemotePoint(x: Double(target.x), y: Double(target.y))
         return [
-            .pointerEvent(buttons: buttons, x: x, y: y),
-            .pointerEvent(buttons: buttons | button, x: x, y: y),
-            .pointerEvent(buttons: buttons, x: x, y: y),
+            .pointer(at: point, buttons: buttons, modifiers: nil),
+            .pointer(at: point, buttons: buttons.union(button), modifiers: nil),
+            .pointer(at: point, buttons: buttons, modifiers: nil),
         ]
     }
 
     /// Hold the left button and drag (used for press-and-hold-then-drag and for "one-finger drag = drag and drop").
-    private mutating func dragStep(to location: CGPoint, phase: GesturePhase, in space: some RemoteCoordinateSpace) -> [ClientMessage] {
+    private mutating func dragStep(to location: CGPoint, phase: GesturePhase, in space: some RemoteCoordinateSpace) -> [InputIntent] {
         switch phase {
         case .began:
             guard let target = target(at: location, in: space) else { return [] }
             lastLocation = location
             isDragging = true
-            let move = pointerMessage(target)
-            buttons |= Self.leftButton
-            return [move, pointerMessage(target)]
+            let move = pointerIntent(target)
+            buttons.insert(Self.leftButton)
+            return [move, pointerIntent(target)]
 
         case .changed:
             guard isDragging else { return [] }
@@ -356,23 +352,23 @@ public struct TouchMapper: Sendable {
             lastLocation = location
             guard let target else { return [] }
             pointer = target
-            return [pointerMessage(target)]
+            return [pointerIntent(target)]
 
         case .ended:
             guard isDragging else { return [] }
             isDragging = false
             lastLocation = nil
-            buttons &= ~Self.leftButton
-            return [pointerMessage(pointer)]
+            buttons.remove(Self.leftButton)
+            return [pointerIntent(pointer)]
         }
     }
 
-    /// Scrolling: accumulate drag distance, and every `scrollTickDistance` points produces one wheel tick (press then release button 4 or 5, 6, 7).
+    /// Scrolling: accumulate drag distance, and every `scrollTickDistance` points produces one line of scroll (the RFB encoder sends it as a wheel button tick).
     /// - Parameter atLocation: scroll at `location` regardless of mode (mouse, iPad trackpad: there it is the pointer).
     private mutating func scroll(
         location: CGPoint, translation: CGPoint, phase: GesturePhase, in space: some RemoteCoordinateSpace,
         atLocation: Bool = false
-    ) -> [ClientMessage] {
+    ) -> [InputIntent] {
         if policy.appleSmoothScroll {
             return appleScroll(location: location, translation: translation, phase: phase, in: space, atLocation: atLocation)
         }
@@ -391,7 +387,6 @@ public struct TouchMapper: Sendable {
         // Direct touch: scroll where the two fingers rest. Trackpad: at the pointer.
         let anchor = (policy.mode == .directTouch || atLocation ? space.remotePixel(forView: location, clamped: true) : nil) ?? pointer
         let tick = policy.scrollTickDistance
-        var messages: [ClientMessage] = []
 
         func ticks(_ value: inout Double) -> Int {
             let whole = Int((value / tick).rounded(.towardZero))
@@ -404,24 +399,27 @@ public struct TouchMapper: Sendable {
         let horizontalTicks = ticks(&horizontal)
         scrollAccumulator = CGPoint(x: horizontal, y: vertical)
 
-        // Finger moving up (negative translation.y) with natural scrolling means content moves up, that is scroll down (button 5).
-        let down = policy.naturalScrolling ? -verticalTicks : verticalTicks
-        let right = policy.naturalScrolling ? -horizontalTicks : horizontalTicks
-        if down != 0 || right != 0 { pointer = anchor }
-        messages += wheel(down > 0 ? Self.wheelDown : Self.wheelUp, count: abs(down), at: anchor)
-        messages += wheel(right > 0 ? Self.wheelRight : Self.wheelLeft, count: abs(right), at: anchor)
-        return messages
+        // Finger moving up (negative translation.y) with natural scrolling means content moves up, which is scroll down. Intents use the
+        // NSEvent convention (positive: content moves down / right), so natural scrolling passes the finger direction through.
+        let lineY = policy.naturalScrolling ? verticalTicks : -verticalTicks
+        let lineX = policy.naturalScrolling ? horizontalTicks : -horizontalTicks
+        guard lineY != 0 || lineX != 0 else { return [] }
+        pointer = anchor
+        return [.scroll(
+            at: RemotePoint(x: Double(anchor.x), y: Double(anchor.y)), buttons: buttons, dx: Double(lineX), dy: Double(lineY),
+            phase: .none, momentumPhase: .none, isContinuous: false
+        )]
     }
 
     /// Mac trackpad-style scrolling: began, changed..., ended; if steps remain after ended (the app's momentum) they become a momentum phase
     /// begin, continue..., end, so the Mac handles it like a real trackpad swipe (bounce at the edge, continued scrolling inside the app).
     private mutating func appleScroll(
         location: CGPoint, translation: CGPoint, phase: GesturePhase, in space: some RemoteCoordinateSpace, atLocation: Bool
-    ) -> [ClientMessage] {
+    ) -> [InputIntent] {
         let anchor = (policy.mode == .directTouch || atLocation ? space.remotePixel(forView: location, clamped: true) : nil) ?? pointer
-        let x = clampedX(anchor.x), y = clampedY(anchor.y)
-        func event(_ dx: Int32, _ dy: Int32, _ phase: AppleScroll.Phase, _ momentum: AppleScroll.Momentum) -> ClientMessage {
-            .appleEvent(.scroll(AppleScroll(deltaX: dx, deltaY: dy, phase: phase, momentum: momentum, x: x, y: y)))
+        let at = RemotePoint(x: Double(anchor.x), y: Double(anchor.y))
+        func event(_ dx: Int32, _ dy: Int32, _ phase: InputPhase, _ momentum: InputPhase) -> InputIntent {
+            .scroll(at: at, buttons: buttons, dx: Double(dx), dy: Double(dy), phase: phase, momentumPhase: momentum, isContinuous: true)
         }
         switch phase {
         case .began:
@@ -432,7 +430,7 @@ public struct TouchMapper: Sendable {
             defer { appleScrollState = .idle }
             switch appleScrollState {
             case .scrolling: return [event(0, 0, .ended, .none)]
-            case .momentum: return [event(0, 0, .none, .end)]
+            case .momentum: return [event(0, 0, .none, .ended)]
             case .idle: return []
             }
         case .changed:
@@ -452,19 +450,9 @@ public struct TouchMapper: Sendable {
             return dx == 0 && dy == 0 ? [] : [event(dx, dy, .changed, .none)]
         case .idle:
             appleScrollState = .momentum
-            return [event(dx, dy, .none, .begin)]
+            return [event(dx, dy, .none, .began)]
         case .momentum:
-            return dx == 0 && dy == 0 ? [] : [event(dx, dy, .none, .continue)]
+            return dx == 0 && dy == 0 ? [] : [event(dx, dy, .none, .changed)]
         }
     }
-
-    private func wheel(_ button: UInt8, count: Int, at target: (x: Int, y: Int)) -> [ClientMessage] {
-        let x = clampedX(target.x), y = clampedY(target.y)
-        return (0..<count).flatMap { _ in
-            [.pointerEvent(buttons: buttons | button, x: x, y: y), .pointerEvent(buttons: buttons, x: x, y: y)]
-        }
-    }
-
-    private func clampedX(_ value: Int) -> UInt16 { UInt16(clamping: max(value, 0)) }
-    private func clampedY(_ value: Int) -> UInt16 { UInt16(clamping: max(value, 0)) }
 }

@@ -13,13 +13,14 @@ public protocol ScreonViewDelegate: AnyObject {
 ///
 /// - Display: pinch to zoom, drag to see the off-screen part when zoomed in.
 /// - Input: touch gestures are converted to mouse events by `InputKit.TouchMapper`, keys are converted to keysyms by `KeyboardState`.
-/// Every outgoing message goes through `onInput`, which the view's user connects to `RFBSession.post`.
+/// Everything the user does leaves as protocol-neutral `InputIntent`s through `onIntents`; the owner encodes them for its protocol
+/// (`RFBInputEncoder` for Screen Sharing) and sends them.
 @MainActor
 public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate, UIKeyInput {
     public weak var geometryDelegate: ScreonViewDelegate?
 
-    /// Receives every mouse/key message to send to the Mac, in order.
-    public var onInput: (([ClientMessage]) -> Void)?
+    /// Receives every pointer, scroll, gesture and key intent to send to the Mac, in order.
+    public var onIntents: (([InputIntent]) -> Void)?
 
     public private(set) var geometry = ViewportGeometry(remoteSize: .zero, viewSize: .zero)
     private var renderer: FramebufferRenderer?
@@ -90,9 +91,10 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         delegate = self
         isMultipleTouchEnabled = true
         backgroundColor = .black
-        // When returning to the app (from background, a system dialog, a menu...), take keyboard focus back, otherwise the hardware keyboard stops arriving.
+        // When this window's scene becomes active again (from background, a system dialog, a menu...), take keyboard focus back, otherwise the
+        // hardware keyboard stops arriving. Per scene, not per app: another window of the app activating must not move focus here.
         NotificationCenter.default.addObserver(
-            self, selector: #selector(reclaimKeyboardFocus), name: UIApplication.didBecomeActiveNotification, object: nil
+            self, selector: #selector(sceneDidActivate(_:)), name: UIScene.didActivateNotification, object: nil
         )
 
         // A single accessibility element that allows direct interaction (VoiceOver does not intercept touch gestures).
@@ -165,9 +167,10 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         addInteraction(UIPointerInteraction(delegate: self))
         addInteraction(UIPencilInteraction(delegate: self))
 
-        // On backgrounding or focus loss, release all keys and mouse buttons so the Mac is not left stuck (for example Command never released).
+        // When this window's scene deactivates (backgrounding, focus moving to another window), release all keys and mouse buttons so the Mac is
+        // not left stuck (for example Command never released). Per scene, so one window going inactive does not release input in another.
         NotificationCenter.default.addObserver(
-            self, selector: #selector(releaseAllInput), name: UIApplication.willResignActiveNotification, object: nil
+            self, selector: #selector(sceneWillDeactivate(_:)), name: UIScene.willDeactivateNotification, object: nil
         )
     }
 
@@ -333,14 +336,14 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             return
         }
         let output = touchMapper.handle(event, in: geometry, isZoomed: isZoomed)
-        if !output.messages.isEmpty {
-            onInput?(output.messages)
+        if !output.intents.isEmpty {
+            onIntents?(output.intents)
             requestFrame() // the cursor may have moved
             // A modifier latched once (tapping ⌘ on the sidebar or accessory bar) applies to ONE action only: previously it was released only after
             // a key, so after a ⌘-click it stayed down and the next typed key became an unintended ⌘ combination. A locked modifier stays.
-            if PointerActions.completesAButtonAction(output.messages, previousButtons: &lastSentButtons) {
+            if PointerActions.completesAButtonAction(output.intents, previousButtons: &lastSentButtons) {
                 let release = modifierKeys.actionCompleted()
-                if !release.isEmpty { onInput?(release) }
+                if !release.isEmpty { onIntents?(release) }
             }
         }
         if let pan = output.viewportPan {
@@ -350,7 +353,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     /// Mouse buttons (left, middle, right) last sent, to know when a click or a drag has just finished.
-    private var lastSentButtons: UInt8 = 0
+    private var lastSentButtons: PointerButtons = []
 
     private func phase(of recognizer: UIGestureRecognizer) -> GesturePhase {
         switch recognizer.state {
@@ -608,7 +611,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     @objc private func escapePressed() {
-        onInput?(VirtualKey.escape.tap + modifierKeys.actionCompleted())
+        onIntents?(VirtualKey.escape.tap + modifierKeys.actionCompleted())
     }
 
     @objc private func commandChordPressed(_ sender: UIKeyCommand) {
@@ -616,7 +619,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             || modifierKeys.active.contains(.command)
         guard let input = sender.input, let character = input.first,
               let chord = KeysymMapper.commandChord(character, commandAlreadyDown: commandDown) else { return }
-        onInput?(chord + modifierKeys.actionCompleted())
+        onIntents?(chord + modifierKeys.actionCompleted())
     }
 
     /// Keyboard focus lost (a menu or another window took it): the release of a held key will arrive elsewhere, so release now,
@@ -626,9 +629,25 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         if resigned {
             let messages = keyboard.releaseAll()
             updateKeyRepeat()
-            if !messages.isEmpty { onInput?(messages) }
+            if !messages.isEmpty { onIntents?(messages) }
         }
         return resigned
+    }
+
+    @objc private func sceneDidActivate(_ notification: Notification) {
+        guard isOwnScene(notification) else { return }
+        reclaimKeyboardFocus()
+    }
+
+    @objc private func sceneWillDeactivate(_ notification: Notification) {
+        guard isOwnScene(notification) else { return }
+        releaseAllInput()
+    }
+
+    /// Whether a scene notification is about the scene this view lives in.
+    private func isOwnScene(_ notification: Notification) -> Bool {
+        guard let scene = notification.object as? UIScene, let own = window?.windowScene else { return false }
+        return scene === own
     }
 
     @objc private func reclaimKeyboardFocus() {
@@ -656,7 +675,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     }
 
     private func handle(_ presses: Set<UIPress>, isDown: Bool) -> Bool {
-        var messages: [ClientMessage] = []
+        var messages: [InputIntent] = []
         var handled = false
         var releasedAPlainKey = false
         for press in presses {
@@ -677,7 +696,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         }
         // A modifier latched on the sidebar or accessory bar is released after the regular key is released, so the order is Cmd↓ c↓ c↑ Cmd↑.
         if releasedAPlainKey { messages += modifierKeys.actionCompleted() }
-        if !messages.isEmpty { onInput?(messages) }
+        if !messages.isEmpty { onIntents?(messages) }
         updateKeyRepeat()
         return handled
     }
@@ -703,7 +722,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// Sends one repeat if `key` is still the held key. Returns `false` when it should stop.
     private func repeatOnce(_ key: RepeatingKey) -> Bool {
         guard keyboard.repeating == key else { return false }
-        onInput?([.keyEvent(isDown: true, keysym: key.keysym)])
+        onIntents?([.key(key.keysym, isDown: true)])
         return true
     }
 
@@ -712,7 +731,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         momentum.stop()
         let messages = keyboard.releaseAll() + modifierKeys.releaseAll() + touchMapper.releaseAll()
         updateKeyRepeat()
-        if !messages.isEmpty { onInput?(messages) }
+        if !messages.isEmpty { onIntents?(messages) }
     }
 
     // MARK: Modifier keys (sidebar, accessory bar)
@@ -730,30 +749,30 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// A finger rests on a sidebar modifier key: press immediately on the Mac (to ⌘-click with the other hand).
     public func modifierTouchDown(_ modifier: StickyModifier) {
         let messages = modifierKeys.touchDown(modifier, at: CACurrentMediaTime())
-        if !messages.isEmpty { onInput?(messages) }
+        if !messages.isEmpty { onIntents?(messages) }
     }
 
     /// Finger lifted from a modifier key: release, or become latched once if it was a short tap.
     public func modifierTouchUp(_ modifier: StickyModifier) {
         let messages = modifierKeys.touchUp(modifier, at: CACurrentMediaTime())
-        if !messages.isEmpty { onInput?(messages) }
+        if !messages.isEmpty { onIntents?(messages) }
     }
 
     /// Tap a modifier key on the accessory bar: latch once; two quick taps lock; tapping while latched or locked drops it.
     public func toggleModifier(_ modifier: StickyModifier) {
         let messages = modifierKeys.tap(modifier, at: CACurrentMediaTime())
-        if !messages.isEmpty { onInput?(messages) }
+        if !messages.isEmpty { onIntents?(messages) }
     }
 
     /// Releases every modifier key of the sidebar and accessory bar (for example when hiding the sidebar: a locked key must not stay stuck without being visible).
     public func releaseModifiers() {
         let messages = modifierKeys.releaseAll()
-        if !messages.isEmpty { onInput?(messages) }
+        if !messages.isEmpty { onIntents?(messages) }
     }
 
     /// Press a key on the accessory bar or sidebar. A modifier latched once is released right after.
     public func press(_ key: VirtualKey) {
-        onInput?(key.tap + modifierKeys.actionCompleted())
+        onIntents?(key.tap + modifierKeys.actionCompleted())
     }
 
     /// ⌘ plus a letter (the sidebar's Undo button is ⌘Z). Do not press ⌘ again if it is held or locked: the second release would make
@@ -761,7 +780,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     public func pressCommandChord(_ character: Character) {
         let commandDown = modifierKeys.active.contains(.command)
         guard let chord = KeysymMapper.commandChord(character, commandAlreadyDown: commandDown) else { return }
-        onInput?(chord + modifierKeys.actionCompleted())
+        onIntents?(chord + modifierKeys.actionCompleted())
     }
 
     // MARK: UIKeyInput (on-screen keyboard)
@@ -771,11 +790,11 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     public func insertText(_ text: String) {
         let typed = KeyboardState.typing(text)
         guard !typed.isEmpty else { return }
-        onInput?(typed + modifierKeys.actionCompleted()) // a latched Ctrl/Cmd applies only to this character
+        onIntents?(typed + modifierKeys.actionCompleted()) // a latched Ctrl/Cmd applies only to this character
     }
 
     public func deleteBackward() {
-        onInput?([.keyEvent(isDown: true, keysym: 0xFF08), .keyEvent(isDown: false, keysym: 0xFF08)] + modifierKeys.actionCompleted()) // Backspace
+        onIntents?(InputIntent.tap(0xFF08, macKeyCode: 51) + modifierKeys.actionCompleted()) // Backspace
     }
 
     // Turn off autocorrect and autocapitalization: text goes straight to the Mac, which is where it gets processed.

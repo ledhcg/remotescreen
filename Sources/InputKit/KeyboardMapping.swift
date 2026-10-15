@@ -1,5 +1,4 @@
 import Foundation
-import RFBKit
 
 /// Modifier keys currently held. Mirrors the meaning of `UIKeyModifierFlags` without depending on UIKit.
 public struct KeyModifiers: OptionSet, Sendable, Hashable {
@@ -93,12 +92,13 @@ public enum KeysymMapper {
     /// - Parameter commandAlreadyDown: ⌘ has already been sent down (the user is holding a real ⌘, or ⌘ is latched on the accessory bar).
     /// In that case only the character is sent: pressing then releasing ⌘ ourselves would make the Mac see ⌘ released while the finger still holds it,
     /// and the next key (⌘G, ⌘V) would turn into a plain letter.
-    public static func commandChord(_ character: Character, commandAlreadyDown: Bool = false) -> [ClientMessage]? {
+    public static func commandChord(_ character: Character, commandAlreadyDown: Bool = false) -> [InputIntent]? {
         guard let scalar = String(character).lowercased().unicodeScalars.first, let keysym = keysym(forUnicode: scalar) else { return nil }
-        if commandAlreadyDown { return [.keyEvent(isDown: true, keysym: keysym), .keyEvent(isDown: false, keysym: keysym)] }
+        if commandAlreadyDown { return InputIntent.tap(keysym) }
+        let command = StickyModifier.command.macKeyCode
         return [
-            .keyEvent(isDown: true, keysym: commandLeft), .keyEvent(isDown: true, keysym: keysym),
-            .keyEvent(isDown: false, keysym: keysym), .keyEvent(isDown: false, keysym: commandLeft),
+            .key(commandLeft, macKeyCode: command, isDown: true), .key(keysym, isDown: true),
+            .key(keysym, isDown: false), .key(commandLeft, macKeyCode: command, isDown: false),
         ]
     }
 
@@ -154,7 +154,7 @@ public struct KeyboardState: Sendable {
         !(0xE0...0xE7).contains(hidUsage) && hidUsage != 0x39
     }
 
-    public mutating func handle(_ press: KeyPress) -> [ClientMessage] {
+    public mutating func handle(_ press: KeyPress) -> [InputIntent] {
         if press.isDown {
             guard let keysym = KeysymMapper.keysym(for: press) else { return [] }
             if let index = held.firstIndex(where: { $0.hidUsage == press.hidUsage }) {
@@ -165,35 +165,39 @@ public struct KeyboardState: Sendable {
                 held.append((press.hidUsage, keysym))
                 repeating = Self.isRepeatable(press.hidUsage) ? RepeatingKey(hidUsage: press.hidUsage, keysym: keysym) : nil
             }
-            return [.keyEvent(isDown: true, keysym: keysym)]
+            return [.key(keysym, isDown: true)]
         }
         guard let index = held.firstIndex(where: { $0.hidUsage == press.hidUsage }) else { return [] }
         if repeating?.hidUsage == press.hidUsage { repeating = nil }
         let keysym = held.remove(at: index).keysym
-        return [.keyEvent(isDown: false, keysym: keysym)]
+        return [.key(keysym, isDown: false)]
     }
 
     /// Releases every held key, in reverse order of pressing. Call on focus loss, backgrounding or disconnect,
     /// so the remote machine is not left with stuck keys (for example Command never released).
-    public mutating func releaseAll() -> [ClientMessage] {
+    public mutating func releaseAll() -> [InputIntent] {
         defer {
             held.removeAll()
             repeating = nil
         }
-        return held.reversed().map { .keyEvent(isDown: false, keysym: $0.keysym) }
+        return held.reversed().map { .key($0.keysym, isDown: false) }
     }
 
-    /// Types a string (for the on-screen keyboard): each character is a press then a release.
-    /// Newline sends Return, Tab sends Tab. Characters that cannot be converted to a keysym are skipped.
-    public static func typing(_ text: String) -> [ClientMessage] {
-        text.unicodeScalars.flatMap { scalar -> [ClientMessage] in
-            let keysym: UInt32? = switch scalar {
+    /// Types a string (for the on-screen keyboard) as one text intent; empty if nothing in it can be sent.
+    /// The RFB encoder presses then releases each character's keysym; newline sends Return, Tab sends Tab. Characters that cannot be
+    /// converted to a keysym are skipped.
+    public static func typing(_ text: String) -> [InputIntent] {
+        typingKeysyms(text).isEmpty ? [] : [.text(text)]
+    }
+
+    /// Keysyms for the characters of `text` that can be sent as typed keys, in order.
+    public static func typingKeysyms(_ text: String) -> [UInt32] {
+        text.unicodeScalars.compactMap { scalar in
+            switch scalar {
             case "\n", "\r": 0xFF0D
             case "\t": 0xFF09
             default: KeysymMapper.keysym(forUnicode: scalar)
             }
-            guard let keysym else { return [] }
-            return [.keyEvent(isDown: true, keysym: keysym), .keyEvent(isDown: false, keysym: keysym)]
         }
     }
 }

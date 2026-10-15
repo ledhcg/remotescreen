@@ -162,7 +162,7 @@ final class SessionController {
     func attach(_ view: ScreonView) {
         screenView = view
         // User input goes through the session's ordered queue, so a "press" always reaches the Mac before its "release".
-        view.onInput = { [weak self] messages in self?.sendUserInput(messages) }
+        view.onIntents = { [weak self] intents in self?.sendUserInput(intents) }
         view.touchPolicy = touchPolicy
         view.pinchSendsToMac = pinchSendsToMac && isAppleServer
         view.showsRemoteCursor = isRemoteCursorVisible
@@ -186,10 +186,12 @@ final class SessionController {
         }
     }
 
+    private let inputEncoder = RFBInputEncoder()
+
     /// User input. While reconnecting there is no session to send to: drop it instead of writing to a dead connection.
-    private func sendUserInput(_ messages: [ClientMessage]) {
+    private func sendUserInput(_ intents: [InputIntent]) {
         guard let session, !isViewOnly else { return }
-        var outgoing = clipboard.prepareOutgoing(messages)
+        var outgoing = clipboard.prepareOutgoing(inputEncoder.encode(intents))
         #if DEBUG
         if dropsInputForTesting {
             outgoing = outgoing.filter {
@@ -250,7 +252,7 @@ final class SessionController {
     }
 
     /// The app window lost focus (switched to another window of the same app, Stage Manager): the key and button releases would not reach
-    /// this view, so release right now. The app-level notification (`willResignActive`) does not fire when switching between windows of the same app.
+    /// this view, so release right now. The per-scene deactivate notification in `ScreonView` covers system focus changes; this covers SwiftUI scene phase.
     func sceneDidDeactivate() {
         screenView?.releaseAllInput()
     }

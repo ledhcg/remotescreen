@@ -1,5 +1,4 @@
 import Foundation
-import RFBKit
 
 /// Keys that are on the accessory bar but not on the iOS on-screen keyboard.
 public enum VirtualKey: Sendable, Equatable, CaseIterable {
@@ -25,10 +24,25 @@ public enum VirtualKey: Sendable, Equatable, CaseIterable {
         }
     }
 
-    /// Press then release.
-    public var tap: [ClientMessage] {
-        [.keyEvent(isDown: true, keysym: keysym), .keyEvent(isDown: false, keysym: keysym)]
+    /// Mac virtual key code (`kVK_*`).
+    public var macKeyCode: UInt16 {
+        switch self {
+        case .escape: 53
+        case .tab: 48
+        case .left: 123
+        case .up: 126
+        case .right: 124
+        case .down: 125
+        case .home: 115
+        case .end: 119
+        case .pageUp: 116
+        case .pageDown: 121
+        case .forwardDelete: 117
+        }
     }
+
+    /// Press then release.
+    public var tap: [InputIntent] { InputIntent.tap(keysym, macKeyCode: macKeyCode) }
 }
 
 /// Modifier keys on the sidebar and accessory bar. Their state (held, latched once, locked) lives in `ModifierKeys`.
@@ -41,6 +55,16 @@ public enum StickyModifier: Sendable, Equatable, CaseIterable {
         case .option: 0xFFE9
         case .command: KeysymMapper.commandLeft
         case .shift: 0xFFE1
+        }
+    }
+
+    /// Mac virtual key code (`kVK_Control`, `kVK_Option`, `kVK_Command`, `kVK_Shift`).
+    public var macKeyCode: UInt16 {
+        switch self {
+        case .control: 59
+        case .option: 58
+        case .command: 55
+        case .shift: 56
         }
     }
 }

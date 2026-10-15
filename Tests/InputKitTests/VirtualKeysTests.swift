@@ -17,7 +17,7 @@ struct VirtualKeyTests {
     }
 
     @Test func tapIsPressThenRelease() {
-        #expect(VirtualKey.escape.tap == [key(true, 0xFF1B), key(false, 0xFF1B)])
+        #expect(VirtualKey.escape.tap.rfb == [key(true, 0xFF1B), key(false, 0xFF1B)])
     }
 
     @Test func everyKeyHasADistinctKeysym() {
@@ -37,9 +37,9 @@ struct VirtualKeyTests {
 struct KeyBarModifierTests {
     @Test func aTapLatchesAndALateSecondTapCancels() {
         var keys = ModifierKeys()
-        #expect(keys.tap(.command, at: 0) == [key(true, KeysymMapper.commandLeft)])
+        #expect(keys.tap(.command, at: 0).rfb == [key(true, KeysymMapper.commandLeft)])
         #expect(keys.state(of: .command) == .oneShot)
-        #expect(keys.tap(.command, at: 1) == [key(false, KeysymMapper.commandLeft)])
+        #expect(keys.tap(.command, at: 1).rfb == [key(false, KeysymMapper.commandLeft)])
         #expect(keys.state(of: .command) == .up)
     }
 
@@ -57,7 +57,8 @@ struct KeyBarModifierTests {
         var sent = keys.tap(.command, at: 0)
         sent += KeyboardState.typing("c")
         sent += keys.actionCompleted()
-        #expect(sent == [
+        let wire = sent.rfb
+        #expect(wire == [
             key(true, KeysymMapper.commandLeft), key(true, 0x63), key(false, 0x63), key(false, KeysymMapper.commandLeft),
         ])
         #expect(keys.actionCompleted().isEmpty, "the second release sends nothing, avoiding a redundant release")
@@ -66,9 +67,31 @@ struct KeyBarModifierTests {
     /// Tapping the same key repeatedly (spaced out) must not let the Mac see two consecutive key-downs.
     @Test func neverSendsTwoDownsOrTwoUpsInARow() {
         var keys = ModifierKeys()
-        var sent: [ClientMessage] = []
+        var sent: [InputIntent] = []
         for second in 0..<5 { sent += keys.tap(.control, at: Double(second)) }
         sent += keys.releaseAll()
-        #expect(sent == [key(true, 0xFFE3), key(false, 0xFFE3), key(true, 0xFFE3), key(false, 0xFFE3), key(true, 0xFFE3), key(false, 0xFFE3)])
+        #expect(sent.rfb == [key(true, 0xFFE3), key(false, 0xFFE3), key(true, 0xFFE3), key(false, 0xFFE3), key(true, 0xFFE3), key(false, 0xFFE3)])
+    }
+}
+
+@Suite("Mac virtual key codes")
+struct MacKeyCodeTests {
+    /// Expected values are `kVK_*` constants from Carbon's `Events.h`.
+    @Test(arguments: [
+        (VirtualKey.escape, UInt16(53)), (.tab, 48), (.left, 123), (.right, 124), (.down, 125), (.up, 126),
+        (.home, 115), (.end, 119), (.pageUp, 116), (.pageDown, 121), (.forwardDelete, 117),
+    ])
+    func virtualKeys(key: VirtualKey, code: UInt16) {
+        #expect(key.macKeyCode == code)
+        #expect(key.tap == [.key(KeyStroke(keysym: key.keysym, macKeyCode: code, isDown: true)), .key(KeyStroke(keysym: key.keysym, macKeyCode: code, isDown: false))])
+    }
+
+    @Test func modifiers() {
+        #expect(StickyModifier.command.macKeyCode == 55)
+        #expect(StickyModifier.shift.macKeyCode == 56)
+        #expect(StickyModifier.option.macKeyCode == 58)
+        #expect(StickyModifier.control.macKeyCode == 59)
+        var keys = ModifierKeys()
+        #expect(keys.touchDown(.command, at: 0) == [.key(KeyStroke(keysym: KeysymMapper.commandLeft, macKeyCode: 55, isDown: true))])
     }
 }

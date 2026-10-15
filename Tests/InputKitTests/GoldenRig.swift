@@ -4,13 +4,14 @@ import RFBKit
 @testable import InputKit
 
 /// Drives the input pipeline for the golden corpus and records one line per step. This file is the only one that depends on how
-/// input is produced (messages directly, or intents followed by `RFBInputEncoder`).
+/// input is produced (here: intents followed by `RFBInputEncoder`; before the intent refactor it was `ClientMessage`s directly).
 struct GoldenRig {
     var mapper: TouchMapper
     var keyboard = KeyboardState()
     var modifiers = ModifierKeys()
     let space: GoldenSpace
-    var previousButtons: UInt8 = 0
+    var previousButtons: PointerButtons = []
+    let encoder = RFBInputEncoder()
     var log: [String] = []
 
     init(policy: TouchPolicy, initial: (x: Int, y: Int)?, space: GoldenSpace) {
@@ -18,16 +19,17 @@ struct GoldenRig {
         self.space = space
     }
 
-    private mutating func record(_ label: String, _ messages: [ClientMessage], extra: String = "") {
+    private mutating func record(_ label: String, _ intents: [InputIntent], extra: String = "") {
+        let messages = encoder.encode(intents)
         log.append("\(label) -> [\(messages.map(goldenDescribe).joined(separator: "; "))]\(extra)")
     }
 
     mutating func touch(_ event: TouchEvent, zoomed: Bool = false) {
         let output = mapper.handle(event, in: space, isZoomed: zoomed)
-        let completes = PointerActions.completesAButtonAction(output.messages, previousButtons: &previousButtons)
+        let completes = PointerActions.completesAButtonAction(output.intents, previousButtons: &previousButtons)
         var extra = completes ? " done" : ""
         if let pan = output.viewportPan { extra += " pan(\(pan.x),\(pan.y))" }
-        record("\(event)", output.messages, extra: extra)
+        record("\(event)", output.intents, extra: extra)
     }
 
     mutating func releaseTouch() { record("touchReleaseAll", mapper.releaseAll()) }

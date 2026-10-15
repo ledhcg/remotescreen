@@ -18,12 +18,14 @@ public final class PairingSecretLedger: @unchecked Sendable {
     public static let maxAttemptsPerHour = 10
     public static let maxOutstandingOffers = 4
 
-    private struct Entry { var offer: PairingOffer; var failures = 0 }
+    /// `sequence` orders offers by issue time even when the clock returns the same instant for several of them.
+    private struct Entry { var offer: PairingOffer; var sequence: UInt64; var failures = 0 }
 
     private let lock = NSLock()
     private let clock: LinkClock
     private var entries: [Data: Entry] = [:]  // keyed by nonce
     private var attempts: [Date] = []
+    private var nextSequence: UInt64 = 0
 
     public init(clock: @escaping LinkClock = { Date() }) { self.clock = clock }
 
@@ -35,10 +37,11 @@ public final class PairingSecretLedger: @unchecked Sendable {
         lock.withLock {
             purgeExpired(now: clock())
             while entries.count >= Self.maxOutstandingOffers,
-                  let oldest = entries.min(by: { $0.value.offer.expiry < $1.value.offer.expiry })?.key {
+                  let oldest = entries.min(by: { $0.value.sequence < $1.value.sequence })?.key {
                 entries.removeValue(forKey: oldest)
             }
-            entries[offer.nonce] = Entry(offer: offer)
+            entries[offer.nonce] = Entry(offer: offer, sequence: nextSequence)
+            nextSequence += 1
         }
         return offer
     }
@@ -85,11 +88,12 @@ public final class ResumeTokenStore: @unchecked Sendable {
     public static let lifetime: TimeInterval = 600
     public static let maxOutstanding = 64
 
-    private struct Entry { var identity: Data; var expiry: Date }
+    private struct Entry { var identity: Data; var expiry: Date; var sequence: UInt64 }
 
     private let lock = NSLock()
     private let clock: LinkClock
     private var entries: [Data: Entry] = [:]  // keyed by SHA-256(token): the token itself is not retained
+    private var nextSequence: UInt64 = 0
 
     public init(clock: @escaping LinkClock = { Date() }) { self.clock = clock }
 
@@ -100,10 +104,12 @@ public final class ResumeTokenStore: @unchecked Sendable {
             let now = clock()
             entries = entries.filter { $0.value.expiry > now }
             while entries.count >= Self.maxOutstanding,
-                  let oldest = entries.min(by: { $0.value.expiry < $1.value.expiry })?.key {
+                  let oldest = entries.min(by: { $0.value.sequence < $1.value.sequence })?.key {
                 entries.removeValue(forKey: oldest)
             }
-            entries[Data(SHA256.hash(data: token))] = Entry(identity: identityHash, expiry: now.addingTimeInterval(Self.lifetime))
+            entries[Data(SHA256.hash(data: token))] = Entry(
+                identity: identityHash, expiry: now.addingTimeInterval(Self.lifetime), sequence: nextSequence)
+            nextSequence += 1
         }
         return token
     }

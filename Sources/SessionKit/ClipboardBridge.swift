@@ -142,7 +142,7 @@ public final class ClipboardBridge {
         guard count != syncedChangeCount else { return nil }
         guard let text = pasteboard.string, !text.isEmpty else { // the content is read only here
             // `hasStrings` is true but the read came back empty: the user chose "Don't Allow Paste" in iOS's prompt.
-            showNotice(tr("Couldn't paste: iOS is blocking clipboard access. Turn on Settings › RemoteScreen › Paste from Other Apps."))
+            showNotice(tr("Couldn't paste: iOS is blocking clipboard access. Turn on Settings › Screon › Paste from Other Apps."))
             return nil
         }
         guard let messages = messages(forPushing: text) else { return nil }

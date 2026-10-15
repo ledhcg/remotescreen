@@ -1,13 +1,13 @@
 import ConnectionKit
 import Foundation
 import Testing
-@testable import RemoteScreenApp
+@testable import ScreonApp
 
 /// Runs in the simulator (real Keychain). Each test uses its own `service` and cleans up afterwards.
 @Suite("KeychainSecretStore (real Keychain)")
 struct KeychainSecretStoreTests {
     private func makeStore() -> KeychainSecretStore {
-        KeychainSecretStore(service: "com.ledhcg.remotescreen.tests.\(UUID().uuidString)")
+        KeychainSecretStore(service: "com.ledinhcuong.screon.tests.\(UUID().uuidString)")
     }
 
     @Test func missingPasswordIsNilNotAnError() throws {

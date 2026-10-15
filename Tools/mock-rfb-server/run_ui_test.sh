@@ -18,9 +18,9 @@ run_pass() {
   local server=$!
   sleep 1.5
   local only=()
-  for name in "$@"; do only+=("-only-testing:RemoteScreenAppUITests/$name"); done
+  for name in "$@"; do only+=("-only-testing:ScreonAppUITests/$name"); done
   (cd App && xcodegen generate > /dev/null && env ${SHOTS:+TEST_RUNNER_SHOT_DIR="$SHOTS"} xcodebuild test \
-    -project RemoteScreenApp.xcodeproj -scheme RemoteScreenApp \
+    -project ScreonApp.xcodeproj -scheme ScreonApp \
     -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build \
     CODE_SIGNING_ALLOWED=NO "${only[@]}" 2>&1 | grep -E 'error:|failed|passed|TEST (SUCCEEDED|FAILED)') || true
   kill $server 2>/dev/null || true

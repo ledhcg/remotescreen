@@ -1,4 +1,4 @@
-# RemoteScreen — agent guide
+# Screon — agent guide
 
 Native iPhone/iPad client for Apple Screen Sharing (RFB/VNC, ARD type 30): control a Mac with touch, Apple Pencil, mouse and
 trackpad. Swift 6 / SwiftPM + an XcodeGen iOS app. iOS 18+. Open source (MIT). **No third-party dependencies.**
@@ -10,7 +10,7 @@ Read this first; detailed rules live in `.claude/rules/` and repeatable procedur
 Sources/Localization   string lookup by language: the English sentence is the key; per-package `tr()` + `vi.lproj` tables
 Sources/RFBCrypto      DES, AES-ECB, MD5, 4096-bit BigUInt (Montgomery), Miller-Rabin, SecureRandom. No UI
 Sources/RFBKit         RFB protocol: handshake, auth, Raw/CopyRect/ZRLE, cursor, session, send queue. No UIKit
-Sources/RemoteDisplay  viewport geometry, Metal renderer, RemoteScreenView (UIKit)
+Sources/RemoteDisplay  viewport geometry, Metal renderer, ScreonView (UIKit)
 Sources/InputKit       keyboard/touch/pencil → RFB events. Pure logic, no UIKit
 Sources/SessionKit     reconnect policy, clipboard bridge, stream quality, user-facing messages. Pure logic
 Sources/ConnectionKit  saved computers (JSON), Bonjour browser, form validation
@@ -26,8 +26,8 @@ Dependency direction: `App` → `SessionKit`/`RemoteDisplay`/`ConnectionKit` →
 
 ```bash
 swift build && swift test                                   # all packages, macOS, no device or Mac server needed
-cd App && xcodegen generate                                 # generates RemoteScreenApp.xcodeproj
-xcodebuild -project App/RemoteScreenApp.xcodeproj -scheme RemoteScreenApp \
+cd App && xcodegen generate                                 # generates ScreonApp.xcodeproj
+xcodebuild -project App/ScreonApp.xcodeproj -scheme ScreonApp \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 Tools/mock-rfb-server/run_input_test.sh <simulator-UDID>    # E2E input against the fake server (never a real Mac)
 RFB_USER=… RFB_PASSWORD=… swift run rfbprobe <host> --login 30   # real server; credentials only via env

@@ -8,8 +8,8 @@
     package's `Localized.swift`); translations live in `Sources/<Package>/Resources/vi.lproj/Localizable.strings` with the
     English sentence as the key, e.g. `"Wrong username or password." = "Sai tên tài khoản hoặc mật khẩu.";`.
     Use `%@` for strings, `%lld` for `Int`, and `%1$@ %2$lld` when the translation reorders arguments.
-  - App (`App/RemoteScreenApp`): SwiftUI `Text("English")` / `Button("English")` / `Label` use the sentence as the key;
-    other `String`s use `String(localized: "English")`. Translations live in `App/RemoteScreenApp/Resources/vi.lproj/Localizable.strings`;
+  - App (`App/ScreonApp`): SwiftUI `Text("English")` / `Button("English")` / `Label` use the sentence as the key;
+    other `String`s use `String(localized: "English")`. Translations live in `App/ScreonApp/Resources/vi.lproj/Localizable.strings`;
     the iOS permission prompt is translated in `vi.lproj/InfoPlist.strings`.
   - `RFBKit` and `RFBCrypto` errors are developer-facing: English only, not localized. User-facing wording for them lives in
     `SessionKit/ConnectionFailureMessage`.

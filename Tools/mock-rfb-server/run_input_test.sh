@@ -15,8 +15,8 @@ trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
 sleep 1.5
 
 (cd App && xcodegen generate > /dev/null && xcodebuild test \
-  -project RemoteScreenApp.xcodeproj -scheme RemoteScreenApp \
+  -project ScreonApp.xcodeproj -scheme ScreonApp \
   -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath build \
-  CODE_SIGNING_ALLOWED=NO -only-testing:RemoteScreenAppUITests/InputUITests 2>&1 | grep -E 'error:|TEST (SUCCEEDED|FAILED)')
+  CODE_SIGNING_ALLOWED=NO -only-testing:ScreonAppUITests/InputUITests 2>&1 | grep -E 'error:|TEST (SUCCEEDED|FAILED)')
 
 python3 -I Tools/mock-rfb-server/verify_input.py "$LOG"

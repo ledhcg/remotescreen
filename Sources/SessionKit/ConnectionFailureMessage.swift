@@ -66,7 +66,7 @@ public enum ConnectionFailureMessage {
     static func text(for error: NWError) -> String {
         switch error {
         case .posix(.ENETDOWN), .posix(.ENETUNREACH), .posix(.EHOSTUNREACH), .dns(-65570):
-            return tr("This device has no network route to that address. Check that Wi-Fi is on and on the same network as the Mac, and that Settings › RemoteScreen › Local Network is on. (code %@)", code(of: error))
+            return tr("This device has no network route to that address. Check that Wi-Fi is on and on the same network as the Mac, and that Settings › Screon › Local Network is on. (code %@)", code(of: error))
         case .posix(.ECONNREFUSED):
             return tr("The Mac refused the connection. Turn on Screen Sharing: System Settings › General › Sharing. (code %@)", code(of: error))
         case .posix(.ETIMEDOUT):

@@ -13,7 +13,7 @@ final class CursorUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
 
-        let screen = app.descendants(matching: .any).matching(identifier: "remoteScreen").firstMatch
+        let screen = app.descendants(matching: .any).matching(identifier: "screon").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 30), "remote screen view not found")
         Thread.sleep(forTimeInterval: 4)
 

@@ -80,7 +80,7 @@ struct ServiceBrowserLiveTests {
     }
 
     @Test func browserFindsAnAdvertisedServiceAndLosesItWhenItStops() async throws {
-        let name = "RemoteScreenTest-\(UUID().uuidString.prefix(8))"
+        let name = "ScreonTest-\(UUID().uuidString.prefix(8))"
         let listener = try await advertise(name: name)
         defer { listener.cancel() }
 
@@ -101,7 +101,7 @@ struct ServiceBrowserLiveTests {
     }
 
     @Test func connectingThroughTheBonjourEndpointReachesTheService() async throws {
-        let name = "RemoteScreenTest-\(UUID().uuidString.prefix(8))"
+        let name = "ScreonTest-\(UUID().uuidString.prefix(8))"
         let listener = try await advertise(name: name)
         defer { listener.cancel() }
 

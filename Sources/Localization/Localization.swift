@@ -7,11 +7,11 @@ import os
 /// Every package has a thin `tr(_:_:)` helper that calls `Localization.format(_:bundle: .module, _:)`.
 public enum Localization {
     private static let forced = OSAllocatedUnfairLock<String?>(
-        initialState: ProcessInfo.processInfo.environment["REMOTESCREEN_LANGUAGE"]
+        initialState: ProcessInfo.processInfo.environment["SCREON_LANGUAGE"]
     )
 
     /// Forces a language (for example `"en"` or `"vi"`) instead of following the system language. Tests set `"en"` so results do
-    /// not depend on the machine running them. Can also be set with the `REMOTESCREEN_LANGUAGE` environment variable.
+    /// not depend on the machine running them. Can also be set with the `SCREON_LANGUAGE` environment variable.
     public static var forcedLanguage: String? {
         get { forced.withLock { $0 } }
         set { forced.withLock { $0 = newValue } }

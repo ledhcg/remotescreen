@@ -114,7 +114,7 @@ final class SessionController {
     @ObservationIgnored private var request: Request?
     @ObservationIgnored private var session: RFBSession?
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private weak var screenView: RemoteScreenView?
+    @ObservationIgnored private weak var screenView: ScreonView?
     /// The latest cursor image, because the server only sends it when the image changes: a view created later must still have it.
     @ObservationIgnored private var latestCursor: CursorImage?
 
@@ -159,7 +159,7 @@ final class SessionController {
     }
 
     /// Attach the display view. If a frame already exists, show it immediately.
-    func attach(_ view: RemoteScreenView) {
+    func attach(_ view: ScreonView) {
         screenView = view
         // User input goes through the session's ordered queue, so a "press" always reaches the Mac before its "release".
         view.onInput = { [weak self] messages in self?.sendUserInput(messages) }
@@ -405,7 +405,7 @@ final class SessionController {
             let satisfied = path.status == .satisfied
             Task { @MainActor in self?.networkChanged(satisfied: satisfied) }
         }
-        monitor.start(queue: DispatchQueue(label: "RemoteScreen.NetworkWatch"))
+        monitor.start(queue: DispatchQueue(label: "Screon.NetworkWatch"))
         networkMonitor = monitor
     }
 

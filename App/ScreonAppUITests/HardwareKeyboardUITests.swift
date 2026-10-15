@@ -10,7 +10,7 @@ final class HardwareKeyboardUITests: XCTestCase {
         app.launchEnvironment = ["RFB_HOST": "127.0.0.1", "RFB_PORT": "5959"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        let screen = app.descendants(matching: .any).matching(identifier: "remoteScreen").firstMatch
+        let screen = app.descendants(matching: .any).matching(identifier: "screon").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 30))
         Thread.sleep(forTimeInterval: 4)
 

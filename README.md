@@ -1,9 +1,9 @@
-# RemoteScreen
+# Screon
 
 **Control your Mac from an iPhone or iPad.** A native, dependency-free Swift client for Apple Screen Sharing
 (RFB / VNC, including Apple's type 30 login), built around touch, Apple Pencil, mouse and trackpad.
 
-[![CI](https://github.com/ledhcg/remotescreen/actions/workflows/ci.yml/badge.svg)](https://github.com/ledhcg/remotescreen/actions/workflows/ci.yml)
+[![CI](https://github.com/ledhcg/screon/actions/workflows/ci.yml/badge.svg)](https://github.com/ledhcg/screon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![iOS 18+](https://img.shields.io/badge/iOS-18%2B-lightgrey)
 ![Swift 6](https://img.shields.io/badge/Swift-6-orange)
@@ -59,7 +59,7 @@ committed.
 
 ```bash
 cd App && xcodegen generate
-open RemoteScreenApp.xcodeproj
+open ScreonApp.xcodeproj
 ```
 
 To run on a real device you need an Apple Developer team. Put it in `App/Signing.local.xcconfig` (git-ignored):
@@ -104,7 +104,7 @@ comments are currently written in Vietnamese; English contributions are welcome 
 ## Trademarks
 
 Apple, Mac, macOS, iPad, iPhone, Screen Sharing and Apple Remote Desktop are trademarks of Apple Inc. VNC is a
-trademark of RealVNC Ltd. RemoteScreen is an independent project and is not affiliated with, endorsed by or sponsored
+trademark of RealVNC Ltd. Screon is an independent project and is not affiliated with, endorsed by or sponsored
 by Apple or RealVNC.
 
 ## License

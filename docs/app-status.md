@@ -1,6 +1,6 @@
 # iPhone/iPad app status
 
-Updated: 2026-10-14. The app name is **provisional**, not yet final. The bundle id is currently `com.ledhcg.remotescreen` and may change later.
+Updated: 2026-10-14. The app is named **Screon** and its bundle id is `com.ledinhcuong.screon`.
 
 ## Localization
 
@@ -12,7 +12,7 @@ English is the source language of all UI strings (in code, tests and docs); Viet
 Sources/
   RFBCrypto/      DES, AES-ECB, MD5, 4096-bit big numbers (Montgomery), random numbers
   RFBKit/         RFB protocol: handshake, authentication (None, VNC, ARD), Raw/CopyRect/ZRLE, Cursor, session, send queue
-  RemoteDisplay/  viewport geometry, Metal renderer (runs on macOS for tests), RemoteScreenView (UIKit)
+  RemoteDisplay/  viewport geometry, Metal renderer (runs on macOS for tests), ScreonView (UIKit)
   InputKit/       keyboard → X11 keysym, touch gestures → mouse events, virtual keys and sticky modifiers (pure logic, no UIKit)
   SessionKit/     reconnect policy (ReconnectPolicy), clipboard sync (ClipboardBridge, pure logic, abstract pasteboard), user-facing messages
   ConnectionKit/  saved computers (atomically written JSON), password store (interface; the Keychain is in the app), form validation, Bonjour discovery
@@ -23,8 +23,8 @@ Tools/
   mock-rfb-server/     fake RFB server + end-to-end input test scripts
 App/
   project.yml          source of truth for the Xcode project (XcodeGen). The .xcodeproj file is generated, not committed.
-  RemoteScreenApp/     SwiftUI: connection screen, viewer screen, SessionController
-  RemoteScreenAppUITests/  input XCUITests
+  ScreonApp/     SwiftUI: connection screen, viewer screen, SessionController
+  ScreonAppUITests/  input XCUITests
 ```
 
 ## How to run
@@ -33,11 +33,11 @@ App/
 |---|---|
 | All package tests (macOS) | `swift test` |
 | Xcode project | `cd App && xcodegen generate` |
-| Build for the simulator | `xcodebuild -project App/RemoteScreenApp.xcodeproj -scheme RemoteScreenApp -destination 'platform=iOS Simulator,id=<UDID>' -derivedDataPath App/build CODE_SIGNING_ALLOWED=NO build` |
+| Build for the simulator | `xcodebuild -project App/ScreonApp.xcodeproj -scheme ScreonApp -destination 'platform=iOS Simulator,id=<UDID>' -derivedDataPath App/build CODE_SIGNING_ALLOWED=NO build` |
 | End-to-end input test (does not touch a real machine) | `Tools/mock-rfb-server/run_input_test.sh <UDID>` |
 | UI tests for choosing a computer, login, toolbar, view-only, display modes, quality (fake server; argument 2 is the folder for simulator screenshots) | `Tools/mock-rfb-server/run_ui_test.sh <UDID> [screenshot folder]` |
 | Hardware keyboard end-to-end on the simulator (fake server) | `Tools/mock-rfb-server/run_keyboard_test.sh <UDID>` (runs on both iPhone and iPad) |
-| Trying it against a real Mac from the simulator | `SIMCTL_CHILD_RFB_HOST=127.0.0.1 SIMCTL_CHILD_RFB_USER=<account> SIMCTL_CHILD_RFB_PASSWORD=<password> xcrun simctl launch <UDID> com.ledhcg.remotescreen` (DEBUG build only) |
+| Trying it against a real Mac from the simulator | `SIMCTL_CHILD_RFB_HOST=127.0.0.1 SIMCTL_CHILD_RFB_USER=<account> SIMCTL_CHILD_RFB_PASSWORD=<password> xcrun simctl launch <UDID> com.ledinhcuong.screon` (DEBUG build only) |
 
 ## Running on a real iPhone/iPad
 
@@ -50,9 +50,9 @@ CODE_SIGN_STYLE = Automatic
 
 ```sh
 cd App && xcodegen generate
-xcodebuild -project RemoteScreenApp.xcodeproj -scheme RemoteScreenApp \
+xcodebuild -project ScreonApp.xcodeproj -scheme ScreonApp \
   -destination 'platform=iOS,id=<device UDID>' -derivedDataPath build -allowProvisioningUpdates build
-xcrun devicectl device install app --device <device UDID> build/Build/Products/Debug-iphoneos/RemoteScreenApp.app
+xcrun devicectl device install app --device <device UDID> build/Build/Products/Debug-iphoneos/ScreonApp.app
 ```
 
 The phone must be **unlocked** for `devicectl device process launch` to open the app. The first time, you may need to trust the certificate:
@@ -80,7 +80,7 @@ The first attempt on the iPad reported `NWError 50` (`ENETDOWN`, "Network is dow
 | **Real iPad**: save a computer, persistence across restarts, password retrieved from the **real Keychain**, delete | The "Saved computers" item appears after connecting; still there after reopening the app; tapping it connects directly (no password prompt); swiping then Delete makes the item disappear |
 | **Real iPad**: Bonjour discovery | The "Computers on the network" item shows the correct name of the Mac on the network; selecting it changes the form to "Selected" |
 | Real Bonjour on macOS | `ServiceBrowserLiveTests`: a service advertised inside the test process is found, disappears when stopped, and can be connected to through the `.service` endpoint |
-| Real Keychain | `RemoteScreenAppTests` on the simulator (needs signing, cannot run with `CODE_SIGNING_ALLOWED=NO`: error -34018); mutation-tested |
+| Real Keychain | `ScreonAppTests` on the simulator (needs signing, cannot run with `CODE_SIGNING_ALLOWED=NO`: error -34018); mutation-tested |
 | Apple clipboard (type 11 request, type 31 reply/send): decoding the server's **real** payload, encoding, corrupt/malicious data | `ClipboardTests` (35 tests) using a real 264-byte payload + a payload produced by Python's zlib; re-encoding gives exactly the same bytes; mutation-tested |
 | Apple clipboard with a **real Mac** (`rfbprobe`) | Asking for the Mac clipboard returns Vietnamese intact; sending `Xin chào Việt Nam đệ ố ữ 🙂` to the Mac makes `pbpaste` output exactly that string |
 | **Real iPad → real Mac**: the Get from Mac button | The notice "Copied 32 characters from the Mac." has exactly the length of the Vietnamese test string that was set |
@@ -138,7 +138,7 @@ Colour depth **cannot be changed mid-session**: RFB gives no indication of which
 | 16-bit colours correct, the mode is remembered, switching between the two 32-bit modes does not reconnect, the fake server receives the pixel formats in the right order | `QualityUITests` + `verify_quality.py`: sequence `[32, 16, 16, 32, 32, 16]`; the colours of the four corners read from the simulator screenshot, off by ≤ 12 from the 32-bit frame |
 | Logic | `QualityModeTests` (6), `AdaptiveGovernorTests` (9: step down, step up, no oscillation, heavy CPU, still screen), `RGB565ConversionTests`/`RGB565DecodingTests` (Raw and all five ZRLE tile types at 16-bit), `SessionPacingTests` (3) |
 
-To measure again: `rfbprobe --login 30 --probe-encodings`, `--compare-depth 15`, `--check-depth-image`, and `--depth16` together with `--watch/--record/--replay`. On the iPad: `devicectl ... --environment-variables '{"RFB_STATS":"1"}' com.ledhcg.remotescreen -- -qualityMode bestPerformance` (values `adaptive`, `bestQuality`, `bestPerformance`).
+To measure again: `rfbprobe --login 30 --probe-encodings`, `--compare-depth 15`, `--check-depth-image`, and `--depth16` together with `--watch/--record/--replay`. On the iPad: `devicectl ... --environment-variables '{"RFB_STATS":"1"}' com.ledinhcuong.screon -- -qualityMode bestPerformance` (values `adaptive`, `bestQuality`, `bestPerformance`).
 
 ## Display modes (menu "…" › "Display", remembered between launches)
 
@@ -269,7 +269,7 @@ A vertical bar beside the Mac screen (iPad: on the left, on by default; iPhone: 
 - **Pointer lock** (relative mouse for games): not done.
 - **The cursor position** is the position we last sent. RFB does not report when the Mac's real mouse moves, so if someone uses the real mouse on the Mac, the cursor drawn on the iPad will be off.
 - **The system Paste button (`PasteButton`)**: does not respond to touches generated by Device Hub (it is an iOS security control), so it is **not verifiable**. The ⌘V path has been verified.
-- **The iOS "allow paste" dialog**: ⌘V when the clipboard comes from another app makes iOS ask "RemoteScreen would like to paste from …". This is iOS behaviour and cannot be avoided if the app reads the clipboard itself. The user can choose Allow in Settings › RemoteScreen › Paste from Other Apps, or use the Paste button. If denied, the app says so clearly.
+- **The iOS "allow paste" dialog**: ⌘V when the clipboard comes from another app makes iOS ask "Screon would like to paste from …". This is iOS behaviour and cannot be avoided if the app reads the clipboard itself. The user can choose Allow in Settings › Screon › Paste from Other Apps, or use the Paste button. If denied, the app says so clearly.
 - **Text-only clipboard** (UTF-8, Vietnamese and emoji get through). Images, files, RTF are not done. Apple's own protocol is not fully understood (see `protocol-notes.md` section 4e): whether the server pushes the clipboard by itself when the Mac changes is still unknown, so the Mac → iPad direction is always request-response (after ⌘C or the Get button).
 - **Automatic reconnect**: the following paths have not been verified on a real device: returning from the background after more than 10 s reconnects immediately, `NWPathMonitor` wakes up when the network is back, TCP keepalive detects a dead connection (~35 s), after 6 attempts it gives up and shows the error. The policy has tests; these paths have no end-to-end tests.
 - **Lag from Wi-Fi bandwidth when the screen changes heavily** (video wallpaper, video playback, scrolling): the stream can reach ~77 Mbit/s. Decoding is no longer the bottleneck, but this has not been measured on an iPad under that heavy a load (the load cannot be generated without controlling your Mac). If it is still laggy, the next steps are limiting the frame rate or reducing colour depth (not done).
@@ -307,7 +307,7 @@ What was encountered in this environment (may differ on another machine):
 
 ## Two bugs that only showed up on a real device
 
-- Tapping the toolbar both failed to trigger the button and **clicked down onto the Mac right beneath it**. A SwiftUI button sitting over a `UIViewRepresentable` does not receive the touch if that area has no SwiftUI gesture (`claimingTouches` in `Views.swift`), and `RemoteScreenView.excludedRegions` blocks the one-finger gesture in that area. Multi-finger gestures are not blocked.
+- Tapping the toolbar both failed to trigger the button and **clicked down onto the Mac right beneath it**. A SwiftUI button sitting over a `UIViewRepresentable` does not receive the touch if that area has no SwiftUI gesture (`claimingTouches` in `Views.swift`), and `ScreonView.excludedRegions` blocks the one-finger gesture in that area. Multi-finger gestures are not blocked.
 - Option+letter sent the composed character (`≈`) instead of the base key (`x`). Fixed: Option also uses `charactersIgnoringModifiers`.
 
 ## A tunable point based on habit: `TouchPolicy` (Sources/InputKit/TouchMapping.swift)

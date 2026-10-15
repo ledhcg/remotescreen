@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>RemoteScreen</string>
+	<string>Screon</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -29,7 +29,7 @@
 		<string>_rfb._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>RemoteScreen needs local network access to find and connect to your Mac.</string>
+	<string>Screon needs local network access to find and connect to your Mac.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

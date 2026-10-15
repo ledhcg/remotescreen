@@ -52,7 +52,7 @@ struct ConnectionView: View {
                     Section { Text("Couldn't save: \(saveError)").foregroundStyle(.red) }
                 }
             }
-            .navigationTitle("RemoteScreen")
+            .navigationTitle("Screon")
             .onAppear { browser.start() }
             .onDisappear { browser.stop() }
             .overlay { if controller.state == .connecting && login == nil { connectingCard } }
@@ -162,7 +162,7 @@ struct ConnectionView: View {
                     .foregroundStyle(.secondary)
                 if browser.denied {
                     Text("Local Network access not granted").font(.headline)
-                    Text("Allow RemoteScreen to search the network so it can find Macs automatically, or enter an address above.")
+                    Text("Allow Screon to search the network so it can find Macs automatically, or enter an address above.")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Button("Open Settings") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }

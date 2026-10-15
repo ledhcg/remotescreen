@@ -106,7 +106,7 @@ final class ObserveModeUITests: XCTestCase {
         app.launchEnvironment = ["RFB_HOST": "127.0.0.1", "RFB_PORT": "5959"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        let screen = app.descendants(matching: .any).matching(identifier: "remoteScreen").firstMatch
+        let screen = app.descendants(matching: .any).matching(identifier: "screon").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 30))
         Thread.sleep(forTimeInterval: 4)
 
@@ -156,7 +156,7 @@ final class QualityUITests: XCTestCase {
         app.launchEnvironment = ["RFB_HOST": "127.0.0.1", "RFB_PORT": "5959", "RFB_DEFAULTS_SUITE": suite]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
-        let screen = app.descendants(matching: .any).matching(identifier: "remoteScreen").firstMatch
+        let screen = app.descendants(matching: .any).matching(identifier: "screon").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 30), "could not enter the session:\n\(app.debugDescription)")
         XCTAssertTrue(app.buttons["Options"].waitForExistence(timeout: 30))
         Thread.sleep(forTimeInterval: 3)

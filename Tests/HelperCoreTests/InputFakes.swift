@@ -47,7 +47,7 @@ final class FakeFocuser: WindowFocuser, @unchecked Sendable {
     func frontmostWindow() async -> WindowID? { front }
 
     func isFrontmost(_ window: WindowID, at point: LinkPoint) async -> Bool { lock.withLock { _frontmost.contains(window) } }
-    func raiseAndActivate(_ window: WindowID) async { lock.withLock { _raised.append(window); if !_refuseRaise { _front = window } } }
+    func raiseAndActivate(_ window: WindowID) async { lock.withLock { _raised.append(window); if !_refuseRaise { _front = window; _frontmost.insert(window) } } }
 }
 
 final class FakeSecureInput: SecureInputProbe, @unchecked Sendable {

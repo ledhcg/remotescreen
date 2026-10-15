@@ -177,6 +177,7 @@ import Testing
         #expect(focuser.raised == [window])
         clock.advance(.seconds(1))
         await injector.handle(pointer(12, 10, []))
+        focuser.setFrontmost([])
         await injector.handle(pointer(12, 10, .left))
         #expect(focuser.raised == [window, window])
     }
@@ -406,9 +407,81 @@ import Testing
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: true, modifiers: [])))
         #expect(poster.events.isEmpty)
         #expect(await injector.pressedKeycodes.isEmpty)
-        // A key-up is never blocked.
+        // A key-up for a key this session never pressed is dropped.
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 1, down: false, modifiers: [])))
-        #expect(poster.events == [.key(keycode: 1, down: false, modifiers: [])])
+        #expect(poster.events.isEmpty)
+    }
+
+    // MARK: Topmost verification
+
+    @Test func keyUpForAKeyNeverPressedIsDropped() async {
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 9, down: false, modifiers: .command)))
+        #expect(poster.events.isEmpty)
+    }
+
+    @Test func keyUpUsesTheModifiersRecordedAtKeyDown() async {
+        await injector.setKeyboardWindow(window)
+        focuser.front = window
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 9, down: true, modifiers: .shift)))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 9, down: false, modifiers: [.command, .control])))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 9, down: false, modifiers: [])))
+        #expect(poster.events == [
+            .key(keycode: 9, down: true, modifiers: .shift),
+            .key(keycode: 9, down: false, modifiers: .shift),
+        ])
+    }
+
+    @Test func pressIsDroppedWhenAnotherWindowCoversThePoint() async {
+        focuser.setFrontmost([])
+        focuser.refuseRaise = true
+        await injector.handle(pointer(10, 10, .left))
+        #expect(poster.events.isEmpty)
+        #expect(await injector.pressedButtons.isEmpty)
+    }
+
+    @Test func coalescingNeverSkipsTheTopmostCheck() async {
+        focuser.setFrontmost([])
+        await injector.handle(pointer(10, 10, .left))
+        await injector.handle(pointer(10, 10, []))
+        poster.clear()
+        // Within the coalesce interval the raise is skipped, but another window now covers the point.
+        focuser.setFrontmost([])
+        focuser.refuseRaise = true
+        clock.advance(.milliseconds(50))
+        await injector.handle(pointer(10, 10, .left))
+        #expect(poster.events.isEmpty)
+        #expect(focuser.raised == [window])
+    }
+
+    @Test func dragAndReleaseContinueAfterAVerifiedPress() async {
+        await injector.handle(pointer(10, 10, .left))
+        focuser.setFrontmost([]) // something floats over the window mid-drag
+        await injector.handle(pointer(30, 30, .left))
+        await injector.handle(pointer(30, 30, []))
+        let kinds = poster.events.map { event -> String in
+            switch event {
+            case .mouseDown: "down"
+            case .mouseDrag: "drag"
+            case .mouseUp: "up"
+            default: "other"
+            }
+        }
+        #expect(kinds == ["other", "down", "drag", "up"])
+    }
+
+    @Test func hoverNeedsNoTopmostCheckButStaysClamped() async {
+        focuser.setFrontmost([])
+        await injector.handle(pointer(-500, 9999))
+        #expect(poster.events == [.mouseMove(at: LinkPoint(x: 100, y: 500), modifiers: [], pen: nil)])
+        #expect(focuser.raised.isEmpty)
+    }
+
+    @Test func scrollAndGestureAreDroppedWhenTheWindowIsNotTopmost() async {
+        focuser.setFrontmost([])
+        await injector.handle(.inputScroll(LinkScrollEvent(window: window, dx: 0, dy: 5, phase: .changed, momentumPhase: .none, continuous: true)))
+        await injector.handle(.inputGesture(LinkGestureEvent(window: window, kind: .magnify, value: 1, phase: .changed)))
+        #expect(poster.events.isEmpty)
+        #expect(focuser.raised.isEmpty)
     }
 }
 

@@ -221,7 +221,8 @@ public actor InputInjector {
             return
         }
 
-        if pressing && heldButtons.isEmpty {
+        let freshPress = pressing && heldButtons.isEmpty
+        if freshPress {
             let probe = global(event.point, in: frame)
             if await focusIfNeeded(event.window, at: probe) {
                 // Raising can change the stacking, and the window may have moved while we waited.
@@ -229,6 +230,10 @@ public actor InputInjector {
                 guard startEpoch == epoch, let refreshed else { return }
                 frame = refreshed
             }
+            // Coalescing may skip the raise, never this check: a press must land on the authorized window itself, not on a
+            // floating window or another app that covers that point. A press that cannot be verified is dropped.
+            let verified = await focuser.isFrontmost(event.window, at: global(event.point, in: frame))
+            guard startEpoch == epoch, verified else { return }
         }
 
         let target = global(event.point, in: frame)
@@ -296,7 +301,7 @@ public actor InputInjector {
         post(.tabletProximity(entering: false, at: point))
     }
 
-    /// Returns true when the window was raised.
+    /// Raises the window unless it is already topmost at `point` or was raised a moment ago. Returns true when it was raised.
     private func focusIfNeeded(_ window: WindowID, at point: LinkPoint) async -> Bool {
         let instant = now()
         if let last = lastFocus, last.window == window, instant - last.at < Self.focusCoalesceInterval { return false }
@@ -328,6 +333,9 @@ public actor InputInjector {
         let resolved = await usableFrame(of: event.window)
         guard startEpoch == epoch, let frame = resolved else { return }
         let target = anchor(in: event.window, frame: frame)
+        // No raise for scroll: only scroll what the user can see on top. Not topmost at the anchor: drop.
+        let topmost = await focuser.isFrontmost(event.window, at: target)
+        guard startEpoch == epoch, topmost else { return }
         moveCursorIfNeeded(to: target)
         post(.scroll(at: target, dx: event.dx, dy: event.dy, continuous: event.continuous, phase: event.phase,
                      momentumPhase: event.momentumPhase, modifiers: []))
@@ -338,6 +346,8 @@ public actor InputInjector {
         let resolved = await usableFrame(of: event.window)
         guard startEpoch == epoch, let frame = resolved else { return }
         let target = anchor(in: event.window, frame: frame)
+        let topmost = await focuser.isFrontmost(event.window, at: target)
+        guard startEpoch == epoch, topmost else { return }
         moveCursorIfNeeded(to: target)
         if poster.supportsGestures {
             post(.gesture(kind: event.kind, phase: event.phase, value: event.value, at: target))
@@ -376,11 +386,11 @@ public actor InputInjector {
             guard await keyboardTargetIsReady(epoch: startEpoch) else { return }
             pollSecureInput() // synthetic keys are still posted: some secure fields accept them, and the banner tells the user
             heldKeys[event.keycode] = event.modifiers
-        } else {
-            // A key-up always gets through, otherwise a key stays down.
-            heldKeys[event.keycode] = nil
+            post(.key(keycode: event.keycode, down: true, modifiers: event.modifiers))
+        } else if let recorded = heldKeys.removeValue(forKey: event.keycode) {
+            // Only keys this session pressed are released, with the modifiers they were pressed with.
+            post(.key(keycode: event.keycode, down: false, modifiers: recorded))
         }
-        post(.key(keycode: event.keycode, down: event.down, modifiers: event.modifiers))
     }
 
     private func inputText(_ text: String, epoch startEpoch: Int) async {

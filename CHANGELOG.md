@@ -1,0 +1,18 @@
+# Changelog
+
+## Unreleased
+
+- Project documentation and automation: `CLAUDE.md`, `AGENTS.md`, `.claude/` rules and skills, CI, issue and pull request templates,
+  Dependabot, `CODEOWNERS`, `.editorconfig`.
+
+## 0.1.0
+
+First public release.
+
+- Native RFB client: handshake, None / VNC / Apple Remote Desktop (type 30) authentication, Raw, CopyRect and ZRLE, cursor,
+  clipboard (Apple's protocol and standard cut-text), Metal rendering.
+- iPhone and iPad app: touch, Apple Pencil, mouse and trackpad, hardware and on-screen keyboard, Bonjour discovery,
+  saved connections with Keychain-stored passwords, quality and display modes, automatic reconnect.
+- Security: an account login never silently falls back to VNC authentication; Diffie-Hellman groups are validated
+  (≥ 2048 bits, Miller-Rabin); Raw rectangles are read in bands and the framebuffer is capped at 8K; server-pushed standard
+  clipboard text is not written to the pasteboard unprompted; the app warns about unencrypted transport and weak logins.

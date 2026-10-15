@@ -20,3 +20,7 @@ App/build-device/
 *.bin
 __pycache__/
 *.pyc
+
+# Claude Code local-only files
+.claude/settings.local.json
+CLAUDE.local.md

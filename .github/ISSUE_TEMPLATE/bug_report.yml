@@ -1,0 +1,41 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Expected vs. actual behaviour, and exact steps to reproduce.
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: iPhone / iPad model and iOS version
+      placeholder: "iPad Air (4th gen), iPadOS 26"
+    validations:
+      required: true
+  - type: input
+    id: mac
+    attributes:
+      label: Mac (server) and macOS version
+      placeholder: "Mac mini M2, macOS 26.1 (or a third-party VNC server and its version)"
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Login method
+      options: [Account login (macOS username + password), VNC password only, No password, Not sure]
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options: [Same Wi-Fi / LAN, VPN or tunnel, Internet (port-forwarded), Simulator only]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error message / logs
+      description: Paste the on-screen error. **Never paste passwords, hostnames you want kept private, or raw captures (they contain screen content).**
+      render: text

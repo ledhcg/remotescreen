@@ -1,0 +1,6 @@
+# Default owner for everything; review requests are sent automatically.
+*                          @ledhcg
+# Security-sensitive code always needs the maintainer's eyes.
+/Sources/RFBCrypto/        @ledhcg
+/Sources/RFBKit/Security/  @ledhcg
+/SECURITY.md               @ledhcg

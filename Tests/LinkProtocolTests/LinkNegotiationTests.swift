@@ -58,4 +58,15 @@ struct LinkNegotiationTests {
                    String(repeating: "é", count: 128)]
         for name in bad { #expect(!LinkFileName.isValid(name), "\(name.debugDescription)") }
     }
+
+    /// Grapheme-aware `String` comparisons would let these through while the file system still sees a leading or
+    /// trailing dot, or an invisible character.
+    @Test func combiningMarksCannotHideADotOrSpace() {
+        let bad = [".\u{301}", ".\u{301}ssh", "a.\u{301}", "a \u{301}", "\u{301}lead", "zero\u{200B}width", "bom\u{FEFF}.txt",
+                   "join\u{2060}er"]
+        for name in bad { #expect(!LinkFileName.isValid(name), "\(name.debugDescription)") }
+        // Decomposed Vietnamese (combining marks inside the name) stays valid.
+        let decomposed = "Ba\u{301}o ca\u{301}o.txt"
+        #expect(LinkFileName.isValid(decomposed))
+    }
 }

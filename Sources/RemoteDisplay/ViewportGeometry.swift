@@ -27,11 +27,41 @@ public struct ViewportGeometry: Equatable, Sendable {
     public private(set) var zoom: Double = 1
     /// Offset of the screen from the centered position, in points. Always clamped within `contentRect`.
     public private(set) var pan: CGPoint = .zero
+    /// Crop requested with `setSourceRect`; `nil` shows the whole remote surface.
+    private var requestedSourceRect: CGRect?
 
     public init(remoteSize: CGSize, viewSize: CGSize, scaleMode: ScaleMode = .fit) {
         self.remoteSize = remoteSize
         self.viewSize = viewSize
         self.scaleMode = scaleMode
+    }
+
+    // MARK: - Source rectangle
+
+    /// Part of the remote surface that is shown, in remote pixels. The whole surface by default. Cropping (one window out of a bigger
+    /// surface) and zoom/pan share one transform: the fit/fill scale, `contentRect` and every mapping below describe this rectangle.
+    /// A request that does not intersect the surface falls back to the whole surface; one that sticks out is clipped.
+    public var sourceRect: CGRect {
+        let whole = CGRect(origin: .zero, size: remoteSize)
+        guard let requested = requestedSourceRect else { return whole }
+        let clipped = requested.intersection(whole)
+        return (clipped.isNull || clipped.width <= 0 || clipped.height <= 0) ? whole : clipped
+    }
+
+    /// Sets the part of the remote surface to show, or `nil` for all of it. Zoom is kept, pan is re-clamped.
+    public mutating func setSourceRect(_ rect: CGRect?) {
+        requestedSourceRect = rect
+        normalisePan()
+    }
+
+    /// The source rectangle as `(u0, v0, u1, v1)` of the remote surface (v = 0 at the top), for the shader.
+    public var sourceUVRect: SIMD4<Float> {
+        guard remoteSize.width > 0, remoteSize.height > 0 else { return SIMD4(0, 0, 1, 1) }
+        let source = sourceRect
+        return SIMD4(
+            Float(source.minX / remoteSize.width), Float(source.minY / remoteSize.height),
+            Float(source.maxX / remoteSize.width), Float(source.maxY / remoteSize.height)
+        )
     }
 
     // MARK: - Scale and displayed rectangle
@@ -43,8 +73,9 @@ public struct ViewportGeometry: Equatable, Sendable {
     /// Points per Mac pixel when `zoom == 1`.
     public var baseScale: Double {
         guard !isDegenerate else { return 1 }
-        let widthRatio = viewSize.width / remoteSize.width
-        let heightRatio = viewSize.height / remoteSize.height
+        let source = sourceRect.size
+        let widthRatio = viewSize.width / source.width
+        let heightRatio = viewSize.height / source.height
         switch scaleMode {
         case .fit: return min(widthRatio, heightRatio)
         case .fill: return max(widthRatio, heightRatio)
@@ -56,12 +87,17 @@ public struct ViewportGeometry: Equatable, Sendable {
     /// Points per Mac pixel after zooming.
     public var scale: Double { baseScale * zoom }
 
-    /// Rectangle the remote screen occupies in the viewport (can be larger than the viewport when zoomed).
+    /// Rectangle the shown part of the remote screen (`sourceRect`) occupies in the viewport (can be larger than the viewport when zoomed).
     public var contentRect: CGRect {
-        let size = CGSize(width: remoteSize.width * scale, height: remoteSize.height * scale)
+        let size = scaledSourceSize
         let centered = CGPoint(x: (viewSize.width - size.width) / 2, y: (viewSize.height - size.height) / 2)
         let offset = Self.clamp(pan, content: size, view: viewSize)
         return CGRect(origin: CGPoint(x: centered.x + offset.x, y: centered.y + offset.y), size: size)
+    }
+
+    private var scaledSourceSize: CGSize {
+        let source = sourceRect.size
+        return CGSize(width: source.width * scale, height: source.height * scale)
     }
 
     /// Clamps the offset: if the screen is smaller than the viewport along an axis, keep it centered on that axis; if larger,
@@ -89,9 +125,10 @@ public struct ViewportGeometry: Equatable, Sendable {
         let anchor = remotePoint(forView: focus)
         zoom = min(max(value, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
 
-        let size = CGSize(width: remoteSize.width * scale, height: remoteSize.height * scale)
+        let size = scaledSourceSize
+        let source = sourceRect
         let centered = CGPoint(x: (viewSize.width - size.width) / 2, y: (viewSize.height - size.height) / 2)
-        let desiredOrigin = CGPoint(x: focus.x - anchor.x * scale, y: focus.y - anchor.y * scale)
+        let desiredOrigin = CGPoint(x: focus.x - (anchor.x - source.minX) * scale, y: focus.y - (anchor.y - source.minY) * scale)
         pan = CGPoint(x: desiredOrigin.x - centered.x, y: desiredOrigin.y - centered.y)
         normalisePan()
     }
@@ -120,8 +157,7 @@ public struct ViewportGeometry: Equatable, Sendable {
     }
 
     private var contentOffset: CGPoint {
-        let size = CGSize(width: remoteSize.width * scale, height: remoteSize.height * scale)
-        return Self.clamp(pan, content: size, view: viewSize)
+        return Self.clamp(pan, content: scaledSourceSize, view: viewSize)
     }
 
     private mutating func normalisePan() {
@@ -134,13 +170,15 @@ public struct ViewportGeometry: Equatable, Sendable {
     public func remotePoint(forView point: CGPoint) -> CGPoint {
         let rect = contentRect
         let scale = self.scale
-        return CGPoint(x: (point.x - rect.minX) / scale, y: (point.y - rect.minY) / scale)
+        let source = sourceRect
+        return CGPoint(x: source.minX + (point.x - rect.minX) / scale, y: source.minY + (point.y - rect.minY) / scale)
     }
 
     /// Point on the remote screen → point in the viewport.
     public func viewPoint(forRemote point: CGPoint) -> CGPoint {
         let rect = contentRect
-        return CGPoint(x: rect.minX + point.x * scale, y: rect.minY + point.y * scale)
+        let source = sourceRect
+        return CGPoint(x: rect.minX + (point.x - source.minX) * scale, y: rect.minY + (point.y - source.minY) * scale)
     }
 
     /// Mac pixel under a point in the viewport.
@@ -151,16 +189,19 @@ public struct ViewportGeometry: Equatable, Sendable {
         let remote = remotePoint(forView: point)
         let x = Int(remote.x.rounded(.down))
         let y = Int(remote.y.rounded(.down))
-        let maxX = Int(remoteSize.width) - 1
-        let maxY = Int(remoteSize.height) - 1
-        if (0...maxX).contains(x) && (0...maxY).contains(y) { return (x, y) }
+        let source = sourceRect
+        let minX = Int(source.minX.rounded(.down))
+        let minY = Int(source.minY.rounded(.down))
+        let maxX = Int(source.maxX.rounded(.up)) - 1
+        let maxY = Int(source.maxY.rounded(.up)) - 1
+        if (minX...maxX).contains(x) && (minY...maxY).contains(y) { return (x, y) }
         guard clamped else { return nil }
-        return (min(max(x, 0), maxX), min(max(y, 0), maxY))
+        return (min(max(x, minX), maxX), min(max(y, minY), maxY))
     }
 
     // MARK: - Cho GPU
 
-    /// Rectangle of the remote screen in the device's normalized coordinates (-1...1, y axis pointing UP):
+    /// Rectangle of the shown part of the remote screen (`sourceRect`) in the device's normalized coordinates (-1...1, y axis pointing UP):
     /// `(left, bottom, right, top)`.
     public var normalizedDeviceRect: SIMD4<Float> {
         guard viewSize.width > 0, viewSize.height > 0 else { return SIMD4(-1, -1, 1, 1) }

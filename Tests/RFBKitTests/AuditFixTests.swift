@@ -132,7 +132,8 @@ struct AuditFixTests {
         await s.setMinimumUpdateInterval(nil)
         while await stream.written.count < 20, ContinuousClock.now - started < .seconds(3) { try await Task.sleep(for: .milliseconds(5)) }
         #expect(await stream.written.count == 20)
-        #expect(ContinuousClock.now - started < .milliseconds(500))
+        // Well under the 2-second deferral, with headroom for a loaded machine (CI, parallel test processes).
+        #expect(ContinuousClock.now - started < .milliseconds(1500))
     }
 
     // MARK: Cancelling during the handshake

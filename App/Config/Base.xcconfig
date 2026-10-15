@@ -1,0 +1,3 @@
+// Shared configuration. Per-machine code-signing details live in Signing.local.xcconfig (not committed).
+// The `?` makes the include optional: without the file the simulator build still works.
+#include? "../Signing.local.xcconfig"

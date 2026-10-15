@@ -1,0 +1,40 @@
+/* Vietnamese translation. The key is the exact English source string. */
+
+/* ConnectionFailureMessage */
+"Couldn't connect: %@" = "Không kết nối được: %@";
+"Wrong username or password. Use the macOS account of that Mac, and the account must be allowed to share the screen (System Settings › General › Sharing › Screen Sharing › Allow access for)." = "Sai tên tài khoản hoặc mật khẩu. Dùng tài khoản macOS của máy đó, và tài khoản phải được phép chia sẻ màn hình (Cài đặt hệ thống › Chung › Chia sẻ › Chia sẻ màn hình › Cho phép truy cập).";
+"The password was not accepted. If this is a Mac, enter the macOS account name as well, not just the password." = "Mật khẩu không được chấp nhận. Nếu đây là máy Mac, hãy nhập cả tên tài khoản macOS, không chỉ mật khẩu.";
+"Timed out. Check the address, and that the Mac is on and not asleep." = "Hết thời gian chờ. Kiểm tra địa chỉ, và Mac đang bật, không ngủ.";
+"The server closed the connection." = "Máy chủ đã đóng kết nối.";
+"This computer signs in with a macOS username and password. Enter the username." = "Máy này đăng nhập bằng tên tài khoản và mật khẩu macOS. Hãy nhập tên tài khoản.";
+"This server does not support account sign-in, only a VNC password (weak, unencrypted). For safety the app does not switch to that automatically. If you still want to use it, leave the username empty." = "Máy chủ này không hỗ trợ đăng nhập bằng tài khoản, chỉ có mật khẩu VNC (yếu, không mã hoá). Vì an toàn, ứng dụng không tự chuyển sang cách đó. Nếu vẫn muốn dùng, hãy bỏ trống tên tài khoản.";
+"The server only allows an authentication method the app does not support." = "Máy chủ chỉ cho phép cách xác thực mà ứng dụng chưa hỗ trợ.";
+"The username or password is too long (63 bytes at most)." = "Tên tài khoản hoặc mật khẩu quá dài (tối đa 63 byte).";
+"Protocol error: %@" = "Lỗi giao thức: %@";
+"Couldn't reconnect to %@: the username or password is no longer accepted." = "Không nối lại được %@: tên tài khoản hoặc mật khẩu không còn được chấp nhận.";
+"Couldn't reconnect to %@: the server is not compatible. (%@)" = "Không nối lại được %1$@: máy chủ không tương thích. (%2$@)";
+"Lost connection to %@ and couldn't reconnect after %lld attempts. Check that the Mac is on, awake and on the same network. (%@)" = "Mất kết nối với %1$@ và không nối lại được sau %2$lld lần thử. Kiểm tra Mac còn bật, không ngủ và cùng mạng. (%3$@)";
+"This device has no network route to that address. Check that Wi-Fi is on and on the same network as the Mac, and that Settings › RemoteScreen › Local Network is on. (code %@)" = "Thiết bị chưa có đường mạng tới địa chỉ này. Kiểm tra: Wi-Fi đang bật và cùng mạng với Mac; Cài đặt › RemoteScreen › Mạng cục bộ đang bật. (mã %@)";
+"The Mac refused the connection. Turn on Screen Sharing: System Settings › General › Sharing. (code %@)" = "Mac từ chối kết nối. Bật Chia sẻ màn hình: Cài đặt hệ thống › Chung › Chia sẻ. (mã %@)";
+"The Mac did not answer. Check the address, and that the Mac is on and not asleep. (code %@)" = "Mac không trả lời. Kiểm tra địa chỉ, và Mac đang bật, không ngủ. (mã %@)";
+
+/* ConnectionSecurityNotice */
+"Screen images, keystrokes and the clipboard are not encrypted in transit. Use only on a trusted network, or through a VPN or SSH." = "Hình ảnh, phím gõ và clipboard không được mã hoá khi truyền. Chỉ dùng trong mạng tin cậy, hoặc đi qua VPN hay SSH.";
+"Signed in with a VNC password (weak). Use only on a trusted network." = "Đăng nhập bằng mật khẩu VNC (yếu). Chỉ dùng trên mạng tin cậy.";
+"This computer does not require a login. Anyone on the network can view it." = "Máy này không yêu cầu đăng nhập. Bất kỳ ai trong mạng đều xem được.";
+
+/* StreamStats */
+"%@ fps · %@ Mbit/s · decode %@ ms · draw %@ ms" = "%1$@ khung/s · %2$@ Mbit/s · giải mã %3$@ ms · vẽ %4$@ ms";
+"pacing %@/%@ ms" = "nhịp %1$@/%2$@ ms";
+
+/* ClipboardBridge notices */
+"The device clipboard is empty." = "Clipboard của thiết bị đang trống.";
+"Sent %lld characters to the Mac." = "Đã gửi %lld ký tự tới Mac.";
+"Couldn't paste: iOS is blocking clipboard access. Turn on Settings › RemoteScreen › Paste from Other Apps." = "Không dán được: iOS đang chặn đọc clipboard. Bật Cài đặt › RemoteScreen › Dán từ ứng dụng khác.";
+"The clipboard is too large to send to the Mac." = "Clipboard quá lớn để gửi lên Mac.";
+"No clipboard received from the Mac yet. This computer sends it automatically when you copy on the Mac." = "Chưa nhận được clipboard nào từ Mac. Máy này tự gửi khi bạn sao chép trên Mac.";
+"Couldn't read the clipboard from the Mac." = "Không đọc được clipboard từ Mac.";
+"The Mac clipboard is empty or is not text." = "Clipboard của Mac đang trống hoặc không phải văn bản.";
+"Copied sensitive content from the Mac (this device only, cleared after %lld seconds)." = "Đã chép nội dung nhạy cảm từ Mac (chỉ trên máy này, tự xóa sau %lld giây).";
+"The Mac clipboard is too large (%@ MB) and was skipped." = "Clipboard của Mac quá lớn (%@ MB) nên đã bỏ qua.";
+"Copied %lld characters from the Mac." = "Đã chép %lld ký tự từ Mac.";

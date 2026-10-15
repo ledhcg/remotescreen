@@ -1,0 +1,5 @@
+/* Vietnamese translation. The key is the exact English source string. */
+
+/* Accessibility */
+"Remote screen" = "Màn hình từ xa";
+"Mac screen %lld×%lld, shown at %lld×%lld points" = "Màn hình Mac %1$lld×%2$lld, hiển thị %3$lld×%4$lld điểm";

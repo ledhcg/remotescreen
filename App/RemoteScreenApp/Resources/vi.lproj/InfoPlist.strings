@@ -1,0 +1,3 @@
+/* Vietnamese translation of Info.plist strings. */
+
+"NSLocalNetworkUsageDescription" = "Ứng dụng cần truy cập mạng cục bộ để tìm và kết nối tới máy Mac của bạn.";

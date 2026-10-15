@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Generates ZRLE test vectors with an independent ENCODER that covers all seven tile kinds.
+
+Apple's server (macOS 27) sends only raw tiles, so real data cannot exercise the other kinds.
+This script builds an image with known exact pixels, encodes each tile with a specific kind per RFC 6143
+section 7.7.6, compresses with one continuous zlib stream (synchronised with Z_SYNC_FLUSH after each rectangle), and writes the
+vectors for a Swift test. The Swift test must decode back to the original image (compared by the MD5 of the whole framebuffer).
+
+To re-run:  python3 -I Tools/replay-check/make_zrle_fixture.py
+"""
+import hashlib
+import os
+import sys
+import zlib
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(__file__))
+from collections import Counter
+
+from zrle_replay import decode_zrle  # the Python decoder, used only to self-check this encoder
+
+TILE = 64
+rng = np.random.default_rng(20261014)
+
+
+def colour():
+    return rng.integers(0, 256, 3, dtype=np.uint8)
+
+
+def run_length_bytes(length):
+    """Encodes run length L: the bytes sum to L-1, a byte of 255 means more follow."""
+    value, out = length - 1, []
+    while value >= 255:
+        out.append(255)
+        value -= 255
+    out.append(value)
+    return bytes(out)
+
+
+def runs_for(n, choices):
+    """Splits n pixels into runs whose lengths come from `choices` (the last run is truncated to fit)."""
+    runs, remaining = [], n
+    while remaining > 0:
+        length = min(int(rng.choice(choices)), remaining)
+        runs.append(length)
+        remaining -= length
+    return runs
+
+
+def encode_tile(kind, tw, th):
+    """Returns (encoded bytes, the correct (th, tw, 3) BGR pixel array)."""
+    n = tw * th
+    if kind == "raw":
+        pixels = rng.integers(0, 256, (th, tw, 3), dtype=np.uint8)
+        return bytes([0]) + pixels.tobytes(), pixels
+
+    if kind == "solid":
+        c = colour()
+        return bytes([1]) + c.tobytes(), np.broadcast_to(c, (th, tw, 3)).copy()
+
+    if kind.startswith("pal") and not kind.startswith("prle"):  # bit-packed palette
+        k = int(kind[3:])
+        palette = rng.integers(0, 256, (k, 3), dtype=np.uint8)
+        index = rng.integers(0, k, (th, tw), dtype=np.uint8)
+        index.flat[:k] = np.arange(k) % k  # ensure every index appears if there are enough pixels
+        bits = 1 if k == 2 else (2 if k <= 4 else 4)
+        bit_matrix = np.unpackbits(index[..., None], axis=2)[:, :, 8 - bits :].reshape(th, tw * bits)
+        packed = np.packbits(bit_matrix, axis=1)  # each row is padded with zeros up to a byte
+        return bytes([k]) + palette.tobytes() + packed.tobytes(), palette[index]
+
+    if kind in ("rle", "rleLong"):  # plain RLE
+        choices = [1, 2, 3, 17, 255, 256, 300, 600] if kind == "rleLong" else [1, 2, 5, 40]
+        body, flat, filled = b"", np.empty((n, 3), np.uint8), 0
+        for length in runs_for(n, choices):
+            c = colour()
+            body += c.tobytes() + run_length_bytes(length)
+            flat[filled : filled + length] = c
+            filled += length
+        return bytes([0x80]) + body, flat.reshape(th, tw, 3)
+
+    if kind.startswith("prle"):  # palette RLE
+        k = int(kind[4:])
+        palette = rng.integers(0, 256, (k, 3), dtype=np.uint8)
+        body, flat, filled = b"", np.empty((n, 3), np.uint8), 0
+        for length in runs_for(n, [1, 1, 2, 5, 70, 300]):
+            index = int(rng.integers(0, k))
+            if length == 1 and rng.random() < 0.5:
+                body += bytes([index])  # a run of length 1 needs no length bytes
+            else:
+                body += bytes([0x80 | index]) + run_length_bytes(length)  # a run of length 1 may also use the explicit-length form
+            flat[filled : filled + length] = palette[index]
+            filled += length
+        return bytes([0x80 | k]) + palette.tobytes() + body, flat.reshape(th, tw, 3)
+
+    raise ValueError(kind)
+
+
+def build_rect(w, h, kinds):
+    """Encodes a w×h rectangle; tile i uses kind kinds[i % len(kinds)]."""
+    data, image, seen = b"", np.zeros((h, w, 3), np.uint8), Counter()
+    i = 0
+    for ty in range(0, h, TILE):
+        th = min(TILE, h - ty)
+        for tx in range(0, w, TILE):
+            tw = min(TILE, w - tx)
+            kind = kinds[i % len(kinds)]
+            encoded, pixels = encode_tile(kind, tw, th)
+            data += encoded
+            image[ty : ty + th, tx : tx + tw] = pixels
+            seen[kind] += 1
+            i += 1
+    return data, image, seen
+
+
+W, H = 256, 160
+KINDS_A = ["solid", "pal2", "pal3", "pal4", "pal5", "pal9", "pal16", "rle", "prle3", "prle40", "raw", "rleLong"]
+KINDS_B = ["prle3", "pal16", "rleLong", "solid"]
+RECTS = [(0, 0, 200, 136, KINDS_A), (150, 70, 70, 70, KINDS_B)]  # the second rectangle overlaps the first, off the 64 grid
+
+stream = zlib.compressobj(level=6)
+framebuffer = np.zeros((H, W, 3), np.uint8)
+lines = [
+    "// Generated by Tools/replay-check/make_zrle_fixture.py. Do not edit by hand.",
+    "// An independent ZRLE ENCODER (Python) builds an image with known exact pixels, covering every tile kind, compressed with one continuous zlib stream.",
+    "enum ZRLERoundTripVectors {",
+    f"    static let width = {W}",
+    f"    static let height = {H}",
+    "    /// (x, y, width, height, compressed hex data). Decode in order with the SAME decoder because the zlib stream is continuous.",
+    "    static let rects: [(x: Int, y: Int, width: Int, height: Int, compressed: String)] = [",
+]
+all_seen = Counter()
+for x, y, w, h, kinds in RECTS:
+    data, image, seen = build_rect(w, h, kinds)
+    all_seen += seen
+    compressed = stream.compress(data) + stream.flush(zlib.Z_SYNC_FLUSH)
+
+    # Self-check: the Python decoder must rebuild the original image from the (uncompressed) encoded data.
+    check = decode_zrle(data, w, h, Counter())
+    assert np.array_equal(check, image), "the Python encoder and decoder do not match"
+
+    framebuffer[y : y + h, x : x + w] = image
+    lines.append(f"        ({x}, {y}, {w}, {h}, \"{compressed.hex()}\"),")
+    print(f"rectangle {w}x{h} at ({x},{y}): {len(data)} ZRLE bytes -> {len(compressed)} compressed bytes")
+lines.append("    ]")
+
+bgra = np.zeros((H, W, 4), np.uint8)
+bgra[:, :, :3] = framebuffer
+lines.append(f'    /// MD5 of the whole BGRA framebuffer after applying every rectangle (the fourth byte is always 0).')
+lines.append(f'    static let expectedMD5 = "{hashlib.md5(bgra.tobytes()).hexdigest()}"')
+lines.append(f'    static let tileKinds = {sorted(all_seen)!r}'.replace("'", '"'))
+lines.append("}")
+out = os.path.join(os.path.dirname(__file__), "..", "..", "Tests", "RFBKitTests", "ZRLERoundTripVectors.swift")
+open(out, "w").write("\n".join(lines) + "\n")
+print("tiles used:", dict(all_seen))
+print("wrote", os.path.normpath(out))

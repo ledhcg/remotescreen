@@ -1,0 +1,7 @@
+# Extend gitleaks' default ruleset.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Cryptographic test vectors (public/random AES keys generated with OpenSSL), not secrets"
+paths = ['''Tests/.*Vectors\.swift''']

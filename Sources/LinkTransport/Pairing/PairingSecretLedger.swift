@@ -76,6 +76,35 @@ public final class PairingSecretLedger: @unchecked Sendable {
         }
     }
 
+    /// Like `attempt`, for a proof that does not name its offer (`pair.prove` carries no nonce): `check` is tried against
+    /// every outstanding offer. The attempt counts once towards the hourly limit. A match burns that offer. When nothing
+    /// matches, every outstanding offer is charged one failure (the offer the client meant is unknown), and offers that reach
+    /// the limit are burned.
+    public func attemptAny(check: (PairingOffer) -> Bool) throws {
+        let offers: [PairingOffer] = try lock.withLock {
+            let now = clock()
+            attempts.removeAll { now.timeIntervalSince($0) >= 3600 }
+            guard attempts.count < Self.maxAttemptsPerHour else { throw PairingError.rateLimited }
+            attempts.append(now)
+            purgeExpired(now: now)
+            guard !entries.isEmpty else { throw PairingError.unknownOrUsedSecret }
+            return entries.values.sorted { $0.sequence < $1.sequence }.map(\.offer)
+        }
+        let matched = offers.first(where: check)
+        try lock.withLock {
+            if let matched {
+                guard entries.removeValue(forKey: matched.nonce) != nil else { throw PairingError.unknownOrUsedSecret }
+                return
+            }
+            var burned = false
+            for (nonce, var e) in entries {
+                e.failures += 1
+                if e.failures >= Self.maxFailedAttempts { entries.removeValue(forKey: nonce); burned = true } else { entries[nonce] = e }
+            }
+            throw burned ? PairingError.tooManyAttempts : PairingError.invalidProof
+        }
+    }
+
     public func revoke(nonce: Data) { _ = lock.withLock { entries.removeValue(forKey: nonce) } }
 
     private func purgeExpired(now: Date) {

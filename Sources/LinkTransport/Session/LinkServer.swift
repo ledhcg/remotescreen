@@ -25,6 +25,9 @@ public struct LinkServerConfiguration: Sendable {
     public var askBeforeEachSession: @Sendable () -> Bool
     /// 0 picks a free port (QUIC and TCP share the number when possible).
     public var port: UInt16
+    /// With a non-zero `port`: use any free port when that one is taken, instead of failing. A paired iPad finds the helper
+    /// again at its well-known port, and through Bonjour otherwise.
+    public var fallBackToAnyPort: Bool = false
     public var enableQUIC: Bool
     public var enableTCP: Bool
     /// Bind to loopback only (tests, the mock helper).
@@ -120,7 +123,8 @@ public actor LinkServer {
             attempt += 1
             do {
                 var result = LinkServerEndpoint()
-                var requested = configuration.port
+                // A preferred port is tried first; after it failed once (taken), any free port pair is used.
+                var requested = attempt == 1 || !configuration.fallBackToAnyPort ? configuration.port : 0
                 if configuration.enableQUIC {
                     let listener = try makeQUICListener(port: requested)
                     let port = try await Self.waitReady(listener, queue: queue)
@@ -141,7 +145,7 @@ public actor LinkServer {
                 quicListener?.cancel(); tcpListener?.cancel()
                 quicListener = nil; tcpListener = nil
                 // The UDP port we got may be taken for TCP; try another pair.
-                if configuration.port == 0, attempt < 5 { continue }
+                if configuration.port == 0 || configuration.fallBackToAnyPort, attempt < 5 { continue }
                 throw LinkSessionError.transport("cannot listen")
             }
         }

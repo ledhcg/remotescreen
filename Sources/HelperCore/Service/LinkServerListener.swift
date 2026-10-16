@@ -10,6 +10,9 @@ import LinkTransport
 /// changes, adapt them and nothing else. Pairing windows are opened on `server` (`openPairingWindow(method:)`, or showing a QR
 /// code via `makePairingQRPayload`) when the person at the Mac asks to pair a device.
 public struct HelperPairingSettings: Sendable {
+    /// The helper's well-known port, so a paired iPad reconnects after the helper restarts. Another free port is used when it
+    /// is taken.
+    public static let defaultPort: UInt16 = 7361
     public var identity: LinkSecIdentity
     public var macName: String
     public var pairedDevices: any PairedDeviceStore
@@ -28,7 +31,7 @@ public struct HelperPairingSettings: Sendable {
         identity: LinkSecIdentity, macName: String, pairedDevices: any PairedDeviceStore,
         approvalHandler: @escaping @Sendable (PairingApprovalRequest) async -> Bool,
         askBeforeEachSession: @escaping @Sendable () -> Bool = { false },
-        port: UInt16 = 0, enableQUIC: Bool = true, enableTCP: Bool = true, loopbackOnly: Bool = false,
+        port: UInt16 = HelperPairingSettings.defaultPort, enableQUIC: Bool = true, enableTCP: Bool = true, loopbackOnly: Bool = false,
         advertiseBonjour: Bool = true, maxSessions: Int = HelperServiceOptions.defaultMaxSessions,
         displays: @escaping @Sendable () -> [LinkDisplayInfo] = { [] }
     ) {
@@ -57,13 +60,15 @@ public final class LinkServerListener: HelperListener, Sendable {
 
     /// `snapshotProvider` stays nil: `HelperSession` sends the snapshot itself, right after it subscribed to changes.
     public static func makeConfiguration(_ settings: HelperPairingSettings, audio: Bool) -> LinkServerConfiguration {
-        LinkServerConfiguration(
+        var configuration = LinkServerConfiguration(
             identity: settings.identity, macName: settings.macName, capabilities: capabilities(audio: audio),
             pairedDevices: settings.pairedDevices, approvalHandler: settings.approvalHandler, displays: settings.displays,
             snapshotProvider: nil, askBeforeEachSession: settings.askBeforeEachSession,
             port: settings.port, enableQUIC: settings.enableQUIC,
             enableTCP: settings.enableTCP, loopbackOnly: settings.loopbackOnly, advertiseBonjour: settings.advertiseBonjour,
             maxSessions: settings.maxSessions)
+        configuration.fallBackToAnyPort = settings.port != 0
+        return configuration
     }
 
     public init(server: LinkServer) {

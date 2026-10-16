@@ -102,7 +102,7 @@ struct SharedSessionPoolTests {
 struct SceneRoleTests {
     @Test func roundTripsThroughJSON() throws {
         let id = UUID()
-        for role in [SceneRole.desktop, .launcher(computerID: id), .remoteWindow(computerID: id, windowRef: "w1")] {
+        for role in [SceneRole.desktop, .computerDesktop(computerID: id), .launcher(computerID: id), .remoteWindow(computerID: id, windowRef: "w1")] {
             let decoded = try JSONDecoder().decode(SceneRole.self, from: JSONEncoder().encode(role))
             #expect(decoded == role)
         }

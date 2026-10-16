@@ -37,6 +37,13 @@ final class LinkSessionRegistry {
         scheduleExpiry()
     }
 
+    /// The App Mode connection of a computer, with a reference to balance with `release(computerID:)`. `nil` when the registry's
+    /// factory builds something else (before iOS 26).
+    @available(iOS 26, *)
+    func acquireConnection(computerID: UUID) -> AppModeConnection? {
+        acquire(computerID: computerID) as? AppModeConnection
+    }
+
     func referenceCount(computerID: UUID) -> Int { pool.referenceCount(for: computerID) }
 
     private func scheduleExpiry() {
@@ -52,7 +59,9 @@ final class LinkSessionRegistry {
     }
 }
 
-/// Stands in until the link transport exists.
-private final class PlaceholderSession: AppModeSession {
+/// Stands in where App Mode does not exist (before iOS 26).
+final class UnavailableSession: AppModeSession {
     func close() {}
 }
+
+private typealias PlaceholderSession = UnavailableSession

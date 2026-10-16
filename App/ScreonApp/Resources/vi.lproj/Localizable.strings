@@ -3,7 +3,6 @@
 "%@, %@. Tap to collapse the toolbar" = "%1$@, %2$@. Chạm để thu gọn thanh công cụ";
 "Account name" = "Tên tài khoản";
 "App Mode" = "Chế độ ứng dụng";
-"App Mode is not available yet." = "Chế độ ứng dụng chưa khả dụng.";
 "Allow Screon to search the network so it can find Macs automatically, or enter an address above." = "Cho phép Screon tìm máy trong mạng để tự thấy các Mac, hoặc nhập địa chỉ ở trên.";
 "Applying the new quality mode…" = "Đang áp dụng chế độ chất lượng mới…";
 "Automatic" = "Tự động";
@@ -90,3 +89,54 @@
 "Zoom the iPad view" = "Phóng khung nhìn iPad";
 "error %d" = "lỗi %d";
 "≤%lld fps" = "≤%lld khung/s";
+
+/* App Mode: pairing */
+"Set up App Mode" = "Thiết lập Chế độ ứng dụng";
+"Set up App Mode…" = "Thiết lập Chế độ ứng dụng…";
+"Pair App Mode again…" = "Ghép nối lại Chế độ ứng dụng…";
+"Open App Mode windows" = "Mở các cửa sổ Chế độ ứng dụng";
+"Open Screon Helper on “%@” and choose Pair a Device. Then scan the code it shows, or use the other ways below." = "Hãy mở Screon Helper trên “%@” và chọn Ghép nối thiết bị. Sau đó quét mã nó hiển thị, hoặc dùng các cách khác bên dưới.";
+"Method" = "Cách ghép nối";
+"Scan code" = "Quét mã";
+"Paste link" = "Dán liên kết";
+"Pair with code" = "Ghép nối bằng mã";
+"The camera is not available. Allow it in Settings, or paste the link instead." = "Không dùng được camera. Hãy cho phép trong Cài đặt, hoặc dán liên kết thay thế.";
+"Camera for the pairing code" = "Camera quét mã ghép nối";
+"screon-pair:…" = "screon-pair:…";
+"Pair" = "Ghép nối";
+"Copy the pairing link from Screon Helper and paste it here." = "Sao chép liên kết ghép nối từ Screon Helper rồi dán vào đây.";
+"Mac address" = "Địa chỉ máy Mac";
+"Port" = "Cổng";
+"Show code" = "Hiện mã";
+"Screon Helper shows the address and port. Both devices then show six digits to compare." = "Screon Helper hiển thị địa chỉ và cổng. Sau đó cả hai thiết bị hiện sáu chữ số để so sánh.";
+"Waiting for approval on the Mac…" = "Đang chờ phê duyệt trên máy Mac…";
+"Approve this device on the Mac with Touch ID or the account password." = "Hãy phê duyệt thiết bị này trên máy Mac bằng Touch ID hoặc mật khẩu tài khoản.";
+"The codes match" = "Hai mã khớp nhau";
+"They are different" = "Hai mã khác nhau";
+"Compare with the Mac" = "So sánh với máy Mac";
+"Pair only if the Mac shows exactly the same six digits." = "Chỉ ghép nối nếu máy Mac hiển thị đúng sáu chữ số giống vậy.";
+"Try again" = "Thử lại";
+"This pairing code has expired. Show a new one on the Mac." = "Mã ghép nối này đã hết hạn. Hãy hiện mã mới trên máy Mac.";
+"This is not a Screon pairing code." = "Đây không phải mã ghép nối của Screon.";
+"The pairing code was not accepted." = "Mã ghép nối không được chấp nhận.";
+"The Mac that answered is not the one in the pairing code." = "Máy Mac phản hồi không phải máy trong mã ghép nối.";
+"The pairing was declined on the Mac." = "Việc ghép nối đã bị từ chối trên máy Mac.";
+"Too many attempts. Wait a moment and show a new code on the Mac." = "Thử quá nhiều lần. Hãy chờ một lúc rồi hiện mã mới trên máy Mac.";
+"The Mac did not accept the pairing." = "Máy Mac không chấp nhận việc ghép nối.";
+"The codes did not match, so nothing was paired." = "Hai mã không khớp nên chưa ghép nối gì cả.";
+"Screon and Screon Helper need to be updated to work together." = "Cần cập nhật Screon và Screon Helper để chúng hoạt động cùng nhau.";
+"The Mac did not answer. Check that Screon Helper is running and on the same network." = "Máy Mac không phản hồi. Hãy kiểm tra Screon Helper đang chạy và cùng mạng.";
+"The Mac does not know this device yet. Pair it first." = "Máy Mac chưa biết thiết bị này. Hãy ghép nối trước.";
+"Could not reach the Mac. Check that Screon Helper is running and on the same network." = "Không kết nối được tới máy Mac. Hãy kiểm tra Screon Helper đang chạy và cùng mạng.";
+"Pairing failed." = "Ghép nối thất bại.";
+
+/* App Mode: windows */
+"Mac window" = "Cửa sổ Mac";
+"Choose a window from the list of your computers." = "Hãy chọn một cửa sổ từ danh sách máy tính của bạn.";
+"No windows" = "Không có cửa sổ";
+"Open an app on the Mac to see its windows here." = "Hãy mở một ứng dụng trên máy Mac để thấy các cửa sổ của nó ở đây.";
+"Fit" = "Vừa khít";
+"Fill" = "Lấp đầy";
+"Actual size" = "Kích thước thật";
+"Reset zoom" = "Đặt lại thu phóng";
+"Window options" = "Tùy chọn cửa sổ";

@@ -19,8 +19,12 @@ enum DebugAutoConnect {
 
 struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(LinkSessionRegistry.self) private var linkSessions
+    @Environment(\.openWindow) private var openWindow
     @State private var controller = SessionController(defaults: SessionController.environmentDefaults())
     let model: ConnectionsModel
+    /// Connect to this computer with its saved password as soon as the view appears (opened from an App Mode window to unlock the Mac).
+    var autoConnect: SavedConnection?
 
     var body: some View {
         Group {
@@ -41,6 +45,17 @@ struct RootView: View {
             }
         }
         .task {
+            if let saved = autoConnect, let password = model.password(for: saved), controller.state == .idle {
+                controller.connect(target: saved.target, username: saved.username, password: password) { model.markUsed(saved) }
+            }
+            #if DEBUG
+            // App Mode test hooks: LINK_HOST, LINK_PORT, LINK_PAIRING. First scene only.
+            if #available(iOS 26, *), DebugLinkHooks.claim() {
+                await DebugLinkHooks.run(model: model, registry: linkSessions) { role in
+                    openWindow(id: AppModeScene.id, value: role)
+                }
+            }
+            #endif
             #if DEBUG
             // Auto-connect for test runs: environment variables RFB_HOST, RFB_PORT, RFB_USER, RFB_PASSWORD.
             let environment = ProcessInfo.processInfo.environment

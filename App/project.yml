@@ -37,6 +37,12 @@ targets:
         product: ConnectionKit
       - package: Screon
         product: SessionKit
+      - package: Screon
+        product: LinkProtocol
+      - package: Screon
+        product: LinkTransport
+      - package: Screon
+        product: WindowKit
     info:
       path: ScreonApp/Info.plist
       properties:
@@ -64,6 +70,8 @@ targets:
         NSBonjourServices:
           - _rfb._tcp
           - _screon-link._udp
+        # App Mode: scanning the pairing QR code that the Mac helper shows.
+        NSCameraUsageDescription: Screon uses the camera only to scan the pairing code shown by Screon Helper on your Mac.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ledinhcuong.screon

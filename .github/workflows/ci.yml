@@ -38,6 +38,9 @@ jobs:
         # Serial on purpose: some tests assert wall-clock timing and 4096-bit big-number tests are CPU heavy, so they
         # starve each other on a 3-core runner when run in parallel.
         run: swift test --no-parallel
+      - name: Test App Mode packages optimized
+        # The shipping helper is built optimized; one tracker bug (every result carried pid 0) appeared only with -O.
+        run: swift test -c release --no-parallel --filter 'HelperCoreTests|LinkTransportTests|LinkProtocolTests|WindowKitTests'
       - name: Mock link helper self-test
         # Runs only once the tool implements --self-test.
         run: |

@@ -199,7 +199,7 @@ public final class AXWindowSystem: WindowSystem, @unchecked Sendable {
 
     public func trackablePIDs() -> [Int32] {
         NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular && !$0.isTerminated && $0.processIdentifier != ownPID }
+            .filter { $0.activationPolicy == .regular && !$0.isTerminated && $0.processIdentifier > 0 && $0.processIdentifier != ownPID }
             .map(\.processIdentifier)
     }
 

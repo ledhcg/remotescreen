@@ -291,12 +291,17 @@ public actor WindowTracker {
         let system = self.system
         let results = await withTaskGroup(of: (Int32, Result<[AXWindowState], WindowSystemError>).self) { group in
             for pid in toFetch {
-                group.addTask {
-                    if !alreadyObserved.contains(pid) { try? await system.startObserving(pid: pid) }
+                // Explicit capture: with the loop variable captured implicitly, optimized builds returned 0 as the pid of
+                // every result, so no window was ever attached to its app (Release-only, found on a real Mac).
+                let target: Int32 = pid
+                let observe = !alreadyObserved.contains(target)
+                group.addTask { [target, observe, system] in
+                    if observe { try? await system.startObserving(pid: target) }
                     do {
-                        return (pid, .success(try await system.axWindows(pid: pid)))
+                        let windows = try await system.axWindows(pid: target)
+                        return (target, .success(windows))
                     } catch {
-                        return (pid, .failure(error as? WindowSystemError ?? .failed(-1)))
+                        return (target, .failure(error as? WindowSystemError ?? .failed(-1)))
                     }
                 }
             }

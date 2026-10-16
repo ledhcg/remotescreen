@@ -234,13 +234,18 @@ public actor InputInjector {
         }
     }
 
+    /// The link carries tilt in radians (-pi/2...pi/2); the system's tablet fields are -1...1.
+    private static func normalizedTilt(_ radians: Float?) -> Float {
+        guard let radians, radians.isFinite else { return 0 }
+        return min(max(radians / (Float.pi / 2), -1), 1)
+    }
+
     private static func pen(for event: LinkPointerEvent) -> PenState? {
         guard let pressure = event.pressure else { return nil }
         let tilt = event.tilt
         return PenState(
             pressure: min(max(pressure.isFinite ? pressure : 0, 0), 1),
-            tiltX: min(max((tilt?.x).flatMap { $0.isFinite ? $0 : 0 } ?? 0, -1), 1),
-            tiltY: min(max((tilt?.y).flatMap { $0.isFinite ? $0 : 0 } ?? 0, -1), 1)
+            tiltX: normalizedTilt(tilt?.x), tiltY: normalizedTilt(tilt?.y)
         )
     }
 

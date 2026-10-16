@@ -186,12 +186,12 @@ import Testing
 
     @Test func penEntersAndLeavesProximity() async {
         await injector.handle(pointer(10, 10, [], pressure: 0))
-        await injector.handle(pointer(10, 10, .left, pressure: 0.5, tilt: LinkTilt(x: 0.25, y: -2)))
+        await injector.handle(pointer(10, 10, .left, pressure: 0.5, tilt: LinkTilt(x: .pi / 4, y: -2)))
         await injector.handle(pointer(10, 10, []))
         let kinds = poster.events
         #expect(kinds.first == .tabletProximity(entering: true, at: LinkPoint(x: 110, y: 210)))
         #expect(kinds.contains(.mouseDown(button: .left, at: LinkPoint(x: 110, y: 210), clickCount: 1, modifiers: [],
-                                          pen: PenState(pressure: 0.5, tiltX: 0.25, tiltY: -1))))
+                                          pen: PenState(pressure: 0.5, tiltX: 0.5, tiltY: -1))))
         #expect(kinds.last == .tabletProximity(entering: false, at: LinkPoint(x: 110, y: 210)))
     }
 

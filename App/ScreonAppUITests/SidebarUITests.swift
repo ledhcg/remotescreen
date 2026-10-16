@@ -26,14 +26,8 @@ final class SidebarUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(screen.frame.minX, sidebarRight - 1, "the Mac screen must start after the sidebar")
         let widthWithSidebar = screen.frame.width
 
-        func point(_ x: Double, _ y: Double) -> XCUICoordinate {
-            let frame = screen.frame
-            let scale = min(frame.width / remote.width, frame.height / remote.height)
-            let origin = CGPoint(x: (frame.width - remote.width * scale) / 2, y: (frame.height - remote.height * scale) / 2)
-            return screen.coordinate(withNormalizedOffset: CGVector(
-                dx: (origin.x + x * scale) / frame.width, dy: (origin.y + y * scale) / frame.height
-            ))
-        }
+        // Read again on every tap: the sidebar can move the picture.
+        func point(_ x: Double, _ y: Double) -> XCUICoordinate { RemoteScreenPoints(screen: screen, remote: remote).point(x, y) }
 
         // 1. Tap ⌘ once: sticky for ONE click, then releases itself.
         command.tap()

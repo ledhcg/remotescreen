@@ -17,14 +17,8 @@ final class CursorUITests: XCTestCase {
         XCTAssertTrue(screen.waitForExistence(timeout: 30), "remote screen view not found")
         Thread.sleep(forTimeInterval: 4)
 
-        let frame = screen.frame
-        let scale = min(frame.width / remote.width, frame.height / remote.height)
-        let origin = CGPoint(x: (frame.width - remote.width * scale) / 2, y: (frame.height - remote.height * scale) / 2)
-        func point(_ x: Double, _ y: Double) -> XCUICoordinate {
-            screen.coordinate(withNormalizedOffset: CGVector(
-                dx: (origin.x + x * scale) / frame.width, dy: (origin.y + y * scale) / frame.height
-            ))
-        }
+        let points = RemoteScreenPoints(screen: screen, remote: remote)
+        func point(_ x: Double, _ y: Double) -> XCUICoordinate { points.point(x, y) }
 
         // Tap away from the white crosshair in the middle, because the crosshair has white pixels like the cursor's fill.
         point(560, 140).tap()

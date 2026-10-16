@@ -183,6 +183,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
         let size = CGSize(width: framebuffer.width, height: framebuffer.height)
         if geometry.remoteSize != size {
             geometry.updateRemoteSize(size)
+            geometry.updateInsets(systemInsets) // which side gets room for the display corners depends on the Mac's aspect ratio
             geometryChanged() // notify both the delegate and the accessibility value (the displayed size changes with the Mac size)
         }
         requestFrame()
@@ -277,14 +278,49 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     public var onPixelSizeChange: ((CGSize) -> Void)?
     private var lastReportedPixelSize = CGSize.zero
 
+    /// Device pixels of the part of the view the Mac screen is fitted into (the view without `systemInsets`).
     public var pixelSize: CGSize {
         let scale = traitCollection.displayScale > 0 ? traitCollection.displayScale : contentScaleFactor
-        return CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        let insets = geometry.insets
+        let width = bounds.width - insets.left - insets.right, height = bounds.height - insets.top - insets.bottom
+        guard width > 0, height > 0 else { return CGSize(width: bounds.width * scale, height: bounds.height * scale) }
+        return CGSize(width: width * scale, height: height * scale)
+    }
+
+    /// Margins the system may cover: the safe area (status bar, notch or Dynamic Island, home indicator) plus room for the display's
+    /// rounded corners. The view itself draws edge to edge (the letterbox stays black under them); the Mac screen is fitted inside.
+    private var systemInsets: ViewportInsets {
+        let safe = safeAreaInsets
+        let insets = ViewportInsets(top: safe.top, left: safe.left, bottom: safe.bottom, right: safe.right)
+        let source = geometry.sourceRect.size
+        guard let screen = window?.windowScene?.screen, source.width > 0, source.height > 0 else { return insets }
+        // Which of this view's edges lie on the display's edges (with the sidebar showing, one side does not).
+        let frame = convert(bounds, to: screen.coordinateSpace), display = screen.bounds
+        var edges: ViewportInsets.DisplayEdges = []
+        if frame.minY <= display.minY + 1 { edges.insert(.top) }
+        if frame.minX <= display.minX + 1 { edges.insert(.left) }
+        if frame.maxY >= display.maxY - 1 { edges.insert(.bottom) }
+        if frame.maxX >= display.maxX - 1 { edges.insert(.right) }
+        return insets.avoidingRoundedCorners(
+            radius: Self.displayCornerRadius(window: window), edges: edges, viewSize: bounds.size, contentAspect: source.width / source.height)
+    }
+
+    /// Approximate corner radius of the display, in points. iOS has no public value for it: devices with a home indicator instead of a home
+    /// button have rounded corners, about 18 points on iPad and 39–62 on iPhone (47 covers the common models; the safe area clears most of it).
+    private static func displayCornerRadius(window: UIWindow?) -> Double {
+        guard let window, window.safeAreaInsets.bottom > 0 || window.safeAreaInsets.left > 0 else { return 0 }
+        return window.traitCollection.userInterfaceIdiom == .pad ? 18 : 47
+    }
+
+    public override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        setNeedsLayout()
     }
 
     public override func layoutSubviews() {
         super.layoutSubviews()
         geometry.updateViewSize(bounds.size)
+        geometry.updateInsets(systemInsets)
         geometryChanged()
         let size = pixelSize
         if size != lastReportedPixelSize, size.width > 0, size.height > 0 {
@@ -316,6 +352,10 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
             "Mac screen %lld×%lld, shown at %lld×%lld points",
             Int(geometry.remoteSize.width), Int(geometry.remoteSize.height),
             Int(shown.width.rounded()), Int(shown.height.rounded()))
+        #if DEBUG
+        // UI tests tap Mac pixels: they need where the picture sits, which the safe area and display corners move off-centre.
+        accessibilityValue? += String(format: " | rect %.2f %.2f %.2f %.2f", shown.minX, shown.minY, shown.width, shown.height)
+        #endif
         geometryDelegate?.screonView(self, didChangeGeometry: geometry)
     }
 

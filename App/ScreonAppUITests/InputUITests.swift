@@ -25,15 +25,9 @@ final class InputUITests: XCTestCase {
         XCTAssertTrue(screen.waitForExistence(timeout: 30), "remote screen view not found. Element tree:\n\(app.debugDescription)")
         Thread.sleep(forTimeInterval: 4) // wait for the connection, the first frame and the layout to settle
 
-        // A point on the fake "Mac screen" (Mac pixels) → normalized coordinates in the view, following the exact fit-in-the-middle placement.
-        let frame = screen.frame
-        let scale = min(frame.width / remote.width, frame.height / remote.height)
-        let origin = CGPoint(x: (frame.width - remote.width * scale) / 2, y: (frame.height - remote.height * scale) / 2)
-        func point(_ x: Double, _ y: Double) -> XCUICoordinate {
-            screen.coordinate(withNormalizedOffset: CGVector(
-                dx: (origin.x + x * scale) / frame.width, dy: (origin.y + y * scale) / frame.height
-            ))
-        }
+        // A point on the fake "Mac screen" (Mac pixels) → a coordinate in the view, from where the app says it drew the picture.
+        let points = RemoteScreenPoints(screen: screen, remote: remote)
+        func point(_ x: Double, _ y: Double) -> XCUICoordinate { points.point(x, y) }
 
         // 1. One-finger tap → left click at the touch point.
         point(100, 450).tap()

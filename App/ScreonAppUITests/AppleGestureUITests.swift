@@ -24,17 +24,15 @@ final class AppleGestureUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
 
         // The iPad viewport must not zoom (the pinch went to the Mac): the accessibility value still reports the whole Mac screen fitting the frame.
-        let frame = screen.frame
-        let scale = min(frame.width / remote.width, frame.height / remote.height)
+        let points = RemoteScreenPoints(screen: screen, remote: remote)
         let value = screen.value as? String ?? ""
-        let shown = value.components(separatedBy: "shown at ").last?.components(separatedBy: "×").first.flatMap(Double.init) ?? 0
-        XCTAssertEqual(shown, remote.width * scale, accuracy: 2, "pinch must not zoom the viewport: \(value)")
+        // The whole Mac screen still fits inside the view (a zoom would make it larger than the view on some axis).
+        let rect = points.contentRect
+        XCTAssertTrue(rect.width <= screen.frame.width + 1 && rect.height <= screen.frame.height + 1, "pinch must not zoom the viewport: \(value)")
+        XCTAssertEqual(rect.width / rect.height, remote.width / remote.height, accuracy: 0.01, "\(value)")
 
         // The connection is still alive after message 23: a tap must reach the server.
-        let origin = CGPoint(x: (frame.width - remote.width * scale) / 2, y: (frame.height - remote.height * scale) / 2)
-        screen.coordinate(withNormalizedOffset: CGVector(
-            dx: (origin.x + 250 * scale) / frame.width, dy: (origin.y + 300 * scale) / frame.height
-        )).tap()
+        points.point(250, 300).tap()
         Thread.sleep(forTimeInterval: 1.5)
     }
 }

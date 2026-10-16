@@ -110,12 +110,8 @@ final class ObserveModeUITests: XCTestCase {
         XCTAssertTrue(screen.waitForExistence(timeout: 30))
         Thread.sleep(forTimeInterval: 4)
 
-        let frame = screen.frame
-        let scale = min(frame.width / remote.width, frame.height / remote.height)
-        let origin = CGPoint(x: (frame.width - remote.width * scale) / 2, y: (frame.height - remote.height * scale) / 2)
-        func point(_ x: Double, _ y: Double) -> XCUICoordinate {
-            screen.coordinate(withNormalizedOffset: CGVector(dx: (origin.x + x * scale) / frame.width, dy: (origin.y + y * scale) / frame.height))
-        }
+        let points = RemoteScreenPoints(screen: screen, remote: remote)
+        func point(_ x: Double, _ y: Double) -> XCUICoordinate { points.point(x, y) }
 
         // 1. View only: tap, double-tap, drag, two-finger tap. None of it may reach the server.
         app.buttons["Options"].tap()
@@ -176,8 +172,9 @@ final class QualityUITests: XCTestCase {
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
 
         let frame = screen.frame
-        let scale = min(frame.width / remote.width, frame.height / remote.height)
-        let origin = CGPoint(x: frame.minX + (frame.width - remote.width * scale) / 2, y: frame.minY + (frame.height - remote.height * scale) / 2)
+        let rect = RemoteScreenPoints(screen: screen, remote: remote).contentRect
+        let scale = rect.width / remote.width
+        let origin = CGPoint(x: frame.minX + rect.minX, y: frame.minY + rect.minY)
         return samplePoints.map { point in
             let x = Int((origin.x + point.0 * scale) * pixelScale)
             let y = Int((origin.y + point.1 * scale) * pixelScale)

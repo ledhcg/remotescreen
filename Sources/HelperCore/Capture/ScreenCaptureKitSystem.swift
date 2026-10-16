@@ -54,6 +54,9 @@ public struct ScreenCaptureKitSystem: CaptureSystem {
         c.ignoreShadowsSingleWindow = true
         c.ignoreGlobalClipSingleWindow = true
         c.shouldBeOpaque = true
+        // The transparent rounded corners of the window are filled with this colour; the iPad letterboxes with the same black, so
+        // the corners blend in instead of showing as wedges.
+        c.backgroundColor = CGColor(gray: 0, alpha: 1)
         if #available(macOS 14.2, *) { c.includeChildWindows = true }
         c.colorSpaceName = CGColorSpace.sRGB
         c.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2

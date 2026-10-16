@@ -108,7 +108,7 @@ final class DisplayModeUITests: XCTestCase {
         return CGSize(width: Double(match.1)!, height: Double(match.2)!)
     }
 
-    /// Auto-adaptation: rotating to landscape in fit mode makes the picture stretch to the new height (touching top and bottom, black bars at the sides);
+    /// Auto-adaptation: rotating to landscape in fit mode makes the picture stretch to the new height (up to the system margins, black bars at the sides);
     /// in portrait it touches the left and right edges. The displayed size is read via accessibility: XCUITest landscape screenshots are not orientation-normalized.
     func testFitAdaptsWhenTheDeviceRotates() throws {
         let (_, screen) = launch(suite: "ui-display-\(UUID().uuidString)")
@@ -120,8 +120,12 @@ final class DisplayModeUITests: XCTestCase {
         let frame = screen.frame
         XCTAssertGreaterThan(frame.width, frame.height, "the view must be landscape after rotating")
         let landscape = try shownSize(screen)
-        XCTAssertEqual(landscape.height, frame.height, accuracy: 2, "landscape: the picture touches the top and bottom edges")
+        // The picture fills the height between the system margins (it stays clear of the home indicator), so not quite the frame.
+        XCTAssertGreaterThan(landscape.height, frame.height * 0.9, "landscape: the picture uses the full height")
+        XCTAssertLessThanOrEqual(landscape.height, frame.height + 1)
         XCTAssertLessThan(landscape.width, frame.width - 10, "landscape: black bars remain on both sides (4:3 picture)")
+        let rect = RemoteScreenPoints(screen: screen, remote: CGSize(width: 800, height: 600)).contentRect
+        XCTAssertTrue(rect.minX >= 0 && rect.minY >= 0 && rect.maxX <= frame.width + 1 && rect.maxY <= frame.height + 1, "inside the view: \(rect)")
         XCTAssertGreaterThan(landscape.height, portrait.height, "the picture is larger in landscape")
     }
 

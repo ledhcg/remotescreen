@@ -250,3 +250,118 @@ struct DeviceDisplayModeTests {
         #expect(DisplayMode.device.scaleMode(screenScale: 2) == .fit)
     }
 }
+
+@Suite("ViewportGeometry: system insets")
+struct ViewportInsetTests {
+    private let mac = CGSize(width: 2048, height: 1152)
+    // A landscape iPhone with a Dynamic Island and a home indicator.
+    private let phone = CGSize(width: 852, height: 393)
+    private let phoneInsets = ViewportInsets(top: 0, left: 59, bottom: 21, right: 59)
+
+    @Test func fitKeepsTheWholeScreenInsideTheInsets() {
+        var geometry = ViewportGeometry(remoteSize: mac, viewSize: phone)
+        geometry.updateInsets(phoneInsets)
+        let rect = geometry.contentRect
+        // Safe area 734×372: height-limited, scale 372/1152.
+        #expect(close(geometry.scale, 372.0 / 1152))
+        #expect(close(rect.minY, 0))
+        #expect(close(rect.maxY, 372))
+        #expect(rect.minX >= 59 && rect.maxX <= 852 - 59)
+        #expect(close(rect.midX, 426)) // centred between equal side insets
+    }
+
+    @Test func fitIgnoresDragsWhenItFits() {
+        var geometry = ViewportGeometry(remoteSize: mac, viewSize: phone)
+        geometry.updateInsets(phoneInsets)
+        let before = geometry.contentRect
+        geometry.pan(by: CGPoint(x: 300, y: 300))
+        #expect(close(geometry.contentRect, before))
+    }
+
+    @Test func fillCanBeDraggedSoCoveredEdgesComeIntoView() {
+        var geometry = ViewportGeometry(remoteSize: mac, viewSize: phone, scaleMode: .fill)
+        geometry.updateInsets(phoneInsets)
+        // Fill still covers the whole device screen at rest.
+        #expect(close(geometry.contentRect.width, 852))
+        #expect(close(geometry.contentRect.minX, 0))
+        // Dragging right moves the Mac's left edge out from under the Dynamic Island, and no further.
+        geometry.pan(by: CGPoint(x: 100_000, y: 0))
+        #expect(close(geometry.contentRect.minX, 59))
+        // Dragging up brings the Mac's bottom edge (the Dock) above the home indicator.
+        geometry.pan(by: CGPoint(x: 0, y: -100_000))
+        #expect(close(geometry.contentRect.maxY, 393 - 21))
+        // Dragging back responds at once, with no dead zone left over from the earlier overshoot.
+        geometry.pan(by: CGPoint(x: -10, y: 0))
+        #expect(close(geometry.contentRect.minX, 49))
+    }
+
+    @Test func zeroInsetsBehaveAsBefore() {
+        var geometry = ViewportGeometry(remoteSize: mac, viewSize: CGSize(width: 390, height: 844), scaleMode: .fill)
+        geometry.updateInsets(.zero)
+        geometry.pan(by: CGPoint(x: -100_000, y: 0))
+        #expect(close(geometry.contentRect.maxX, 390))
+    }
+
+    /// The view has size 0 before its first layout; the native-pixels mode computes the geometry right then (app launch).
+    @Test(arguments: [ViewportGeometry.ScaleMode.fit, .fill, .pixelPerfect(screenScale: 3), .points])
+    func aViewNotLaidOutYetDoesNotHang(mode: ViewportGeometry.ScaleMode) {
+        var geometry = ViewportGeometry(remoteSize: CGSize(width: 800, height: 600), viewSize: .zero, scaleMode: mode)
+        _ = geometry.contentRect
+        geometry.updateInsets(ViewportInsets(top: 10, left: 0, bottom: 10, right: 0))
+        _ = geometry.contentRect
+        geometry.pan(by: CGPoint(x: 5, y: 5))
+        _ = geometry.normalizedDeviceRect
+        geometry.updateViewSize(CGSize(width: 390, height: 844))
+        #expect(geometry.contentRect.width > 0)
+    }
+
+    @Test func insetsThatCoverEverythingAreIgnored() {
+        var geometry = ViewportGeometry(remoteSize: mac, viewSize: CGSize(width: 100, height: 100))
+        geometry.updateInsets(ViewportInsets(top: 60, left: 60, bottom: 60, right: 60))
+        #expect(close(geometry.contentRect.width, 100))
+    }
+
+    @Test func touchesMapThroughTheInsetLayout() {
+        var geometry = ViewportGeometry(remoteSize: mac, viewSize: phone)
+        geometry.updateInsets(phoneInsets)
+        let rect = geometry.contentRect
+        let pixel = geometry.remotePixel(forView: CGPoint(x: rect.minX + 0.1, y: rect.minY + 0.1), clamped: false)
+        #expect(pixel?.x == 0 && pixel?.y == 0) // the Mac's top-left corner (Apple menu) is reachable
+        #expect(geometry.remotePixel(forView: CGPoint(x: 10, y: 10), clamped: false) == nil) // under the island: not the Mac
+    }
+}
+
+@Suite("ViewportInsets: rounded display corners")
+struct RoundedCornerInsetTests {
+    private let pad = CGSize(width: 1180, height: 820)
+
+    @Test func wideMacOnALandscapeIPadGrowsTopAndBottom() {
+        // 16:10 Mac on a 1.44 iPad: the picture is letterboxed top and bottom, so growing those insets costs nothing.
+        let insets = ViewportInsets.zero.avoidingRoundedCorners(radius: 18, edges: .all, viewSize: pad, contentAspect: 1.6)
+        #expect(insets == ViewportInsets(top: 18, left: 0, bottom: 18, right: 0))
+    }
+
+    @Test func tallContentGrowsTheSides() {
+        let insets = ViewportInsets.zero.avoidingRoundedCorners(radius: 18, edges: .all, viewSize: pad, contentAspect: 1.2)
+        #expect(insets == ViewportInsets(top: 0, left: 18, bottom: 0, right: 18))
+    }
+
+    @Test func aCornerAlreadyClearedBySafeAreaIsLeftAlone() {
+        // Portrait iPhone: the Dynamic Island inset clears the top corners; only the bottom ones need room.
+        let safe = ViewportInsets(top: 59, left: 0, bottom: 34, right: 0)
+        let insets = safe.avoidingRoundedCorners(radius: 47, edges: .all, viewSize: CGSize(width: 393, height: 852), contentAspect: 1.6)
+        #expect(insets == ViewportInsets(top: 59, left: 0, bottom: 47, right: 0))
+    }
+
+    @Test func onlyCornersOnTheDisplayAreRounded() {
+        // The sidebar sits on the left: the view's left edge is inside the display, so only the right-hand corners are rounded.
+        let insets = ViewportInsets.zero.avoidingRoundedCorners(
+            radius: 18, edges: [.top, .bottom, .right], viewSize: CGSize(width: 1100, height: 820), contentAspect: 1.2)
+        #expect(insets == ViewportInsets(top: 0, left: 0, bottom: 0, right: 18))
+    }
+
+    @Test func noRadiusChangesNothing() {
+        let safe = ViewportInsets(top: 24, left: 0, bottom: 20, right: 0)
+        #expect(safe.avoidingRoundedCorners(radius: 0, edges: .all, viewSize: pad, contentAspect: 1.6) == safe)
+    }
+}

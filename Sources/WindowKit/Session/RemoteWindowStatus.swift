@@ -22,6 +22,10 @@ public enum ConnectionFailureKind: Sendable, Equatable {
     case replaced
     /// Out of retries, or the network is gone.
     case connectionLost
+    /// The Mac is reachable only through Tailscale, which is not connected on this device.
+    case tailscaleNotConnected
+    /// The Mac is reachable only through Tailscale, which the user turned off in Screon.
+    case tailscaleTurnedOff
 }
 
 /// Where the link connection of a computer stands, as far as a window cares.
@@ -30,6 +34,8 @@ public enum ConnectionPhase: Sendable, Equatable {
     case connected
     /// Lost; attempt `attempt` of `total` is under way or scheduled.
     case reconnecting(attempt: Int, total: Int)
+    /// The device is offline: no attempt is made (none is used up) until the network is back.
+    case waitingForNetwork
     case failed(ConnectionFailureKind)
 }
 
@@ -112,6 +118,7 @@ public enum RemoteWindowAction: Sendable, Equatable {
 public enum RemoteWindowOverlay: Sendable, Equatable {
     case connecting
     case reconnecting(attempt: Int, total: Int)
+    case waitingForNetwork
     /// A restored scene is waiting for the helper's snapshot to find its window.
     case lookingForWindow
     case waitingForFirstFrame
@@ -125,6 +132,8 @@ public enum RemoteWindowOverlay: Sendable, Equatable {
     case denied
     case replaced
     case connectionLost
+    case tailscaleNotConnected
+    case tailscaleTurnedOff
 
     public var title: String {
         switch self {
@@ -142,6 +151,9 @@ public enum RemoteWindowOverlay: Sendable, Equatable {
         case .denied: tr("The Mac declined the connection")
         case .replaced: tr("Another connection took over")
         case .connectionLost: tr("Connection lost")
+        case .waitingForNetwork: tr("No internet connection")
+        case .tailscaleNotConnected: tr("Tailscale is not connected")
+        case .tailscaleTurnedOff: tr("Tailscale is turned off in Screon")
         }
     }
 
@@ -163,25 +175,30 @@ public enum RemoteWindowOverlay: Sendable, Equatable {
         case .denied: tr("The person at the Mac did not allow this device.")
         case .replaced: tr("This device connected from somewhere else. Try again to take the connection back.")
         case .connectionLost: tr("Screon could not reach the Mac.")
+        case .waitingForNetwork: tr("Screon reconnects to the Mac as soon as the network is back.")
+        case .tailscaleNotConnected:
+            tr("This Mac can only be reached through Tailscale here. Open the Tailscale app and connect: Screon reconnects by itself.")
+        case .tailscaleTurnedOff:
+            tr("This Mac can only be reached through Tailscale here. Turn on Use Tailscale in Screon's network settings.")
         }
     }
 
     public var actions: [RemoteWindowAction] {
         switch self {
-        case .connecting, .reconnecting, .lookingForWindow: [.close]
+        case .connecting, .reconnecting, .waitingForNetwork, .lookingForWindow: [.close]
         case .waitingForFirstFrame, .permissionMissing: []
         case .windowClosed, .appQuit: [.reopen, .close]
         case .macLocked: [.openDesktop]
         case .versionMismatch: [.close]
         case .deviceRevoked, .identityChanged: [.pairAgain, .close]
-        case .denied, .replaced, .connectionLost: [.retry, .close]
+        case .denied, .replaced, .connectionLost, .tailscaleNotConnected, .tailscaleTurnedOff: [.retry, .close]
         }
     }
 
     /// True when the window's picture is useless or hidden behind the message. A `reconnecting` overlay dims the last frame instead.
     public var coversWindow: Bool {
         switch self {
-        case .reconnecting, .waitingForFirstFrame: false
+        case .reconnecting, .waitingForNetwork, .waitingForFirstFrame: false
         default: true
         }
     }
@@ -246,6 +263,7 @@ public enum RemoteWindowStatus {
         case .failed(let kind): return RemoteWindowPresentation(overlay: overlay(for: kind))
         case .connecting: return RemoteWindowPresentation(overlay: .connecting)
         case .reconnecting(let attempt, let total): return RemoteWindowPresentation(overlay: .reconnecting(attempt: attempt, total: total))
+        case .waitingForNetwork: return RemoteWindowPresentation(overlay: .waitingForNetwork)
         case .connected: break
         }
         guard let binding, workspace.hasSnapshot || binding.windowID != nil else {
@@ -280,6 +298,8 @@ public enum RemoteWindowStatus {
         case .denied: .denied
         case .replaced: .replaced
         case .connectionLost: .connectionLost
+        case .tailscaleNotConnected: .tailscaleNotConnected
+        case .tailscaleTurnedOff: .tailscaleTurnedOff
         }
     }
 }

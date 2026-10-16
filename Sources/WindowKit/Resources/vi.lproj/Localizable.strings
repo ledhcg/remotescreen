@@ -44,3 +44,11 @@
 "Recent" = "Gần đây";
 "All apps" = "Tất cả ứng dụng";
 "Results" = "Kết quả";
+
+/* Network and Tailscale */
+"No internet connection" = "Không có kết nối Internet";
+"Tailscale is not connected" = "Tailscale chưa được kết nối";
+"Tailscale is turned off in Screon" = "Tailscale đang tắt trong Screon";
+"Screon reconnects to the Mac as soon as the network is back." = "Screon sẽ kết nối lại với máy Mac ngay khi có mạng trở lại.";
+"This Mac can only be reached through Tailscale here. Open the Tailscale app and connect: Screon reconnects by itself." = "Ở mạng này chỉ có thể kết nối tới máy Mac qua Tailscale. Hãy mở ứng dụng Tailscale và kết nối: Screon sẽ tự kết nối lại.";
+"This Mac can only be reached through Tailscale here. Turn on Use Tailscale in Screon's network settings." = "Ở mạng này chỉ có thể kết nối tới máy Mac qua Tailscale. Hãy bật Dùng Tailscale trong cài đặt mạng của Screon.";

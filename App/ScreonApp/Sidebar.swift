@@ -89,7 +89,7 @@ private struct ModifierKeyButton: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(state == .up ? Color.white.opacity(0.1) : state == .held ? Color.blue.opacity(0.75) : Color.blue)
             Text(symbol)
                 .font(.title2.weight(.medium))
@@ -134,7 +134,7 @@ private struct SidebarButton: View {
             }
             .foregroundStyle(isSelected ? .white : tint)
             .frame(width: 44, height: 40)
-            .background(isSelected ? Color.blue : Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            .background(isSelected ? Color.blue : Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

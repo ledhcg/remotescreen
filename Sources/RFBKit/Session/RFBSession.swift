@@ -63,6 +63,8 @@ public actor RFBSession {
     /// so a "press" always reaches the Mac before the "release" no matter which thread the caller is on. When the network is congested, the writer task takes everything waiting and
     /// drops redundant mouse moves (`OutboundCoalescer`) instead of letting them pile up and make the cursor on the Mac lag further and further behind.
     private let outbound = OutboundQueue()
+    /// The task that writes `outbound` to the stream; `close()` lets it flush what is queued (key releases) before closing.
+    private let writer: Task<Void, Never>
     /// ZRLE decompressor, created on first use then kept for the whole session because the zlib stream is continuous.
     private var zrleDecoder: ZRLEDecoder?
 
@@ -88,13 +90,21 @@ public actor RFBSession {
         framebuffer = try Framebuffer(width: Int(serverInfo.width), height: Int(serverInfo.height))
 
         // This task holds only `stream` and the queue, not `self`, so it does not extend the session's lifetime. It ends on `close()`.
-        Task { [stream, outbound] in
+        writer = Task { [stream, outbound] in
             var coalescer = OutboundCoalescer()
             for await _ in outbound.wakeups {
                 let batch = coalescer.coalesce(outbound.takeAll())
                 guard !batch.isEmpty else { continue }
                 let data = batch.reduce(into: Data()) { $0.append($1.wireBytes) }
-                do { try await stream.write(data) } catch { break } // stream is broken: drop the rest
+                do {
+                    try await stream.write(data)
+                } catch {
+                    // The stream is broken: close it so the pending read fails too and the owner reconnects. Previously only the writer
+                    // stopped, the session still looked live, update requests were never sent again and the screen froze.
+                    outbound.close()
+                    await stream.close()
+                    break
+                }
             }
         }
     }
@@ -343,8 +353,19 @@ public actor RFBSession {
         }
     }
 
+    /// Closes the session. Messages already posted (typically key and button releases sent just before) still go out first, for at most
+    /// `flushTimeout`, so the Mac is not left with a stuck modifier; a write that cannot finish is cut short by closing the stream.
     public func close() async {
         outbound.close()
+        let stream = self.stream
+        let deadline = Task {
+            guard (try? await Task.sleep(for: Self.flushTimeout)) != nil else { return }
+            await stream.close() // unblocks a write stuck on a dead network
+        }
+        await writer.value
+        deadline.cancel()
         await stream.close()
     }
+
+    static let flushTimeout = Duration.milliseconds(500)
 }

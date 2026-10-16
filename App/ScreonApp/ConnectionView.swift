@@ -26,6 +26,7 @@ struct ConnectionView: View {
     @State private var streamingFor: SavedConnection?
     /// iPhone: the computer whose App Mode is open in this scene (iPhone has one scene, so windows cannot open beside it).
     @State private var phoneAppMode: SavedConnection?
+    @State private var showsNetworkSettings = false
 
     private var sections: ComputerList.Sections {
         ComputerList.sections(saved: model.saved, discovered: browser.hosts)
@@ -61,10 +62,15 @@ struct ConnectionView: View {
             }
             .navigationTitle("Screon")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Network", systemImage: "network") { showsNetworkSettings = true }
+                        .accessibilityIdentifier("network-settings")
+                }
                 if UIDevice.current.userInterfaceIdiom == .pad {
                     ToolbarItem(placement: .topBarTrailing) { AppPointerMenu() }
                 }
             }
+            .sheet(isPresented: $showsNetworkSettings) { NetworkSettingsView() }
             .modifier(AppModePairingSheet(computer: $pairingFor, model: model))
             .sheet(item: $streamingFor) { computer in AppModeSettingsView(computer: computer, model: model) }
             .modifier(PhoneAppModeCover(computer: $phoneAppMode))
@@ -225,7 +231,7 @@ struct ConnectionView: View {
         }
         .padding(24)
         .frame(maxWidth: 300)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(radius: 20)
         .transition(.opacity)
     }

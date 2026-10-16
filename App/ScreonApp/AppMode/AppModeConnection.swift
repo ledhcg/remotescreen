@@ -9,6 +9,13 @@ import SessionKit
 import WindowKit
 import os
 
+/// None of the Mac's addresses can work on this network: they are all Tailscale addresses and Tailscale is off in Screon or not
+/// connected on the device. Retrying cannot help until that changes; the network watch starts again when it does.
+struct TailscaleUnavailable: Error {
+    var turnedOff: Bool
+    var failureKind: ConnectionFailureKind { turnedOff ? .tailscaleTurnedOff : .tailscaleNotConnected }
+}
+
 /// Lets `LinkSessionError` stop `ReconnectPolicy`: only the user can fix these (pair again, update an app, approve on the Mac).
 struct LinkFailure: PermanentConnectionFailure {
     var error: LinkSessionError
@@ -82,6 +89,9 @@ final class AppModeConnection: AppModeSession {
     static let statsInterval: Duration = .milliseconds(250)
     /// Well under QUIC's idle timeout (60 s).
     static let pingInterval: Duration = .seconds(15)
+    /// A ping unanswered this long (and nothing else heard on the control stream) means the link is dead even if the transport
+    /// has not noticed: QUIC waits for its 60 s idle timeout, and on TCP the outstanding pings keep keepalive from probing.
+    static let deadLinkTimeout: Duration = pingInterval * 2 + .seconds(5)
     static let minResyncGap: TimeInterval = 2
 
     let computerID: UUID
@@ -119,7 +129,13 @@ final class AppModeConnection: AppModeSession {
     @ObservationIgnored private let statsBook = OSAllocatedUnfairLock(initialState: ConnectionStatsBook())
     @ObservationIgnored private var keyframes: KeyframeRequester!
     @ObservationIgnored private var rttMicros: UInt32 = 0
+    /// When the oldest ping still unanswered was sent; any control message from the Mac clears it.
+    @ObservationIgnored private var unansweredPingSince: ContinuousClock.Instant?
     @ObservationIgnored private var lastResync: TimeInterval = 0
+    /// Follows the device's network (`NetworkRecovery`) while the session runs.
+    @ObservationIgnored private var networkWatch: NetworkWatch?
+    /// The address the live link was made to, to know whether it goes through Tailscale.
+    @ObservationIgnored private var connectedHost: String?
     /// Clipboard and file transfers, shared by this connection's windows (reached through `WindowStream.services`).
     @ObservationIgnored let services = AppWindowServices()
     @ObservationIgnored private var audio: AppAudioPlayer?
@@ -158,6 +174,11 @@ final class AppModeConnection: AppModeSession {
     func start() {
         guard runTask == nil else { return }
         phase = .connecting
+        if networkWatch == nil {
+            networkWatch = NetworkWatch { [weak self] before, after, outage in
+                self?.networkChanged(before: before, after: after, outage: outage)
+            }
+        }
         runTask = Task { [weak self] in await self?.runLoop() }
     }
 
@@ -165,6 +186,8 @@ final class AppModeConnection: AppModeSession {
     func shutdown() {
         runTask?.cancel()
         runTask = nil
+        networkWatch?.stop()
+        networkWatch = nil
         backoffTask?.cancel()
         let closing = link
         link = nil
@@ -196,9 +219,38 @@ final class AppModeConnection: AppModeSession {
         return false
     }
 
+    /// The network changed under the session (see `NetworkRecovery`). A failure only Tailscale can fix is retried as soon as it is usable.
+    private func networkChanged(before: NetworkSnapshot, after: NetworkSnapshot, outage: Duration?) {
+        if case .failed(let kind) = phase, kind == .tailscaleNotConnected || kind == .tailscaleTurnedOff {
+            if after.isOnline, after.usesTailscale, NetworkPreferences.useTailscale { retry() }
+            return
+        }
+        let session: NetworkRecovery.Session = switch phase {
+        case .connected: .live
+        case .reconnecting: .waitingToRetry
+        case .connecting, .waitingForNetwork, .failed: .inactive
+        }
+        let viaTailscale = connectedHost.map(TailscaleNetwork.isTailscaleHost) ?? false
+        switch NetworkRecovery.action(before: before, after: after, outage: outage, session: session, viaTailscale: viaTailscale) {
+        case .none: break
+        case .retryNow: backoffTask?.cancel()
+        case .reconnect:
+            // Closing ends the control stream: `serve` returns and the run loop reconnects over the new network.
+            if let link { Task { await link.close(code: .normal, reason: "network changed") } }
+        }
+    }
+
     /// The app came back to the foreground: if a reconnect is waiting, do not wait any longer.
     func appDidBecomeActive() {
-        if case .reconnecting = phase { backoffTask?.cancel() }
+        switch phase {
+        case .reconnecting: backoffTask?.cancel()
+        case .connected:
+            // The link may have died while the app was away (Wi-Fi change, the Mac slept): probe now, so the dead-link check
+            // starts counting at once instead of at the next ping.
+            unansweredPingSince = .now
+            sendNow(.ping(timestampMicros: Self.nowMicros))
+        default: break
+        }
     }
 
     // MARK: Connect and run
@@ -206,14 +258,33 @@ final class AppModeConnection: AppModeSession {
     private func runLoop() async {
         var attempts = 0
         while !Task.isCancelled {
+            if let networkWatch, !networkWatch.isOnline {
+                // No network: an attempt can only fail and use up the allowance. Wait, then try at once.
+                phase = .waitingForNetwork
+                await networkWatch.waitUntilOnline()
+                if Task.isCancelled { return }
+                phase = hasConnectedOnce ? .reconnecting(attempt: max(attempts, 1), total: policy.maxAttempts) : .connecting
+            }
             do {
                 let connection = try await connect()
+                // `shutdown()` while the connect was in flight: a session started now would run on with nobody to stop it,
+                // and could replace the session of a newer connection to the same Mac.
+                if Task.isCancelled {
+                    await connection.close()
+                    return
+                }
                 attempts = 0
                 try await serve(connection)
             } catch is CancellationError {
                 return
+            } catch let unavailable as TailscaleUnavailable {
+                phase = .failed(unavailable.failureKind)
+                teardownConnection()
+                runTask = nil
+                return
             } catch {
                 if Task.isCancelled { return }
+                if let networkWatch, !networkWatch.isOnline { continue } // the loop waits for the network, without counting an attempt
                 let sessionError = (error as? LinkSessionError) ?? .transport("lost")
                 let reported: Error = sessionError.isPermanent ? LinkFailure(error: sessionError) : sessionError
                 switch policy.decision(after: reported, attemptsMade: attempts) {
@@ -246,10 +317,15 @@ final class AppModeConnection: AppModeSession {
         let configuration = try LinkPairing.reconnectConfiguration(computerID: computerID, resume: credentials, settings: settings)
         // The address that worked last first, then the others the helper offered (home LAN, `.local`, Tailscale…): away from
         // home only the VPN address answers. The pin is the same for all of them, so a wrong host cannot impersonate the Mac.
+        let useTailscale = NetworkPreferences.useTailscale
+        let hosts = HostOrdering.order(helperEndpoint.candidateHosts, network: NetworkMonitor.shared.snapshot, useTailscale: useTailscale)
+        guard !hosts.isEmpty else { throw TailscaleUnavailable(turnedOff: !useTailscale) }
         var lastError: Error = LinkSessionError.transport("no address")
-        for host in helperEndpoint.candidateHosts {
+        for host in hosts {
             do {
-                return try await LinkConnection.connect(to: LinkEndpoint(host: host, port: port), configuration: configuration)
+                let connection = try await LinkConnection.connect(to: LinkEndpoint(host: host, port: port), configuration: configuration)
+                connectedHost = host
+                return connection
             } catch let error as LinkSessionError where error.isPermanent {
                 throw error  // revoked, pin mismatch, version: another address will not change that
             } catch {
@@ -284,7 +360,7 @@ final class AppModeConnection: AppModeSession {
         let eventReader = Task { @MainActor [weak self] in
             for await event in events { self?.handle(event) }
         }
-        let pinger = Task { @MainActor [weak self] in await self?.pingLoop() }
+        let pinger = Task { @MainActor [weak self] in await self?.pingLoop(connection) }
         let reporter = Task { @MainActor [weak self] in await self?.statsLoop() }
         // The control stream ending means the connection is gone; stop the helpers that would run forever.
         await withTaskCancellationHandler {
@@ -305,6 +381,7 @@ final class AppModeConnection: AppModeSession {
         sender?.finish()
         sender = nil
         link = nil
+        connectedHost = nil
         services.sessionEnded()
         audio?.shutdown()
         audio = nil
@@ -313,8 +390,21 @@ final class AppModeConnection: AppModeSession {
         keyframes.reset()
     }
 
-    private func pingLoop() async {
+    private func pingLoop(_ connection: LinkConnection) async {
+        unansweredPingSince = nil
+        var previousTick = ContinuousClock.now
         while !Task.isCancelled {
+            let now = ContinuousClock.now
+            // A tick far later than scheduled means the app was suspended: what went unanswered meanwhile says nothing.
+            if now - previousTick > Self.pingInterval * 2 {
+                unansweredPingSince = nil
+            } else if let since = unansweredPingSince, now - since > Self.deadLinkTimeout {
+                // Closing ends the control stream, so `serve` returns and the run loop reconnects.
+                await connection.close(code: .normal, reason: "no answer")
+                return
+            }
+            previousTick = now
+            if unansweredPingSince == nil { unansweredPingSince = now }
             sendNow(.ping(timestampMicros: Self.nowMicros))
             try? await Task.sleep(for: Self.pingInterval)
         }
@@ -341,6 +431,7 @@ final class AppModeConnection: AppModeSession {
     // MARK: Messages from the Mac
 
     private func handle(_ message: LinkMessage) {
+        unansweredPingSince = nil // the Mac is answering
         switch message {
         case .pong(let sent):
             if let waiting = barriers.removeValue(forKey: sent) { waiting.resume(returning: true); return }
@@ -394,8 +485,12 @@ final class AppModeConnection: AppModeSession {
     private func handle(_ event: LinkEvent) {
         switch event {
         case .streamOpened(.window(let id), let inbox):
-            // Only windows a scene asked for get a decoder; anything else is ignored.
-            guard subscriptions.wanted.contains(id) || streams[id] != nil else { return }
+            // Only windows a scene asked for get a decoder. Anything else is still read to its end and dropped: an inbox nobody
+            // reads fills up, and on the TCP fallback a full inbox stalls the one reader that every stream shares.
+            guard subscriptions.wanted.contains(id) || streams[id] != nil else {
+                Task.detached { for await _ in inbox {} }
+                return
+            }
             stream(for: id).attach(inbox)
         case .videoBackpressure(let window, _, let needsKeyframe):
             if needsKeyframe { keyframes.request(window) }

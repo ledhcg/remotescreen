@@ -252,6 +252,14 @@ struct RemoteWindowStatusTests {
         #expect(present(.reconnecting(attempt: 1, total: 6)).overlay?.coversWindow == false)
     }
 
+    @Test func offlineDimsTheWindowAndSaysItWillReconnect() {
+        let shown = present(.waitingForNetwork).overlay
+        #expect(shown == .waitingForNetwork)
+        #expect(shown?.coversWindow == false)
+        #expect(shown?.title == "No internet connection")
+        #expect(shown?.actions == [.close])
+    }
+
     @Test func failuresOfEveryKindHaveActions() {
         let kinds: [(ConnectionFailureKind, RemoteWindowOverlay, [RemoteWindowAction])] = [
             (.versionMismatch(.helper), .versionMismatch(.helper), [.close]),
@@ -260,6 +268,8 @@ struct RemoteWindowStatusTests {
             (.denied, .denied, [.retry, .close]),
             (.replaced, .replaced, [.retry, .close]),
             (.connectionLost, .connectionLost, [.retry, .close]),
+            (.tailscaleNotConnected, .tailscaleNotConnected, [.retry, .close]),
+            (.tailscaleTurnedOff, .tailscaleTurnedOff, [.retry, .close]),
         ]
         for (kind, overlay, actions) in kinds {
             let shown = present(.failed(kind)).overlay

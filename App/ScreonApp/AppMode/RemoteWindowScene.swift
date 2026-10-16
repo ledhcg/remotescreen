@@ -569,6 +569,8 @@ struct RemoteWindowOverlayView: View {
         case .versionMismatch: "arrow.down.app"
         case .deviceRevoked, .identityChanged, .denied: "exclamationmark.shield"
         case .replaced, .connectionLost: "wifi.exclamationmark"
+        case .waitingForNetwork: "wifi.slash"
+        case .tailscaleNotConnected, .tailscaleTurnedOff: "network.slash"
         }
     }
 
@@ -600,7 +602,7 @@ struct RemoteWindowOverlayView: View {
             }
             .padding(24)
             .frame(maxWidth: 380)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("window-status")
         }

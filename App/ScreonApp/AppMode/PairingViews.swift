@@ -155,7 +155,7 @@ struct AppModePairingView: View {
                 } else {
                     QRScannerView(onCode: { flow.pair(qrText: $0) }, onUnavailable: { scannerUnavailable = true })
                         .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .accessibilityLabel("Camera for the pairing code")
                 }
             }

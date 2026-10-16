@@ -34,6 +34,8 @@ hình (Screen Recording), và **iPadOS 26**. Chế độ RFB không đổi và v
 - Bạn có thể thu hồi bất kỳ thiết bị nào từ menu của helper; các phiên đang chạy của nó đóng ngay.
 - Helper không chạy lệnh và không mở tệp tuỳ ý: chỉ hiện, di chuyển, đổi kích thước các cửa sổ bạn cho phép, chuyển phím/chuột
   vào đó, và trao đổi clipboard cùng tài liệu thuộc danh sách cho phép.
+- Khi ở xa nhà, Screon kết nối tới Mac qua **Tailscale** nếu Tailscale đang chạy trên thiết bị (tự phát hiện; có thể tắt trong mục
+  Mạng ở danh sách máy tính). Khi mất mạng, Screon chờ và tự kết nối lại khi có mạng trở lại.
 
 App Mode đang phát triển: xem [docs/app-status.md](docs/app-status.md) để biết phần nào đã kiểm chứng.
 

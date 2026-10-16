@@ -70,16 +70,29 @@ struct LauncherView: View {
         )
         if connection.phase != .connected, let overlay = status.overlay {
             VStack(spacing: 12) {
-                ProgressView()
-                Text(overlay.title).font(.headline)
-                if let message = overlay.message { Text(message).foregroundStyle(.secondary) }
-                Button("Try again") { connection.retry() }
+                // A spinner only while something is under way: a failure that needs the user (pair again, turn Tailscale on,
+                // update an app) must not look like it is still loading.
+                if case .failed = connection.phase {
+                    Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.secondary)
+                } else {
+                    ProgressView()
+                }
+                Text(overlay.title).font(.headline).multilineTextAlignment(.center)
+                if let message = overlay.message { Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center) }
+                if overlay.actions.contains(.retry) || connection.phase == .connecting || Self.isReconnecting(connection.phase) {
+                    Button("Try again") { connection.retry() }
+                }
             }
             .padding()
             .accessibilityIdentifier("launcher-status")
         } else {
             list(connection)
         }
+    }
+
+    private static func isReconnecting(_ phase: ConnectionPhase) -> Bool {
+        if case .reconnecting = phase { return true }
+        return false
     }
 
     private func list(_ connection: AppModeConnection) -> some View {
@@ -302,14 +315,7 @@ struct PhoneAppModeView: View {
         }
         .environment(phone)
         .fullScreenCover(item: Binding(get: { phone.desktopComputerID.map(IdentifiedID.init) }, set: { phone.desktopComputerID = $0?.id })) { item in
-            RootView(model: computers, autoConnect: computers.saved.first { $0.id == item.id })
-                .overlay(alignment: .topLeading) {
-                    Button("Done", systemImage: "xmark.circle.fill") { phone.desktopComputerID = nil }
-                        .labelStyle(.iconOnly)
-                        .font(.title2)
-                        .padding()
-                        .accessibilityIdentifier("desktop-done")
-                }
+            RootView(model: computers, autoConnect: computers.saved.first { $0.id == item.id }) { phone.desktopComputerID = nil }
         }
     }
 

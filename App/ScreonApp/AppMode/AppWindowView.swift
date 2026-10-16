@@ -111,7 +111,9 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
 
     private func commonInit() {
         colorPixelFormat = .bgra8Unorm
-        clearColor = MTLClearColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1)
+        // Black like the scene behind it and like the capture's fill: the Mac window's rounded corners arrive filled with black
+        // (`ScreenCaptureKitSystem`), so any other letterbox colour shows four dark wedges at the window's corners.
+        clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         enableSetNeedsDisplay = false
         isPaused = true
         delegate = self
@@ -1004,7 +1006,8 @@ final class FileTransfersHUD: UIView {
         super.init(frame: frame)
         let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
         blur.translatesAutoresizingMaskIntoConstraints = false
-        blur.layer.cornerRadius = 14
+        blur.layer.cornerRadius = 18 // the same continuous 18-point corners as the other floating cards
+        blur.layer.cornerCurve = .continuous
         blur.clipsToBounds = true
         addSubview(blur)
         stack.axis = .vertical

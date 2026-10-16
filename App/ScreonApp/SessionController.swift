@@ -122,8 +122,9 @@ final class SessionController {
 
     @ObservationIgnored private var wakeRequested = false
     @ObservationIgnored private var backgroundedAt: Date?
-    @ObservationIgnored private var networkMonitor: NWPathMonitor?
-    @ObservationIgnored private var networkWasDown = false
+    @ObservationIgnored private var networkWatch: NetworkWatch?
+    /// Reconnecting is paused because the device is offline; attempts are not used up meanwhile.
+    private(set) var isWaitingForNetwork = false
 
     /// DEBUG BUILD ONLY: drop all mouse and key events before sending, letting only the clipboard through. For testing the clipboard against a real Mac
     /// without any chance of controlling it by mistake (even ⌘V only sends the clipboard and does not actually paste). Enabled with `RFB_DROP_INPUT=1`.
@@ -222,6 +223,13 @@ final class SessionController {
         case .connecting, .reconnecting: return
         default: break
         }
+        // Say at once why it cannot work (offline, Tailscale address without Tailscale) instead of failing after a timeout.
+        if let problem = NetworkPrecheck.problem(
+            host: Self.host(of: target), network: NetworkMonitor.shared.snapshot, useTailscale: NetworkPreferences.useTailscale
+        ) {
+            state = .failed(NetworkPrecheck.message(for: problem))
+            return
+        }
         request = Request(target: target, username: username, password: password, onConnected: onConnected)
         resetSessionControls()
         state = .connecting
@@ -305,6 +313,7 @@ final class SessionController {
                 session = opened
                 name = opened.serverInfo.name
                 state = .connected(name: name)
+                wakeRequested = false // a wake meant for an earlier wait must not cut the next backoff short
                 securityWarning = ConnectionSecurityNotice.sessionWarning(for: opened.securityType)
                 isApplyingQuality = false
                 connectedAt = .now
@@ -333,10 +342,22 @@ final class SessionController {
                 if Task.isCancelled { return }
 
                 guard everConnected else {
+                    let offline = networkWatch?.isOnline == false
                     stopNetworkWatch()
                     self.request = nil // do not keep the password in memory after failing
-                    state = .failed(ConnectionFailureMessage.text(for: error, hasUsername: hasUsername))
+                    state = .failed(offline
+                        ? NetworkPrecheck.message(for: .offline)
+                        : ConnectionFailureMessage.text(for: error, hasUsername: hasUsername))
                     return
+                }
+                if let networkWatch, !networkWatch.isOnline {
+                    // No network: an attempt now can only fail and use up the allowance. Wait for it to come back, then retry at once.
+                    state = .reconnecting(name: name, attempt: max(retriesMade, 1), of: reconnectPolicy.maxAttempts)
+                    isWaitingForNetwork = true
+                    await networkWatch.waitUntilOnline()
+                    isWaitingForNetwork = false
+                    if Task.isCancelled { return }
+                    continue
                 }
                 if reconnectingForQuality {
                     // We closed the session ourselves to change the color depth: reconnect immediately, do not wait, and do not count it as a retry due to lost connection.
@@ -367,12 +388,14 @@ final class SessionController {
     }
 
     /// Wait `delay`, or less if signaled: the network just came back, or the app just returned from the background.
+    /// The flag is cleared when consumed, not on entry: a wake that arrived while the previous attempt was still failing (that can take
+    /// 20–30 s) used to be wiped here, so the full backoff ran even though the user had just come back or the network had just returned.
     private func wait(_ delay: Duration) async {
-        wakeRequested = false
         let end = ContinuousClock.now + delay
         while ContinuousClock.now < end, !wakeRequested, !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(100))
         }
+        wakeRequested = false
     }
 
     // MARK: - Background and network
@@ -406,25 +429,37 @@ final class SessionController {
 
     private func startNetworkWatch() {
         stopNetworkWatch()
-        let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] path in
-            let satisfied = path.status == .satisfied
-            Task { @MainActor in self?.networkChanged(satisfied: satisfied) }
+        networkWatch = NetworkWatch { [weak self] before, after, outage in
+            self?.networkChanged(before: before, after: after, outage: outage)
         }
-        monitor.start(queue: DispatchQueue(label: "Screon.NetworkWatch"))
-        networkMonitor = monitor
     }
 
     private func stopNetworkWatch() {
-        networkMonitor?.cancel()
-        networkMonitor = nil
-        networkWasDown = false
+        networkWatch?.stop()
+        networkWatch = nil
+        isWaitingForNetwork = false
     }
 
-    /// The network is back after being lost: if waiting to reconnect, retry now.
-    private func networkChanged(satisfied: Bool) {
-        if satisfied, networkWasDown { wakeRequested = true }
-        networkWasDown = !satisfied
+    /// The host part of a target, for the network checks; a Bonjour service has none (it is always on the local network).
+    private static func host(of target: SavedConnection.Target) -> String {
+        if case .host(let host, _) = target { return host }
+        return ""
+    }
+
+    /// The network changed under the session (see `NetworkRecovery`): a live connection that cannot survive the change is
+    /// reconnected now rather than left frozen until the transport notices (35 s or more); a waiting reconnect retries at once.
+    private func networkChanged(before: NetworkSnapshot, after: NetworkSnapshot, outage: Duration?) {
+        let sessionState: NetworkRecovery.Session = switch state {
+        case .connected: .live
+        case .reconnecting: .waitingToRetry
+        default: .inactive
+        }
+        let viaTailscale = request.map { TailscaleNetwork.isTailscaleHost(Self.host(of: $0.target)) } ?? false
+        switch NetworkRecovery.action(before: before, after: after, outage: outage, session: sessionState, viaTailscale: viaTailscale) {
+        case .none: break
+        case .retryNow: wakeRequested = true
+        case .reconnect: forceReconnect()
+        }
     }
 
     // MARK: - UI controls

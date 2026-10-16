@@ -25,6 +25,17 @@ struct RootView: View {
     let model: ConnectionsModel
     /// Connect to this computer with its saved password as soon as the view appears (opened from an App Mode window to unlock the Mac).
     var autoConnect: SavedConnection?
+    /// Shown full screen over App Mode (iPhone): closes the cover. Offered as a Done button while not in a session, and called when the user
+    /// disconnects from the session. Inside a session the toolbar's Disconnect does the job: a separate button floating over the Mac screen
+    /// sat on the toolbar and its taps also reached the Mac.
+    var onClose: (() -> Void)?
+
+    private static func isInSession(_ state: SessionController.State) -> Bool {
+        switch state {
+        case .connected, .reconnecting: true
+        default: false
+        }
+    }
 
     var body: some View {
         Group {
@@ -34,8 +45,25 @@ struct RootView: View {
                 SessionView(controller: controller, name: name)
             default:
                 ConnectionView(controller: controller, model: model)
+                    .overlay(alignment: .topLeading) {
+                        if let onClose {
+                            Button("Done", systemImage: "xmark.circle.fill", action: onClose)
+                                .labelStyle(.iconOnly)
+                                .font(.title2)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
+                                .padding(.horizontal, 8)
+                                .accessibilityIdentifier("desktop-done")
+                        }
+                    }
             }
         }
+        .onChange(of: controller.state) { old, new in
+            if let onClose, Self.isInSession(old), new == .idle { onClose() } // disconnected from the toolbar: leave the cover
+        }
+        // Closing this window (app switcher, Stage Manager) releases the view but not the connection loop, which holds the controller:
+        // without this the session kept running, decoding frames for nothing and reconnecting on its own.
+        .onDisappear { controller.disconnect() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .background: controller.appDidEnterBackground()
@@ -110,6 +138,11 @@ struct SessionView: View {
             if controller.sidebarPosition == .trailing { Sidebar(controller: controller, name: name) }
         }
         .background(.black)
+        // The Mac screen gets the status bar's room (it used to sit over the Mac menu bar); the home indicator fades while idle.
+        .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
+        // The controls float over a black letterbox: keep their material and white labels dark even when the device is in light mode.
+        .environment(\.colorScheme, .dark)
         .onChange(of: controller.isKeyBarVisible) { _, visible in
             if !visible { keyBarFrame = .zero } // the old frame must not block touches to the remote screen
         }
@@ -138,13 +171,24 @@ struct SessionView: View {
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("stream-stats")
                 }
+                if !NetworkMonitor.shared.snapshot.isOnline, controller.isLive {
+                    // The session cannot work without a network; say so before the connection itself notices.
+                    Label("No internet connection", systemImage: "wifi.slash")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(.ultraThinMaterial, in: Self.bannerShape)
+                        .allowsHitTesting(false)
+                        .accessibilityIdentifier("offline-banner")
+                }
                 if let warning = controller.securityWarning {
                     Label(warning, systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote)
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .background(.ultraThinMaterial, in: Self.bannerShape)
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("security-warning")
                 }
@@ -155,7 +199,7 @@ struct SessionView: View {
                         .font(.footnote)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .background(.ultraThinMaterial, in: Self.bannerShape)
                         .transition(.opacity)
                         .allowsHitTesting(false)
                 }
@@ -170,11 +214,16 @@ struct SessionView: View {
         }
     }
 
+    /// Banners whose text can wrap onto two lines (iPhone): a capsule's round ends would cut into the text, so a continuous rounded rectangle.
+    private static let bannerShape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
     private func reconnectBanner(name: String, attempt: Int, total: Int) -> some View {
         HStack(spacing: 10) {
             ProgressView()
             Text(controller.isApplyingQuality
                  ? String(localized: "Applying the new quality mode…")
+                 : controller.isWaitingForNetwork
+                 ? String(localized: "No internet connection. Screon reconnects to \(name) when the network is back.")
                  : String(localized: "Lost connection to \(name). Reconnecting (\(attempt)/\(total))…"))
                 .font(.footnote)
             Button("Cancel") { controller.disconnect() }
@@ -182,7 +231,7 @@ struct SessionView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(.ultraThinMaterial, in: Self.bannerShape)
         .claimingTouches(frame: $bannerFrame)
         // When the banner disappears its frame must disappear too: `onGeometryChange` does not report when the view is removed, so
         // previously a strip under the toolbar (usually the Mac menu bar) stayed touch-blocked for the rest of the session after each reconnect.
@@ -309,16 +358,19 @@ struct SessionView: View {
             .pickerStyle(.inline)
 
             Menu("Gestures on Mac", systemImage: "hand.draw") {
-                Toggle("Smooth trackpad-style scrolling", isOn: Binding(
-                    get: { controller.smoothScroll }, set: { controller.setSmoothScroll($0) }
-                ))
-                Picker("Two-finger pinch/rotate", selection: Binding(
-                    get: { controller.pinchSendsToMac }, set: { controller.setPinchSendsToMac($0) }
-                )) {
-                    Text("Zoom the iPad view").tag(false)
-                    Text("Send to Mac").tag(true)
+                Group {
+                    Toggle("Smooth trackpad-style scrolling", isOn: Binding(
+                        get: { controller.smoothScroll }, set: { controller.setSmoothScroll($0) }
+                    ))
+                    Picker("Two-finger pinch/rotate", selection: Binding(
+                        get: { controller.pinchSendsToMac }, set: { controller.setPinchSendsToMac($0) }
+                    )) {
+                        Text("Zoom the iPad view").tag(false)
+                        Text("Send to Mac").tag(true)
+                    }
+                    .pickerStyle(.inline)
                 }
-                .pickerStyle(.inline)
+                .disabled(!controller.isAppleServer)
                 if !controller.isAppleServer {
                     Text("Only available with a Mac (macOS Screen Sharing)")
                 }
@@ -475,6 +527,7 @@ struct KeyBar: View {
         // While reconnecting, a tapped sticky key would be dropped (no session) yet still show as sticky: disable the whole bar until reconnected.
         .disabled(!controller.isLive)
         .background(.ultraThinMaterial, in: Capsule())
+        .clipShape(Capsule()) // keys scrolled to the ends must not stick out past the rounded ends
         .contentShape(Capsule())
         .padding(.horizontal, 12)
     }

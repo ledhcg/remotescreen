@@ -38,3 +38,8 @@
 "Copied sensitive content from the Mac (this device only, cleared after %lld seconds)." = "Đã chép nội dung nhạy cảm từ Mac (chỉ trên máy này, tự xóa sau %lld giây).";
 "The Mac clipboard is too large (%@ MB) and was skipped." = "Clipboard của Mac quá lớn (%@ MB) nên đã bỏ qua.";
 "Copied %lld characters from the Mac." = "Đã chép %lld ký tự từ Mac.";
+
+/* NetworkPrecheck */
+"This device is offline. Turn on Wi-Fi or mobile data, then try again." = "Thiết bị này đang ngoại tuyến. Hãy bật Wi-Fi hoặc dữ liệu di động rồi thử lại.";
+"%@ is a Tailscale address, but Tailscale is not connected on this device. Open the Tailscale app, connect, then try again." = "%@ là địa chỉ Tailscale, nhưng Tailscale chưa được kết nối trên thiết bị này. Hãy mở ứng dụng Tailscale, kết nối rồi thử lại.";
+"%@ is a Tailscale address, and Use Tailscale is turned off in Screon's network settings." = "%@ là địa chỉ Tailscale, nhưng tuỳ chọn Dùng Tailscale đang tắt trong cài đặt mạng của Screon.";

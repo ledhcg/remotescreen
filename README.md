@@ -38,6 +38,8 @@ permissions) and **iPadOS 26**. RFB mode is unchanged and still works on iOS 18.
 - You can revoke any device from the helper menu at any time; its live sessions close immediately.
 - The helper does not run commands or open arbitrary files: it can only show, move and resize windows you authorize,
   forward input to them, and exchange clipboard and allow-listed documents.
+- Away from home, Screon reaches the Mac through **Tailscale** when it is connected on the device (detected automatically; it can
+  be turned off under Network in the computer list). Without a network Screon waits and reconnects when it is back.
 
 App Mode is in development: see [docs/app-status.md](docs/app-status.md) for what is verified.
 

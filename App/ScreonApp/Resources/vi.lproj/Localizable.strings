@@ -227,3 +227,21 @@
 
 /* Launcher: helper permissions */
 "Screon Helper needs permission on the Mac" = "Screon Helper cần được cấp quyền trên máy Mac";
+
+/* Network settings, offline and Tailscale */
+"Network" = "Mạng";
+"This device" = "Thiết bị này";
+"Status" = "Trạng thái";
+"Use Tailscale" = "Dùng Tailscale";
+"Tailscale on this device" = "Tailscale trên thiết bị này";
+"Connected (%@)" = "Đã kết nối (%@)";
+"Not connected" = "Chưa kết nối";
+"Screon detects Tailscale on this device by itself. When it is connected, Macs can be reached by their Tailscale address away from home, and on mobile data that address is tried first. Turn this off to use only the local network. Takes effect the next time you connect." = "Screon tự phát hiện Tailscale trên thiết bị này. Khi Tailscale đã kết nối, có thể truy cập máy Mac qua địa chỉ Tailscale khi ở xa nhà, và khi dùng dữ liệu di động thì địa chỉ đó được thử trước. Tắt tuỳ chọn này để chỉ dùng mạng cục bộ. Có hiệu lực từ lần kết nối tiếp theo.";
+"Offline" = "Ngoại tuyến";
+"Wi-Fi" = "Wi-Fi";
+"Mobile data" = "Dữ liệu di động";
+"Wired network" = "Mạng có dây";
+"Online" = "Trực tuyến";
+"No internet connection" = "Không có kết nối Internet";
+"No internet connection. Screon reconnects to %@ when the network is back." = "Không có kết nối Internet. Screon sẽ kết nối lại với %@ khi có mạng trở lại.";
+"Tailscale" = "Tailscale";

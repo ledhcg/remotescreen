@@ -18,6 +18,8 @@ struct ScreonApp: App {
     init() {
         // English-only build: messages from the packages follow the same language as the app's own strings.
         Localization.forcedLanguage = "en"
+        // Start watching the network now, so the first connection is checked against a real snapshot.
+        NetworkMonitor.shared.start()
         let model = ConnectionsModel(
             store: ConnectionStore(fileURL: ConnectionStore.defaultURL()), secrets: KeychainSecretStore()
         )

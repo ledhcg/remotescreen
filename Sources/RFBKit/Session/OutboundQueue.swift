@@ -60,11 +60,10 @@ final class OutboundQueue: Sendable {
         }
     }
 
+    /// Accepts no more messages. What is already queued stays for the writer to take: the wakeup stream delivers its last signal and
+    /// then ends, so the writer flushes once and stops.
     func close() {
-        state.withLock { state in
-            state.closed = true
-            state.messages.removeAll()
-        }
+        state.withLock { $0.closed = true }
         signal.finish()
     }
 }

@@ -281,7 +281,7 @@ actor LinkChannel {
 
     private static func isHandshakeMessage(_ type: LinkMessageType) -> Bool {
         switch type {
-        case .hello, .welcome, .resume, .approvalRequired, .pairProve, .pairChallenge, .pairOK, .pairDenied, .sasCommit, .sasReveal: true
+        case .hello, .welcome, .resume, .approvalRequired, .pairProve, .pairChallenge, .pairOK, .pairDenied, .sasCommit, .sasReveal, .sasConfirm: true
         default: false
         }
     }

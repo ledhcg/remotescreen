@@ -10,21 +10,33 @@ public struct PairingOffer: Sendable, Equatable {
     public let expiry: Date
 }
 
-/// Helper-side state for pairing secrets: single use, 5 minutes, 3 failed attempts per secret, and a global
-/// limit of 10 attempts per hour.
+/// Helper-side state for pairing secrets: single use, 5 minutes, 3 failed attempts per secret.
+///
+/// A proof names its offer by nonce (`pair.prove` carries the QR nonce), so a wrong proof is charged to that one offer and
+/// never to the others. Rate limits are per remote address, so one host on the LAN cannot spend anybody else's budget:
+///
+/// - a proof for a known offer counts against its source's `maxAttemptsPerHour`;
+/// - a proof for an unknown, expired or used nonce is refused cheaply and counts only against its source's
+///   `maxUnknownNonceAttemptsPerHour`. It touches no offer and no other source's budget.
 public final class PairingSecretLedger: @unchecked Sendable {
     public static let lifetime: TimeInterval = 300
     public static let maxFailedAttempts = 3
+    /// Proofs for known offers, per remote address.
     public static let maxAttemptsPerHour = 10
+    /// Proofs naming no outstanding offer, per remote address.
+    public static let maxUnknownNonceAttemptsPerHour = 5
     public static let maxOutstandingOffers = 4
+    /// Remote addresses remembered; the least recently active are forgotten beyond this.
+    public static let maxTrackedSources = 256
 
     /// `sequence` orders offers by issue time even when the clock returns the same instant for several of them.
     private struct Entry { var offer: PairingOffer; var sequence: UInt64; var failures = 0 }
+    private struct SourceBudget { var known: [Date] = []; var unknown: [Date] = []; var last = Date.distantPast }
 
     private let lock = NSLock()
     private let clock: LinkClock
     private var entries: [Data: Entry] = [:]  // keyed by nonce
-    private var attempts: [Date] = []
+    private var sources: [String: SourceBudget] = [:]
     private var nextSequence: UInt64 = 0
 
     public init(clock: @escaping LinkClock = { Date() }) { self.clock = clock }
@@ -46,17 +58,25 @@ public final class PairingSecretLedger: @unchecked Sendable {
         return offer
     }
 
-    /// Checks one pairing attempt for the offer identified by `nonce`. `check` receives the offer (so the caller can
-    /// verify the HMAC) and returns whether the proof was valid. A valid proof burns the secret; the third failure
-    /// burns it too. Every call counts towards the global hourly limit.
-    public func attempt(nonce: Data, check: (PairingOffer) -> Bool) throws {
-        let (offer): PairingOffer = try lock.withLock {
+    /// Checks one pairing attempt for the offer identified by `nonce`, made from `source` (a normalised remote address).
+    /// `check` receives the offer (so the caller can verify the HMAC) and returns whether the proof was valid. A valid proof
+    /// burns the secret; the third failure burns it too.
+    public func attempt(nonce: Data, source: String, check: (PairingOffer) -> Bool) throws {
+        let offer: PairingOffer = try lock.withLock {
             let now = clock()
-            attempts.removeAll { now.timeIntervalSince($0) >= 3600 }
-            guard attempts.count < Self.maxAttemptsPerHour else { throw PairingError.rateLimited }
-            attempts.append(now)
             purgeExpired(now: now)
-            guard let e = entries[nonce] else { throw PairingError.unknownOrUsedSecret }
+            var budget = sources[source] ?? SourceBudget()
+            budget.known.removeAll { now.timeIntervalSince($0) >= 3600 }
+            budget.unknown.removeAll { now.timeIntervalSince($0) >= 3600 }
+            budget.last = now
+            defer { store(budget, for: source, now: now) }
+            guard let e = entries[nonce] else {
+                guard budget.unknown.count < Self.maxUnknownNonceAttemptsPerHour else { throw PairingError.rateLimited }
+                budget.unknown.append(now)
+                throw PairingError.unknownOrUsedSecret
+            }
+            guard budget.known.count < Self.maxAttemptsPerHour else { throw PairingError.rateLimited }
+            budget.known.append(now)
             return e.offer
         }
         let ok = check(offer)
@@ -76,34 +96,21 @@ public final class PairingSecretLedger: @unchecked Sendable {
         }
     }
 
-    /// Like `attempt`, for a proof that does not name its offer (`pair.prove` carries no nonce): `check` is tried against
-    /// every outstanding offer. The attempt counts once towards the hourly limit. A match burns that offer. When nothing
-    /// matches, every outstanding offer is charged one failure (the offer the client meant is unknown), and offers that reach
-    /// the limit are burned.
-    public func attemptAny(check: (PairingOffer) -> Bool) throws {
-        let offers: [PairingOffer] = try lock.withLock {
-            let now = clock()
-            attempts.removeAll { now.timeIntervalSince($0) >= 3600 }
-            guard attempts.count < Self.maxAttemptsPerHour else { throw PairingError.rateLimited }
-            attempts.append(now)
-            purgeExpired(now: now)
-            guard !entries.isEmpty else { throw PairingError.unknownOrUsedSecret }
-            return entries.values.sorted { $0.sequence < $1.sequence }.map(\.offer)
+    /// Caller holds the lock.
+    private func store(_ budget: SourceBudget, for source: String, now: Date) {
+        sources[source] = budget
+        guard sources.count > Self.maxTrackedSources else { return }
+        sources = sources.filter { _, b in
+            b.known.contains { now.timeIntervalSince($0) < 3600 } || b.unknown.contains { now.timeIntervalSince($0) < 3600 }
         }
-        let matched = offers.first(where: check)
-        try lock.withLock {
-            if let matched {
-                guard entries.removeValue(forKey: matched.nonce) != nil else { throw PairingError.unknownOrUsedSecret }
-                return
-            }
-            var burned = false
-            for (nonce, var e) in entries {
-                e.failures += 1
-                if e.failures >= Self.maxFailedAttempts { entries.removeValue(forKey: nonce); burned = true } else { entries[nonce] = e }
-            }
-            throw burned ? PairingError.tooManyAttempts : PairingError.invalidProof
+        while sources.count > Self.maxTrackedSources,
+              let oldest = sources.min(by: { $0.value.last < $1.value.last })?.key {
+            sources.removeValue(forKey: oldest)
         }
     }
+
+    /// Burns every outstanding offer (a pairing succeeded: the QR codes on screen are no longer good).
+    public func revokeAll() { lock.withLock { entries.removeAll() } }
 
     public func revoke(nonce: Data) { _ = lock.withLock { entries.removeValue(forKey: nonce) } }
 
@@ -141,6 +148,11 @@ public final class ResumeTokenStore: @unchecked Sendable {
             nextSequence += 1
         }
         return token
+    }
+
+    /// Forgets every token of one identity (the device was revoked).
+    public func invalidate(identityHash: Data) {
+        lock.withLock { entries = entries.filter { !constantTimeEqual($0.value.identity, identityHash) } }
     }
 
     /// Consumes a token. It is burned on any presentation, valid or not, so a stolen token cannot be probed.

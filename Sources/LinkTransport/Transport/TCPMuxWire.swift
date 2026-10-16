@@ -143,6 +143,9 @@ final class TCPMuxWire: LinkWire, @unchecked Sendable {
     private let incomingCont: AsyncStream<any LinkWireStream>.Continuation
 
     var peer: LinkPeerInfo { lock.withLock { peerInfo } ?? LinkPeerInfo(spkiHash: Data(), exporter: nil) }
+    var remoteAddress: String {
+        LinkRemoteAddress.key(for: connection.currentPath?.remoteEndpoint ?? connection.endpoint)
+    }
 
     static func parameters(identity: LinkSecIdentity, policy: PinPolicy, recorder: PeerVerifyRecorder, queue: DispatchQueue) -> NWParameters {
         let tls = NWProtocolTLS.Options()

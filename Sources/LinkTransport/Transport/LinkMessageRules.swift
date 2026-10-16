@@ -15,7 +15,7 @@ public enum LinkMessageRules {
              .windowCreated, .windowUpdated, .windowDestroyed, .windowOrder, .windowCapabilities,
              .videoConfig, .videoFrame, .surfaceSnapshot, .cursorShape, .cursorRef, .audioConfig, .audioPacket, .menuTree:
             return .helperToClient
-        case .resume, .stats, .pairProve, .appsList, .appsIcon, .appsLaunch, .appsActivate, .appsQuit,
+        case .resume, .stats, .pairProve, .sasConfirm, .appsList, .appsIcon, .appsLaunch, .appsActivate, .appsQuit,
              .windowSubscribe, .windowUnsubscribe, .windowSetFrame, .windowCommand, .streamKeyframe,
              .videoAck, .videoLost, .inputPointer, .inputScroll, .inputGesture, .inputKey, .inputText,
              .menuGet, .menuPress, .fileBegin, .fileChunk, .fileEnd:

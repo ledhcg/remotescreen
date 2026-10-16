@@ -13,6 +13,9 @@ public struct LinkServerConfiguration: Sendable {
     /// Local approval (LocalAuthentication on the Mac) for a new pairing, and for each session when
     /// `askBeforeEachSession` is on. Injected: this package has no UI. Return `true` to approve. Not called at all for a
     /// paired device when `askBeforeEachSession` is off.
+    ///
+    /// For SAS pairing the request carries `sasCode`: show those six digits and the device name, let the person compare them
+    /// with the iPad, and return their local yes/no. Matching and approving both happen here, on the Mac.
     public var approvalHandler: @Sendable (PairingApprovalRequest) async -> Bool
     public var approvalTimeout: Duration
     /// How long each handshake step may take before the connection is dropped (not counting the person at the Mac).
@@ -20,8 +23,6 @@ public struct LinkServerConfiguration: Sendable {
     /// Sent right after `welcome` (and after a resume) so the iPad starts from a complete state.
     public var snapshotProvider: (@Sendable (HelperSessionReady) async -> LinkSnapshot?)?
     public var askBeforeEachSession: @Sendable () -> Bool
-    /// SAS pairing is only accepted while this returns true (the pairing window is open on the Mac).
-    public var sasPairingEnabled: @Sendable () -> Bool
     /// 0 picks a free port (QUIC and TCP share the number when possible).
     public var port: UInt16
     public var enableQUIC: Bool
@@ -40,7 +41,6 @@ public struct LinkServerConfiguration: Sendable {
         approvalTimeout: Duration = .seconds(120), handshakeTimeout: Duration = .seconds(10),
         snapshotProvider: (@Sendable (HelperSessionReady) async -> LinkSnapshot?)? = nil,
         askBeforeEachSession: @escaping @Sendable () -> Bool = { false },
-        sasPairingEnabled: @escaping @Sendable () -> Bool = { false },
         port: UInt16 = 0, enableQUIC: Bool = true, enableTCP: Bool = true, loopbackOnly: Bool = false,
         advertiseBonjour: Bool = false, maxPendingConnections: Int = 8, maxSessions: Int = 4
     ) {
@@ -48,7 +48,7 @@ public struct LinkServerConfiguration: Sendable {
         self.approvalHandler = approvalHandler; self.displays = displays; self.approvalTimeout = approvalTimeout
         self.handshakeTimeout = handshakeTimeout
         self.snapshotProvider = snapshotProvider; self.askBeforeEachSession = askBeforeEachSession
-        self.sasPairingEnabled = sasPairingEnabled; self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
+        self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
         self.loopbackOnly = loopbackOnly; self.advertiseBonjour = advertiseBonjour
         self.maxPendingConnections = maxPendingConnections; self.maxSessions = maxSessions
     }
@@ -69,6 +69,8 @@ public struct LinkServerEndpoint: Sendable, Equatable {
 public actor LinkServer {
     public nonisolated let pairingLedger: PairingSecretLedger
     public nonisolated let resumeTokens: ResumeTokenStore
+    /// The pairing window and the SAS rate limits (see `openPairingWindow`).
+    public nonisolated let pairingAdmission: PairingAdmission
     /// Established sessions, after the handshake.
     public nonisolated let connections: AsyncStream<LinkServerConnection>
     public nonisolated let helperSPKIHash: Data
@@ -81,15 +83,21 @@ public actor LinkServer {
     private var tcpListener: NWListener?
     private var pending = 0
     private var live: [UInt64: LinkServerConnection] = [:]
+    /// Handshakes in progress. Each is cancelled by `revoke`, `disconnectAll` or `stop`, and admission is decided against this
+    /// table in `commitHandshake` and `register`, which run to completion without suspending.
+    private struct Handshake { let channel: LinkChannel; let spki: Data; var cancelled = false; var pairingApproval = false }
+    private var handshakes: [UInt64: Handshake] = [:]
+    private var nextHandshakeID: UInt64 = 0
     private var running = false
     private var endpoint = LinkServerEndpoint()
 
     public init(
         configuration: LinkServerConfiguration, ledger: PairingSecretLedger = PairingSecretLedger(),
-        resumeTokens: ResumeTokenStore = ResumeTokenStore()
+        resumeTokens: ResumeTokenStore = ResumeTokenStore(), admission: PairingAdmission = PairingAdmission()
     ) throws {
         self.configuration = configuration
         pairingLedger = ledger
+        pairingAdmission = admission
         self.resumeTokens = resumeTokens
         helperSPKIHash = try configuration.identity.certificate().spkiHash
         (connections, connectionsCont) = AsyncStream<LinkServerConnection>.makeStream(bufferingPolicy: .bufferingOldest(16))
@@ -140,11 +148,39 @@ public actor LinkServer {
         quicListener = nil; tcpListener = nil
         let all = Array(live.values)
         live = [:]
+        // Nothing started before the stop may finish pairing after it: offers, window, claim and pending approvals all go.
+        pairingAdmission.reset()
+        pairingLedger.revokeAll()
+        let waiting = cancelHandshakes { _ in true }
         for c in all { await c.close(code: .helperShuttingDown) }
+        for ch in waiting { await ch.close(code: .helperShuttingDown) }
         connectionsCont.finish()
     }
 
+    /// Lets an unknown iPad start SAS pairing ("Pair without camera") for `duration` seconds. It closes by itself, after one
+    /// device paired, and after one denial on the Mac. While it is closed SAS sessions are refused. QR pairing has no window:
+    /// see `makePairingQRPayload`. Showing a QR code never enables SAS.
+    public func openPairingWindow(method: PairingWindowMethod = .sas, duration: TimeInterval = PairingAdmission.defaultWindow) {
+        pairingAdmission.open(duration: duration)
+    }
+
+    /// Cancels pairing: closes the SAS window, burns the QR offers on screen, drops the in-flight pairing claim and cancels
+    /// every pairing approval that is still waiting for the Mac user (its answer is ignored; the approval handler's task is
+    /// cancelled and the iPad is disconnected).
+    public func closePairingWindow(method: PairingWindowMethod = .sas) async {
+        pairingAdmission.reset()
+        pairingLedger.revokeAll()
+        for ch in cancelHandshakes({ $0.pairingApproval }) { await ch.close(code: .normal, reason: "pairing closed") }
+    }
+
+    /// A handshake is about to ask the Mac user to approve a new pairing.
+    func beginPairingApproval(_ id: UInt64) { handshakes[id]?.pairingApproval = true }
+
+    public func isPairingWindowOpen(method: PairingWindowMethod = .sas) -> Bool { pairingAdmission.isOpen }
+
     /// Issues a pairing secret and returns the QR payload for it (`hostHints`: addresses or names the iPad may try).
+    /// The offer itself is the admission: only a `pair.prove` naming its nonce is considered, for `PairingSecretLedger.lifetime`
+    /// or until a pairing succeeds. It does not enable SAS pairing.
     public func makePairingQRPayload(hostHints: [String]) throws -> PairingQRPayload {
         let offer = try pairingLedger.issue()
         return PairingQRPayload(
@@ -153,15 +189,51 @@ public actor LinkServer {
     }
 
     /// Removes the pairing and disconnects the device if it is connected.
+    ///
+    /// Everything up to the first suspension runs as one step of this actor, so no handshake can be admitted in between:
+    /// the store entry goes, the device's resume tokens are invalidated, every handshake of that identity (including one that
+    /// is waiting for the Mac user's approval) is cancelled and can no longer be admitted, and then all its live
+    /// connections and handshakes are closed. If the store throws, the connections are still closed (fail safe) and the
+    /// error is rethrown.
     @discardableResult public func revoke(deviceSPKIHash: Data) async throws -> Bool {
-        let removed = try configuration.pairedDevices.revoke(spkiHash: deviceSPKIHash)
-        for c in live.values where c.deviceSPKIHash == deviceSPKIHash { await c.close(code: .notAuthorized, reason: "revoked") }
+        resumeTokens.invalidate(identityHash: deviceSPKIHash)
+        let waiting = cancelHandshakes { $0.spki == deviceSPKIHash }
+        let connections = live.values.filter { $0.deviceSPKIHash == deviceSPKIHash }
+        var removed = false
+        var failure: Error?
+        do { removed = try configuration.pairedDevices.revoke(spkiHash: deviceSPKIHash) } catch { failure = error }
+        for ch in waiting { await ch.close(code: .notAuthorized, reason: "revoked") }
+        for c in connections { await c.close(code: .notAuthorized, reason: "revoked") }
+        if let failure { throw failure }
         return removed
     }
 
-    /// Closes every session (the "Disconnect all" menu item).
+    /// Closes every session and every handshake in progress (the "Disconnect all" menu item). A device waiting for approval
+    /// is not admitted afterwards.
     public func disconnectAll(code: LinkCloseCode = .normal) async {
+        let waiting = cancelHandshakes { _ in true }
+        for ch in waiting { await ch.close(code: code) }
         for c in Array(live.values) { await c.close(code: code) }
+    }
+
+    /// Marks matching handshakes cancelled and returns their channels. Synchronous.
+    private func cancelHandshakes(_ matching: (Handshake) -> Bool) -> [LinkChannel] {
+        var channels: [LinkChannel] = []
+        for (id, h) in handshakes where matching(h) {
+            handshakes[id]?.cancelled = true
+            channels.append(h.channel)
+        }
+        return channels
+    }
+
+    /// Called by a handshake when it is about to send `welcome`: decides, atomically with the paired-device store, whether the
+    /// device is admitted. Not admitted when the handshake was cancelled, the server stopped, or the device is not (or no
+    /// longer) paired.
+    func commitHandshake(_ id: UInt64, _ commit: HandshakeCommit) -> CommitResult {
+        guard running, let h = handshakes[id], !h.cancelled else { return .notAuthorized }
+        return commit.apply(
+            peerSPKIHash: h.spki, devices: configuration.pairedDevices, admission: pairingAdmission, ledger: pairingLedger,
+            resumeTokens: resumeTokens)
     }
 
     // MARK: Listeners
@@ -222,8 +294,14 @@ public actor LinkServer {
             try await wire.start(timeout: .seconds(10))
             let channel = LinkChannel(wire: wire, role: .helper)
             await channel.start()
+            guard running else { await channel.fail(.helperShuttingDown, notify: false); return }
+            let handshakeID = nextHandshakeID
+            nextHandshakeID += 1
+            handshakes[handshakeID] = Handshake(channel: channel, spki: wire.peer.spkiHash)
+            defer { handshakes[handshakeID] = nil }
             let dependencies = LinkServerConnection.Dependencies(
-                configuration: configuration, ledger: pairingLedger, resumeTokens: resumeTokens, helperSPKIHash: helperSPKIHash)
+                configuration: configuration, ledger: pairingLedger, resumeTokens: resumeTokens, helperSPKIHash: helperSPKIHash,
+                admission: pairingAdmission, source: wire.remoteAddress, server: self, handshakeID: handshakeID)
             let connection: LinkServerConnection
             do {
                 connection = try await LinkServerConnection.establish(channel: channel, wire: wire, dependencies: dependencies)
@@ -231,25 +309,39 @@ public actor LinkServer {
                 await channel.fail((error as? LinkSessionError) ?? .transport("handshake"), notify: false)
                 return
             }
-            await register(connection)
+            await register(connection, handshake: handshakeID)
         } catch {
             wire.close()
         }
     }
 
-    private func register(_ connection: LinkServerConnection) async {
+    private func register(_ connection: LinkServerConnection, handshake: UInt64) async {
+        // Last check, in the same step as the insert below: a revoke, disconnect or stop since `welcome` wins.
+        guard running, let h = handshakes[handshake], !h.cancelled,
+              configuration.pairedDevices.device(spkiHash: connection.deviceSPKIHash) != nil
+        else {
+            await connection.close(code: .notAuthorized, reason: "revoked")
+            return
+        }
+        handshakes[handshake] = nil
         let id = connection.session.sessionID
-        // A new session from the same device replaces the old one.
+        // Everything up to the insert is one step (no suspension), so a revoke sees this connection in `live` from the moment
+        // it stops being a handshake. A new session from the same device replaces the old one.
+        var replaced: [LinkServerConnection] = []
         for (key, old) in live where old.deviceSPKIHash == connection.deviceSPKIHash {
             live[key] = nil
-            await old.close(code: .sessionReplaced, reason: "replaced")
+            replaced.append(old)
         }
-        guard live.count < configuration.maxSessions else {
+        let full = live.count >= configuration.maxSessions
+        if !full {
+            live[id] = connection
+            connectionsCont.yield(connection)
+        }
+        for old in replaced { await old.close(code: .sessionReplaced, reason: "replaced") }
+        guard !full else {
             await connection.close(code: .internalError, reason: "too many sessions")
             return
         }
-        live[id] = connection
-        connectionsCont.yield(connection)
         Task { [weak self] in
             await connection.waitUntilClosed()
             await self?.forget(id)

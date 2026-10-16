@@ -282,8 +282,13 @@ Exit: every row decided; §2 and the design updated; any "no-go" has a fallback 
 4. Helper verifies in constant time, burns the secret, asks the user locally (LocalAuthentication, showing device name).
 5. On approval: store `{ipadSPKIHash, name, pairedAt}`; reply `pair.ok{macName, helperId}`; iPad stores `{macSPKIHash}`
    in `SavedConnection.helper`, identity keys stay in the Keychain.
-6. SAS mode: both send `commit = SHA-256(ephemeralPub)`, then reveal; `code = HKDF(X25519(shared), transcript) mod 10^6`;
-   both users confirm; then step 4.
+6. SAS mode (only while a pairing window opened by the Mac user is active; at most 3 sessions per 10 minutes per remote
+   address and 6 in total): both send `commit = SHA-256(ephemeralPub)`, then reveal;
+   `code = HKDF(X25519(shared), macSPKI ‖ ipadSPKI ‖ sorted keys) mod 10^6`. The code is DISPLAYED on both devices and compared
+   by the people; confirming is a local act on each device and **nothing on the wire is derived from the digits** (a peer
+   that saw a digit-keyed proof could brute-force 10^6 codes offline). The iPad user's "match" travels as an empty
+   `sas.confirm`; the Mac user's approval (with the code shown, LocalAuthentication) is local; the helper answers `pair.ok` or
+   `pair.denied`. The session is bound by the pinned TLS identities inside the code's transcript.
 
 ### 6.3 Rules carried from the repo
 - Bounds before allocation everywhere; `LinkError.malformed` never traps; new decoders get malicious tests.

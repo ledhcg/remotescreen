@@ -159,11 +159,14 @@ public enum LinkStatus: Sendable, Equatable {
 }
 
 public struct LinkPairProve: Sendable, Equatable {
+    /// The QR code's nonce: names the pairing offer this proof is for, so a wrong proof is charged to that offer only and
+    /// an unknown nonce can be refused without touching any offer. Public (it is in the QR code); the secret is not sent.
+    public var nonce: LinkBytes16
     public var deviceName: String
     public var ipadSPKIHash: LinkBytes32
     public var mac: LinkBytes32
-    public init(deviceName: String, ipadSPKIHash: LinkBytes32, mac: LinkBytes32) {
-        self.deviceName = deviceName; self.ipadSPKIHash = ipadSPKIHash; self.mac = mac
+    public init(nonce: LinkBytes16, deviceName: String, ipadSPKIHash: LinkBytes32, mac: LinkBytes32) {
+        self.nonce = nonce; self.deviceName = deviceName; self.ipadSPKIHash = ipadSPKIHash; self.mac = mac
     }
 }
 

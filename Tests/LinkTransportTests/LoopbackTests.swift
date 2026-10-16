@@ -70,7 +70,7 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
     @Test(arguments: transports)
     func pairBySASWhenThePairingWindowIsOpen(transport: LinkTransportKind) async throws {
         let rig = try LoopbackRig.make()
-        let (_, ep) = try await rig.makeServer()
+        let (server, ep) = try await rig.makeServer()
         let target = rig.endpoint(ep, transport: transport)
 
         // Window closed: refused, permanently.
@@ -82,7 +82,7 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
             #expect(e == .pairingDenied(.unsupported) && e.isPermanent)
         }
 
-        rig.sasPairingOpen = true
+        await server.openPairingWindow()
         let shown = Shown()
         let conn = try await LinkConnection.connect(
             to: target,
@@ -92,6 +92,24 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
         #expect(request.sasCode == (await shown.code), "both screens show the same six digits")
         #expect(conn.newlyPairedMac != nil)
         await conn.close()
+        await rig.tearDown()
+    }
+
+    @Test(arguments: transports)
+    func showingAQRCodeDoesNotOpenSASPairing(transport: LinkTransportKind) async throws {
+        let rig = try LoopbackRig.make()
+        let (server, ep) = try await rig.makeServer()
+        let target = rig.endpoint(ep, transport: transport)
+        _ = try await server.makePairingQRPayload(hostHints: ["127.0.0.1"])
+        #expect(!(await server.isPairingWindowOpen(method: .sas)))
+        do {
+            _ = try await LinkConnection.connect(
+                to: target, configuration: rig.clientConfiguration(mode: .pairWithSAS, transport: transport.preference, sas: { _ in true }))
+            Issue.record("SAS must be refused while only a QR code is shown")
+        } catch let e as LinkSessionError {
+            #expect(e == .pairingDenied(.unsupported))
+        }
+        #expect(rig.devices.all().isEmpty)
         await rig.tearDown()
     }
 
@@ -110,7 +128,7 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
         }
         #expect(rig.devices.all().isEmpty)
 
-        rig.sasPairingOpen = true
+        await server.openPairingWindow()
         do {
             _ = try await LinkConnection.connect(
                 to: target, configuration: rig.clientConfiguration(mode: .pairWithSAS, transport: transport.preference, sas: { _ in false }))

@@ -37,7 +37,9 @@ public struct LinkClientConfiguration: Sendable {
     public var transport: LinkTransportPreference
     public var quicTimeout: Duration
     public var connectTimeout: Duration
-    /// Called with the six digits in SAS pairing; returns whether the user saw the same digits on the Mac.
+    /// Called with the six digits in SAS pairing. Show them and return the user's local answer: whether they saw the same
+    /// digits on the Mac. The digits are only displayed and compared by people; nothing sent to the Mac depends on them.
+    /// Without a closure (or when it returns `false`) the pairing is cancelled.
     public var sasConfirmation: (@Sendable (String) async -> Bool)?
     /// After a successful pairing the Mac is stored here under `computerID`.
     public var pairedMacStore: (any PairedMacStore)?

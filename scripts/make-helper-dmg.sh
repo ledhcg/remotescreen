@@ -9,6 +9,7 @@ OUT="${2:?usage: make-helper-dmg.sh <ScreonHelper.app> <output.dmg> [volume name
 VOLNAME="${3:-Screon Helper}"
 
 [ -d "$APP" ] || { echo "error: $APP is not a directory" >&2; exit 1; }
+[ "$(basename "$APP")" = "ScreonHelper.app" ] || { echo "error: expected ScreonHelper.app, got $(basename "$APP")" >&2; exit 1; }
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

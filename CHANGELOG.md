@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Screon Helper (macOS menu bar app for App Mode): shows who is connected, pairs iPads with a QR code or six digits (approved on the
+  Mac with Touch ID or your password), lists, renames and revokes paired iPads, guides you through the macOS permissions, can open at
+  login, and tells you when a newer helper is released (checked against a signed manifest; nothing is installed automatically).
 - App Mode (iPadOS 26, beta, needs Screon Helper on the Mac): set up from a saved computer by scanning the pairing code, pasting its
   link or comparing six digits; each Mac window can open in its own iPad window with video, child menus and popovers, a local
   cursor, touch, Apple Pencil, mouse, trackpad and keyboard input, input methods such as Vietnamese Telex, and clear messages when

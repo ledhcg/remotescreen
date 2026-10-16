@@ -276,7 +276,7 @@ Not yet verified (nothing below has run on a real Mac or iPad; spike ids refer t
 - S6 QUIC over real Wi-Fi and the Local Network prompt, S7 mutual TLS with identities on real iOS/macOS (partly done on macOS loopback).
 - S8 `CGVirtualDisplay` stage stability, S9 input into non-front windows, tablet events, Unicode and secure input, S10 AX coverage
   on real apps, S11 child windows, menus, full screen, other Spaces.
-- Signed, notarized helper builds and the update manifest: skeleton only (`.github/workflows/helper-release.yml`, `scripts/`).
+- Signed, notarized helper builds and the update manifest: the workflow and scripts exist (`.github/workflows/helper-release.yml`, `scripts/`) but have never run; they need the Developer ID secrets and the real update public key.
 
 ## App Mode transport (`LinkTransport`, macOS loopback tests only)
 
@@ -309,6 +309,36 @@ Verified (`swift test`, macOS; `ScreonAppTests` in the simulator; iOS build):
   video, drawing, touch and pencil input, Telex composition through the on-screen and hardware keyboards, the camera scan, the
   Local Network prompt, Stage Manager behaviour. The mock helper (`Tools/mock-link-helper`) did not exist yet, so the DEBUG hooks
   (`LINK_HOST`, `LINK_PORT`, `LINK_PAIRING`) have not been exercised either.
+
+## Screon Helper app (M4, `Helper/`)
+
+Built: `Helper/project.yml` (XcodeGen, macOS 15, `LSUIElement`, Hardened Runtime, no App Sandbox) and a SwiftUI menu bar app:
+status and issues from `HelperStatus`, connected iPads (disconnect), paired iPads (rename, revoke), "Pair New iPad" (QR from
+`makePairingQRPayload` with the Mac's `.local` name and LAN addresses as hints, expiry countdown, new code), "Pair Without Camera"
+(SAS window), settings (ask before each session, virtual display, audio switch, open at login through `SMAppService`, automatic
+update check), a setup window with a live checklist (Accessibility, input posting, Screen Recording / Remote Desktop, Local Network,
+deep links, "Restart Helper"), a single-instance guard, and a floating approval window (six digits for SAS) followed by
+LocalAuthentication; any failure, cancel or timeout denies. English with a `vi.lproj` translation.
+
+Verified:
+
+- `swift test` (`FilePairedDeviceStoreTests`): persistence across instances, mode 0600 file in a 0700 folder, atomic write without
+  leftovers, revoke, rename, name and count caps, corrupt / oversized / symlinked / wrong-version files start empty, a failed
+  save does not trust the device.
+- `swift test` (`SemanticVersionTests`, `UpdateVerifierTests`, `UpdateCheckerTests`): semver ordering, Ed25519 verification before
+  parsing, bad / foreign / tampered signatures, oversized manifest and signature, non-HTTPS and credentialed URLs, malformed
+  fields, downgrade and replay (not newer than the running version), minimum macOS, placeholder public key never reaches the
+  network, `.sig` next to the manifest.
+- `xcodebuild -project Helper/ScreonHelper.xcodeproj -scheme ScreonHelper -destination 'generic/platform=macOS'
+  CODE_SIGNING_ALLOWED=NO build` succeeds in Swift 6 mode without warnings from the helper sources.
+
+Not verified (needs a signed build, real permissions or a person at the Mac):
+
+- Launching the app, the menu bar popover, the setup and pairing windows, the approval window with Touch ID, QR scanning from a real iPad.
+- Keychain identity creation (`KeychainIdentityStore` with the file-based keychain; needs a signed app), the Local Network prompt,
+  `SMAppService` registration, Accessibility / Screen Recording grants and whether they need a relaunch.
+- The update check against GitHub: the public key in `Helper/project.yml` is a placeholder, so the check reports "not set up".
+- The audio switch is stored and passed to the service, but audio stays off until HelperCore gets an Opus encoder.
 
 ## Not yet verified, do not treat as done
 

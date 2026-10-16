@@ -694,7 +694,10 @@ final class AppModeConnection: AppModeSession {
     private func updateNewWindows() {
         let bound = Set(bindings.scenes.compactMap { bindings.state(of: $0)?.windowID })
         // With tabs a new window joins the app's tab bar; only a launched app's first window needs a scene.
-        let policy: NewWindowPolicy = AppModePreferences.openStyle == .tabs ? .badge : AppModePreferences.newWindowPolicy
+        // iPhone has one scene: switching it to a new Mac window would take away the window being used (and a short-lived
+        // one, such as a sheet that closes, left "This window was closed on the Mac"). There new windows only get a badge.
+        let policy: NewWindowPolicy = AppModePreferences.openStyle == .tabs || !AppModeOpener.canOpenSeveralScenes
+            ? .badge : AppModePreferences.newWindowPolicy
         let fulfilled = newWindows.update(workspace: workspace, policy: policy, sceneApps: sceneApps, expecting: expectingLaunch, bound: bound)
         expectingLaunch.subtract(fulfilled)
     }

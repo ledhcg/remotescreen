@@ -34,7 +34,7 @@ enum Probe {
                 }
                 if let target = windows.first(where: { $0.bundleID == bundle && $0.kind == .managed }) {
                     try await connection.send(.windowSubscribe(LinkSubscribe(
-                        window: target.id, pixelWidth: 1280, pixelHeight: 800, maxFramesPerSecond: 30, quality: .balanced)))
+                        window: target.id, pixelWidth: 1284, pixelHeight: 2778, maxFramesPerSecond: 60, quality: .balanced)))
                     try? await Task.sleep(for: .seconds(5))
                     var configs = 0, frames = 0, keys = 0, bytes = 0
                     for m in await video.messages {
@@ -45,12 +45,17 @@ enum Probe {
                     for m in await control.messages {
                         switch m {
                         case .windowDestroyed(let id): print("probe: event window.destroyed \(id.rawValue)\(id == target.id ? " (the subscribed window)" : "")")
-                        case .windowCreated(let w): print("probe: event window.created \(w.id.rawValue) \(w.bundleID) \(w.kind)")
+                        case .windowCreated(let w): print("probe: event window.created \(w.id.rawValue) \(w.bundleID) \(w.kind) frame=\(w.frame) flags=\(w.flags.rawValue) level=\(w.level)")
+                        case .windowOrder(let ids, let active): print("probe: event window.order \(ids.map(\.rawValue)) active=\(active?.rawValue ?? 0)")
                         case .windowUpdated(let u): if u.id == target.id { print("probe: event window.updated (subscribed) flags=\(String(describing: u.flags))") }
                         default: break
                         }
                     }
-                    print("probe: subscribed window id \(target.id.rawValue)")
+                    print("probe: subscribed window id \(target.id.rawValue) frame=\(target.frame) flags=\(target.flags.rawValue)")
+                    let snapIDs = await control.messages.flatMap { m -> [String] in if case .snapshot(let s) = m { return s.windows.map { "\($0.id.rawValue):\($0.bundleID.split(separator: ".").last ?? "")" } } else { return [] } }
+                    print("probe: snapshot ids \(snapIDs)")
+                    let kinds = await control.messages.map { String(describing: $0).prefix(while: { $0 != "(" }) }
+                    print("probe: control message sequence: \(kinds.joined(separator: ", "))")
                     print("probe: subscribed to a \(bundle) window: configs=\(configs) frames=\(frames) key=\(keys) bytes=\(bytes) subscribeFailed=\(failures.count)")
                 } else {
                     print("probe: no managed window of \(bundle) to subscribe to")

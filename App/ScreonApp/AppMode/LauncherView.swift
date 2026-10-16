@@ -85,7 +85,22 @@ struct LauncherView: View {
     private func list(_ connection: AppModeConnection) -> some View {
         let listing = LauncherListing.build(
             directory: connection.directory, workspace: connection.workspace, badges: connection.newWindows.badges, query: query)
+        let permissionHints = RemoteWindowOverlay.permissionHints(connection.helper)
         return List {
+            if !permissionHints.isEmpty {
+                // Without these the Mac's windows can be neither listed nor streamed; say so instead of showing "0 windows".
+                Section {
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Screon Helper needs permission on the Mac").font(.headline)
+                            ForEach(permissionHints, id: \.self) { Text($0).font(.subheadline).foregroundStyle(.secondary) }
+                        }
+                    } icon: {
+                        Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+                    }
+                    .accessibilityIdentifier("launcher-permissions")
+                }
+            }
             ForEach(listing.sections, id: \.section) { section in
                 Section(section.section.title) {
                     ForEach(section.entries) { entry in

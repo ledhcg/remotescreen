@@ -212,3 +212,6 @@
 "Close this window" = "Đóng cửa sổ này";
 "Back to apps" = "Quay lại ứng dụng";
 "Close window" = "Đóng cửa sổ";
+
+/* Launcher: helper permissions */
+"Screon Helper needs permission on the Mac" = "Screon Helper cần được cấp quyền trên máy Mac";

@@ -186,6 +186,11 @@ public enum RemoteWindowOverlay: Sendable, Equatable {
         }
     }
 
+    /// One line per permission the helper reported missing, in a stable order, for the launcher's banner.
+    public static func permissionHints(_ helper: HelperStatus) -> [String] {
+        helper.missingPermissions.sorted { $0.rawValue < $1.rawValue }.map(permissionHint)
+    }
+
     static func permissionHint(_ kind: LinkPermissionKind) -> String {
         switch kind {
         case .screenRecording: tr("Allow Screon Helper to record the screen in System Settings, Privacy & Security.")

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Screon Helper has the Screon app icon, and is distributed as a Developer ID-signed, notarized download (0.2.0, build 3).
+
 - Fix (App Mode): on iPhone, a window opened and was immediately shown as "closed on the Mac". A tooltip of the Mac app (a
   tiny window Accessibility reports as a window) counted as a new window, and the iPhone switched its only screen to it just
   before it vanished. The helper no longer treats popup-sized or popup-layer windows as windows, and on iPhone new Mac

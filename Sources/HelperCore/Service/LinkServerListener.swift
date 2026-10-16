@@ -6,8 +6,9 @@ import LinkTransport
 /// The pairing-specific part of the listener configuration.
 ///
 /// This type and `LinkServerListener.makeConfiguration` are the only places in the service layer that know about the
-/// pairing-specific parts of `LinkServerConfiguration` (approval handler, SAS window, ask-before-each-session). When the
-/// pairing API changes, adapt them and nothing else.
+/// pairing-specific parts of `LinkServerConfiguration` (approval handler, ask-before-each-session). When the pairing API
+/// changes, adapt them and nothing else. Pairing windows are opened on `server` (`openPairingWindow(method:)`, or showing a QR
+/// code via `makePairingQRPayload`) when the person at the Mac asks to pair a device.
 public struct HelperPairingSettings: Sendable {
     public var identity: LinkSecIdentity
     public var macName: String
@@ -15,7 +16,6 @@ public struct HelperPairingSettings: Sendable {
     /// Local approval on the Mac (LocalAuthentication). Return true to approve.
     public var approvalHandler: @Sendable (PairingApprovalRequest) async -> Bool
     public var askBeforeEachSession: @Sendable () -> Bool
-    public var sasPairingEnabled: @Sendable () -> Bool
     public var port: UInt16
     public var enableQUIC: Bool
     public var enableTCP: Bool
@@ -28,14 +28,13 @@ public struct HelperPairingSettings: Sendable {
         identity: LinkSecIdentity, macName: String, pairedDevices: any PairedDeviceStore,
         approvalHandler: @escaping @Sendable (PairingApprovalRequest) async -> Bool,
         askBeforeEachSession: @escaping @Sendable () -> Bool = { false },
-        sasPairingEnabled: @escaping @Sendable () -> Bool = { false },
         port: UInt16 = 0, enableQUIC: Bool = true, enableTCP: Bool = true, loopbackOnly: Bool = false,
         advertiseBonjour: Bool = true, maxSessions: Int = HelperServiceOptions.defaultMaxSessions,
         displays: @escaping @Sendable () -> [LinkDisplayInfo] = { [] }
     ) {
         self.identity = identity; self.macName = macName; self.pairedDevices = pairedDevices
         self.approvalHandler = approvalHandler; self.askBeforeEachSession = askBeforeEachSession
-        self.sasPairingEnabled = sasPairingEnabled; self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
+        self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
         self.loopbackOnly = loopbackOnly; self.advertiseBonjour = advertiseBonjour; self.maxSessions = maxSessions
         self.displays = displays
     }
@@ -62,7 +61,7 @@ public final class LinkServerListener: HelperListener, Sendable {
             identity: settings.identity, macName: settings.macName, capabilities: capabilities(audio: audio),
             pairedDevices: settings.pairedDevices, approvalHandler: settings.approvalHandler, displays: settings.displays,
             snapshotProvider: nil, askBeforeEachSession: settings.askBeforeEachSession,
-            sasPairingEnabled: settings.sasPairingEnabled, port: settings.port, enableQUIC: settings.enableQUIC,
+            port: settings.port, enableQUIC: settings.enableQUIC,
             enableTCP: settings.enableTCP, loopbackOnly: settings.loopbackOnly, advertiseBonjour: settings.advertiseBonjour,
             maxSessions: settings.maxSessions)
     }

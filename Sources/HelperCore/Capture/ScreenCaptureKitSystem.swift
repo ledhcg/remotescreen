@@ -25,7 +25,7 @@ public struct ScreenCaptureKitSystem: CaptureSystem {
         } catch {
             throw Self.map(error)
         }
-        guard let window = content.windows.first(where: { $0.windowID == config.window.rawValue }) else {
+        guard let number = config.windowNumber, let window = content.windows.first(where: { $0.windowID == number }) else {
             throw CaptureSystemError(kind: .windowGone, message: "window not in shareable content")
         }
         // Independent-window filter: the window stays live while covered or on another Space.

@@ -64,11 +64,15 @@ public actor CaptureEngine {
     // MARK: Subscribe
 
     /// Starts capturing `window`. A second subscription for the same window replaces the first.
-    public func subscribe(window: WindowID, nativePixelSize: LinkSize, request: CaptureRequest) async throws -> AsyncStream<CaptureEvent> {
+    public func subscribe(
+        window: WindowID, windowNumber: UInt32? = nil, nativePixelSize: LinkSize, request: CaptureRequest
+    ) async throws -> AsyncStream<CaptureEvent> {
         await unsubscribe(window: window)
         let (events, continuation) = AsyncStream<CaptureEvent>.makeStream(bufferingPolicy: .bufferingNewest(32))
         let size = CaptureSizing.outputSize(native: nativePixelSize, request: request)
-        let config = CaptureStreamConfig(window: window, outputWidth: size.width, outputHeight: size.height, framesPerSecond: request.framesPerSecond)
+        let config = CaptureStreamConfig(
+            window: window, windowNumber: windowNumber, outputWidth: size.width, outputHeight: size.height,
+            framesPerSecond: request.framesPerSecond)
         let sub = Subscription(request: request, nativeSize: nativePixelSize, config: config, continuation: continuation)
         subscriptions[window] = sub
         do {

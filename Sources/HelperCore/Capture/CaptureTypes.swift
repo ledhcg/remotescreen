@@ -69,11 +69,15 @@ public struct CaptureRequest: Sendable, Equatable {
 /// Concrete stream parameters derived from a request and the window's size.
 public struct CaptureStreamConfig: Sendable, Equatable {
     public var window: WindowID
+    /// The window-server number of `window` (`SCWindow.windowID`). The tracker's `WindowID` is the helper's own id and is
+    /// not a window-server number; nil means unknown, and the stream then cannot start.
+    public var windowNumber: UInt32?
     public var outputWidth: Int
     public var outputHeight: Int
     public var framesPerSecond: Int
-    public init(window: WindowID, outputWidth: Int, outputHeight: Int, framesPerSecond: Int) {
-        self.window = window; self.outputWidth = outputWidth; self.outputHeight = outputHeight; self.framesPerSecond = framesPerSecond
+    public init(window: WindowID, windowNumber: UInt32? = nil, outputWidth: Int, outputHeight: Int, framesPerSecond: Int) {
+        self.window = window; self.windowNumber = windowNumber
+        self.outputWidth = outputWidth; self.outputHeight = outputHeight; self.framesPerSecond = framesPerSecond
     }
 }
 

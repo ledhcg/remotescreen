@@ -332,8 +332,11 @@ actor HelperSession: HelperConnectionHandler {
 
         let events: AsyncStream<CaptureEvent>
         do {
-            events = try await capture.subscribe(window: request.window, nativePixelSize: native, request: capRequest)
+            let number = await resources.tracker.cgWindowNumber(of: request.window)
+            events = try await capture.subscribe(
+                window: request.window, windowNumber: number, nativePixelSize: native, request: capRequest)
         } catch let error as CaptureSystemError {
+            log.error("capture did not start for a window: \(String(describing: error), privacy: .public)")
             if error.kind == .permissionDenied {
                 await send(.status(.permission(.screenRecording, .denied)))
                 await send(.status(.permissionMissing(.screenRecording)))
@@ -344,6 +347,7 @@ actor HelperSession: HelperConnectionHandler {
             }
             return
         } catch {
+            log.error("capture did not start for a window: \(String(describing: error), privacy: .public)")
             await send(.windowSubscribeFailed(window: request.window, reason: .transient))
             return
         }

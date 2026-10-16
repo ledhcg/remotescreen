@@ -72,6 +72,7 @@ public enum LinkSessionError: Error, Equatable, Sendable {
         case .sessionReplaced: .sessionReplaced
         case .helperShuttingDown: .helperShuttingDown
         case .closed: .normal
+        case .peerClosed(let code): code
         default: .internalError
         }
     }

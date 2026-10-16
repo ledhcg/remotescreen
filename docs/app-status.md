@@ -286,6 +286,11 @@ Verified by `swift test` on 127.0.0.1 with identities generated per run (tests `
 
 - QR pairing, SAS pairing, reconnect by pinned SPKI, session resume with a single-use token, revoke while connected,
   "ask before each session", close codes, session replacement, automatic QUIC to TCP fallback.
+- The session limit (`maxSessions`) is checked when the handshake commits, before `welcome` and atomically with admission (slots are
+  held by live sessions and by committed handshakes that are not registered yet; the same device replacing its own session does
+  not count against itself). `SessionLimitTests`: a paired device over the limit gets close code 9 `tooManySessions` and is never
+  welcomed, a new pairing over the limit is denied `busy` and not stored, the same device can still replace its own session.
+  `HelperService`'s own `maxSessions` check (HelperCore) is unchanged.
 - Three window streams carrying 150 KB frames concurrently, in order; input moves coalesced while presses/releases survive;
   video queue drops to the next key frame when the receiver stalls and reports it.
 - Hostile peer: garbage, oversized/unknown frames, bad preambles, wrong stream or direction, wrong stream ids, silent

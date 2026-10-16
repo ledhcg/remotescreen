@@ -83,6 +83,8 @@ public struct LinkCloseCode: RawRepresentable, Sendable, Hashable {
     public static let helperShuttingDown = LinkCloseCode(rawValue: 6)
     public static let approvalDenied = LinkCloseCode(rawValue: 7)
     public static let internalError = LinkCloseCode(rawValue: 8)
+    /// The helper is already serving as many devices as it allows; try again later.
+    public static let tooManySessions = LinkCloseCode(rawValue: 9)
 }
 
 public struct LinkModifiers: OptionSet, Sendable, Hashable {

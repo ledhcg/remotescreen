@@ -270,6 +270,24 @@ Verified by `swift test` on 127.0.0.1 with identities generated per run (tests `
 - Not verified: anything on a real iPad/iOS, Keychain-backed identities, Wi-Fi behaviour, Local Network prompt, throughput over
   time. Test identities use `SecIdentityCreate` (a Security function missing from the public headers; tests only) and fall back to a temporary keychain if it is missing.
 
+## App Mode iPad core (M5 I2, I4, I6, I7)
+
+Verified (`swift test`, macOS; `ScreonAppTests` in the simulator; iOS build):
+
+- Pure session logic in `WindowKit` (`SessionLogicTests`): per-window stats deltas (including a decoder reset and absurd values),
+  at most two key frame requests per second per window with the last request never lost, subscribe/pause/resume/reconnect
+  state machine, frame sequence gaps across the 2^32 wrap, LTR acknowledgements, and the overlay shown for every connection and
+  helper state (connecting, reconnecting, window closed, app quit, Mac locked, missing permission, secure input banner, version
+  mismatch, device revoked, identity changed, declined, replaced, lost).
+- Child surface and cursor pictures (`BGRAImageDecoderTests`): only the declared PNG or JPEG, exactly one image, decoded size equal
+  to its header, bounded before allocation; hostile hotspots do not trap.
+- App glue (`AppModeGlueTests`): link errors stop `ReconnectPolicy` when permanent and are retried when transient, error to window
+  message mapping, typed text splitting, the Keychain pin store.
+- Not verified: everything that needs a Mac helper or an iPad. `AppModeConnection` against a real or mock helper, decoding real
+  video, drawing, touch and pencil input, Telex composition through the on-screen and hardware keyboards, the camera scan, the
+  Local Network prompt, Stage Manager behaviour. The mock helper (`Tools/mock-link-helper`) did not exist yet, so the DEBUG hooks
+  (`LINK_HOST`, `LINK_PORT`, `LINK_PAIRING`) have not been exercised either.
+
 ## Not yet verified, do not treat as done
 
 - **No real mouse/keys have been sent to a real Mac from this machine** (it is a working machine). Every input check on a real device used the fake server. It is also **unknown** whether the Apple server understands `Meta_L` (0xFFE7) as the Command key (see `KeysymMapper.commandLeft`). The app sends exactly `Meta_L`, measured with the fake server. A trial with a person sitting next to it is needed.

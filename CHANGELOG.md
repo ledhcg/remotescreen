@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- App Mode (iPadOS 26, beta, needs Screon Helper on the Mac): set up from a saved computer by scanning the pairing code, pasting its
+  link or comparing six digits; each Mac window can open in its own iPad window with video, child menus and popovers, a local
+  cursor, touch, Apple Pencil, mouse, trackpad and keyboard input, input methods such as Vietnamese Telex, and clear messages when
+  the Mac is locked, a permission is missing, the device was removed or the apps need updating.
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation
   in `vi.lproj` tables and `README.vi.md`. New `Localization` target; the iOS permission prompt is localized too.
 - The app is now called **Screon** (Screen + On: a screen that stays connected), with a new app icon. Bundle identifier is `com.ledinhcuong.screon`.

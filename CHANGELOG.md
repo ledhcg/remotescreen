@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Fix: waits in the App Mode link (one-shot results, stream inboxes, the TCP fallback's stream reads) now end when their task
+  is cancelled. Before, a cancelled task could wait forever, so shutting a session down did not stop it and a test run could
+  hang for hours; replaced window and audio readers now drain their stream instead of being cancelled.
+- Fix (Screon Helper 0.3.0 build 5): build 4 quit as soon as an iPhone or iPad opened a window (the capture background colour
+  was freed while the stream copied its configuration), and could quit at launch or after a change in its window when several
+  apps were tracked at once (the observer thread was started twice). Both are fixed, with regression tests.
+
 - The helper release workflow now signs, notarizes and staples the disk image too, keeps the image and the signed update
   manifest as a run artifact, and publishes the GitHub Release only when `publish` is checked.
 - Screon Helper 0.3.0 (build 4): fills a window's transparent rounded corners with black (no more dark wedges on the iPad),

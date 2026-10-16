@@ -35,7 +35,8 @@ struct PermissionSnapshot: Equatable {
 
 enum PairingState: Equatable {
     case idle
-    case qr(image: NSImage?, expiry: Date)
+    /// `link` is the text the QR code holds, for "Copy Link" (an iPad without a usable camera pastes it).
+    case qr(image: NSImage?, link: String, expiry: Date)
     case sas(expiry: Date)
     case paired(name: String)
     case failed
@@ -177,11 +178,29 @@ final class HelperModel {
             self.service = service
             observeStatus(of: service)
             try await service.start()
+#if DEBUG
+            await writeDebugPairingPayload(server: listener.server)
+#endif
         } catch {
             log.error("could not start the service: \(String(describing: error), privacy: .public)")
             startError = String(describing: error)
         }
     }
+
+#if DEBUG
+    /// Debug builds only: `SCREON_HELPER_QR_OUT=<file>` writes the pairing link there (the same text the QR code holds), so a
+    /// device test can pair through the app's DEBUG `LINK_PAIRING` hook without a camera. Never compiled into Release.
+    private func writeDebugPairingPayload(server: LinkServer) async {
+        guard let path = ProcessInfo.processInfo.environment["SCREON_HELPER_QR_OUT"], !path.isEmpty else { return }
+        do {
+            let payload = try await server.makePairingQRPayload(hostHints: HostHints.current())
+            try Data(try payload.encoded().utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+            log.fault("SCREON_HELPER_QR_OUT: wrote a pairing link (debug build only)")
+        } catch {
+            log.error("could not write the debug pairing link: \(String(describing: error), privacy: .public)")
+        }
+    }
+#endif
 
     /// Stops and starts the service again (settings that are read at start, or a retry after a failure).
     func restartService() async {
@@ -212,6 +231,9 @@ final class HelperModel {
         statusTask = Task { [weak self] in
             for await next in await service.statusUpdates() {
                 guard let self else { return }
+                if next.accessibility != self.status.accessibility || next.screenRecording != self.status.screenRecording {
+                    self.log.info("permissions: accessibility \(String(describing: next.accessibility), privacy: .public), screen recording \(String(describing: next.screenRecording), privacy: .public)")
+                }
                 self.status = next
                 self.refreshPairedDevices()
                 if next.sessions.isEmpty && self.restartPending { await self.restartService() }
@@ -288,13 +310,29 @@ final class HelperModel {
         Task {
             do {
                 let payload = try await server.makePairingQRPayload(hostHints: HostHints.current())
-                pairing = .qr(image: QRCode.image(for: try payload.encoded()), expiry: payload.expiry)
+                let link = try payload.encoded()
+                pairing = .qr(image: QRCode.image(for: link), link: link, expiry: payload.expiry)
                 watchPairingExpiry(payload.expiry)
             } catch {
                 log.error("could not create a pairing code: \(String(describing: error), privacy: .public)")
                 pairing = .failed
             }
         }
+    }
+
+    /// Where an iPad reaches this Mac, for typing into "Pair with code": the first host hint (the `.local` name, else a LAN
+    /// address) and the listening port.
+    var pairingAddress: (host: String, port: UInt16)? {
+        guard let port = status.listeningPort, let host = HostHints.current().first else { return nil }
+        return (host, port)
+    }
+
+    func copyPairingLink() {
+        guard case .qr(_, let link, _) = pairing else { return }
+        NSPasteboard.general.clearContents()
+        // Transient: clipboard managers should not keep a pairing secret around after it expires.
+        NSPasteboard.general.setString(link, forType: .string)
+        NSPasteboard.general.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
     }
 
     func beginSASPairing() {

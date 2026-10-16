@@ -76,7 +76,6 @@
 "Pairing code" = "Mã ghép đôi";
 "The code works once. Your Mac will ask you to confirm with Touch ID or your password." = "Mã chỉ dùng được một lần. Máy Mac sẽ yêu cầu bạn xác nhận bằng Touch ID hoặc mật khẩu.";
 "On your iPad, choose Pair Without Camera." = "Trên iPad, hãy chọn Ghép đôi không cần camera.";
-"Six digits will appear here and on the iPad. Confirm that they match." = "Sáu chữ số sẽ hiện ở đây và trên iPad. Hãy xác nhận rằng chúng khớp nhau.";
 "iPad paired." = "Đã ghép đôi iPad.";
 "Paired with “%@”." = "Đã ghép đôi với “%@”.";
 "The pairing code expired." = "Mã ghép đôi đã hết hạn.";
@@ -104,3 +103,10 @@
 "Open System Settings" = "Mở Cài đặt Hệ thống";
 "Allowed" = "Đã cho phép";
 "Not allowed yet" = "Chưa được cho phép";
+
+/* Pairing window: copy link and address */
+"Copy Link" = "Sao chép liên kết";
+"For an iPad that cannot scan: paste the link in Screon, Set up App Mode, Paste link." = "Cho iPad không quét được mã: dán liên kết trong Screon, Thiết lập App Mode, Dán liên kết.";
+"Enter this address and port on the iPad. Six digits will then appear here and on the iPad. Confirm that they match." = "Nhập địa chỉ và cổng này trên iPad. Sau đó sáu chữ số sẽ hiện ở đây và trên iPad. Hãy xác nhận chúng trùng nhau.";
+"Address" = "Địa chỉ";
+"Port" = "Cổng";

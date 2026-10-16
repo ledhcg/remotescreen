@@ -9,7 +9,7 @@ struct PairingView: View {
             switch model.pairing {
             case .idle:
                 ProgressView()
-            case .qr(let image, let expiry):
+            case .qr(let image, _, let expiry):
                 Text("Scan this code with Screon on your iPad.").font(.headline)
                 if let image {
                     Image(nsImage: image)
@@ -21,14 +21,17 @@ struct PairingView: View {
                         .accessibilityLabel(Text("Pairing code"))
                 }
                 Countdown(expiry: expiry)
+                AddressLine(model: model)
                 Text("The code works once. Your Mac will ask you to confirm with Touch ID or your password.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             case .sas(let expiry):
                 Image(systemName: "number.circle").font(.system(size: 40)).foregroundStyle(.tint).accessibilityHidden(true)
                 Text("On your iPad, choose Pair Without Camera.").font(.headline)
-                Text("Six digits will appear here and on the iPad. Confirm that they match.")
+                Text("Enter this address and port on the iPad. Six digits will then appear here and on the iPad. Confirm that they match.")
                     .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                AddressLine(model: model)
                 Countdown(expiry: expiry)
             case .paired(let name):
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 44)).foregroundStyle(.green).accessibilityHidden(true)
@@ -43,6 +46,8 @@ struct PairingView: View {
             }
             HStack {
                 if case .qr = model.pairing {
+                    Button("Copy Link") { model.copyPairingLink() }
+                        .help(Text("For an iPad that cannot scan: paste the link in Screon, Set up App Mode, Paste link."))
                     Button("New Code") { model.beginQRPairing() }
                 } else if case .failed = model.pairing {
                     Button("New Code") { model.beginQRPairing() }
@@ -54,6 +59,22 @@ struct PairingView: View {
         }
         .padding(24)
         .frame(width: 360)
+    }
+}
+
+/// The Mac's address and port as the iPad needs them for "Pair with code".
+private struct AddressLine: View {
+    let model: HelperModel
+
+    var body: some View {
+        if let address = model.pairingAddress {
+            HStack(spacing: 16) {
+                LabeledContent("Address") { Text(address.host).textSelection(.enabled) }
+                LabeledContent("Port") { Text(String(address.port)).textSelection(.enabled) }
+            }
+            .font(.callout.monospaced())
+            .accessibilityIdentifier("pairing-address")
+        }
     }
 }
 

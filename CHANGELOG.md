@@ -4,6 +4,7 @@
 
 ## 0.2.0 — 2026-10-16 (TestFlight beta)
 
+- Screon Helper 0.2.0 (build 2), the same version as the iOS app.
 - Fixes from testing App Mode on a real iPad and Mac: the helper starts on a real Mac (its identity lives in the login
   keychain), windows actually stream (capture uses the window-server number), the helper keeps a well-known port so a paired
   iPad reconnects after a restart, pairing waits while iOS asks for Local Network access, the launcher says when the helper

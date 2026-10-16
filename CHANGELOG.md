@@ -6,6 +6,17 @@
   link or comparing six digits; each Mac window can open in its own iPad window with video, child menus and popovers, a local
   cursor, touch, Apple Pencil, mouse, trackpad and keyboard input, input methods such as Vietnamese Telex, and clear messages when
   the Mac is locked, a permission is missing, the device was removed or the apps need updating.
+- App Mode: sound from the Mac apps (48 kHz 16-bit PCM through a 20 to 40 ms adaptive jitter buffer with drift correction; muted
+  while the app's windows are in the background), clipboard sync on the link (text, RTF, HTML, PNG; password-manager content is
+  never sent and sensitive content from the Mac stays on the iPad and expires; synced when a window comes forward and before
+  paste), dropping files on a window to send them to the app that owns it (progress and cancel on screen; the Mac opens only plain
+  documents), Apple Pencil pressure, tilt and hover for drawing apps, and per-computer streaming settings (quality cap, frame-rate
+  cap, 10-bit video, sound).
+- App Mode link protocol (unreleased, so changed in place): audio codecs `pcm16` and `aacEld` (Opus stays reserved), `status`
+  `secureInput` now says when it ends, new `window.subscribeFailed` so the iPad can say why a window did not stream, and keys with
+  keycode 0xFFFF are mapped from their keysym on the Mac.
+- Helper (App Mode): ending one iPad's session no longer releases keys or buttons another iPad is holding; Pencil tilt is now
+  converted to the range the system's tablet events expect.
 - Helper (App Mode): input is injected only when the target window is verifiably the topmost window under the pointer (or the
   same app's own popup); otherwise the window is raised first. Unknown window numbers and foreign overlays fail closed.
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation

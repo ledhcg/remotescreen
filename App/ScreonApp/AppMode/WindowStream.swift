@@ -48,6 +48,8 @@ final class WindowStream: @unchecked Sendable {
 
     let window: WindowID
     let decoder = VideoStreamDecoder()
+    /// The clipboard and file transfers of the connection this window belongs to; set by the connection, read by the window view.
+    @MainActor var services: AppWindowServices?
 
     private struct State {
         var layout: WindowStreamLayout?
@@ -167,7 +169,9 @@ final class WindowStream: @unchecked Sendable {
 
     private func configure(_ config: LinkVideoConfig) {
         let codec: VideoCodec = config.codec == .hevc ? .hevc : .h264
-        let stream = VideoStreamConfig(codec: codec, parameterSets: config.parameterSets, nalLengthSize: 4, bitDepth: 8)
+        let stream = VideoStreamConfig(
+            codec: codec, parameterSets: config.parameterSets, nalLengthSize: 4,
+            bitDepth: VideoBitDepth.bitDepth(codec: config.codec, parameterSets: config.parameterSets))
         do { try decoder.configure(stream) } catch {
             decoder.reset()
             state.withLock { $0.layout = nil }

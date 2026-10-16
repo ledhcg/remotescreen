@@ -245,7 +245,17 @@ Exit: every row decided; §2 and the design updated; any "no-go" has a fallback 
 - `stats` (C→H, 250 ms): per window `{receivedBytes, decodedFrames, droppedFrames, decodeP95Micros}`, connection RTT.
 - `video.ack` (C→H): LTR token acknowledgements; `video.lost` (C→H): missing frame sequence → helper refreshes from LTR
   or IDR.
-- `status.secureInput(pid?)`, `status.permission(kind, state)`, `status.stage(state)`.
+- `status.secureInput(active, pid?)` (the helper sends `active: false` when it ends), `status.permission(kind, state)`,
+  `status.stage(state)`.
+- `window.subscribeFailed` (H→C) `{window, reason: unknownWindow | limit | permission | transient}`: sent instead of silently
+  ignoring a refused `window.subscribe`.
+- Audio codecs (`audio.config`): `pcm16` = 48 kHz interleaved little-endian int16 (what the helper sends), `aacEld` (optional, the iPad
+  does not decode it yet), `opus` reserved and never produced (no third-party codec).
+- Conventions: `stats` counters are **deltas** since the previous report; the LTR tokens in `video.ack` are the `sequence`
+  numbers of frames flagged `ltr`; `input.key` with keycode `0xFFFF` means "no Mac keycode, use the keysym" (the helper maps a
+  US-layout key, types a printable character as Unicode text, drops the rest).
+- Files (iPad to Mac) have no acknowledgement: the iPad paces itself with a ping barrier every 2 MiB and cancels by ending the
+  transfer with a digest that cannot match; it cannot learn whether the Mac opened the file.
 - `window.capabilities` (H→C): per-window flags (resizable, movable, closable, supportsTablet, menuAvailable).
 - `session.approvalRequired` (H→C) when "ask on the Mac before each session" is on.
 - All coordinates: `Float64` Mac points relative to the window's content origin.

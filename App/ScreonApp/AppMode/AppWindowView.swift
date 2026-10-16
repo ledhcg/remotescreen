@@ -4,6 +4,7 @@ import MetalKit
 import RemoteDisplay
 import RFBKit
 import UIKit
+import UniformTypeIdentifiers
 import WindowKit
 
 /// Shows one Mac window of App Mode with Metal and turns touch, pencil, mouse, trackpad, hardware keyboard and the iPad's input methods
@@ -28,6 +29,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
             lastCursorVersion = -1
             oldValue?.setWakeHandler(nil)
             stream?.setWakeHandler { [weak self] in DispatchQueue.main.async { self?.requestFrame() } }
+            observeTransfers()
             requestFrame()
         }
     }
@@ -70,6 +72,14 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
     private var router = InputRouter()
     private var keyboard = KeyboardState()
     private var pencil = PencilGesture()
+    /// What the pencil last reported while touching, and the hardest it pressed during the stroke (a tap ends with the tip lifting).
+    private var pencilSample: PencilSample?
+    private var pencilPeakPressure = 0.0
+    /// Input waits here while the Mac is being given the iPad's clipboard before a paste (see `holdInputForPaste`).
+    private var heldIntents: [[InputIntent]] = []
+    private var holdTask: Task<Void, Never>?
+    private var transfersHUD: FileTransfersHUD?
+    private var transfersObserver: NSObjectProtocol?
     private var momentum = MomentumScroller()
     private var lastMomentumTick: CFTimeInterval?
     private var momentumIsWheel = false
@@ -119,6 +129,73 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         NotificationCenter.default.addObserver(self, selector: #selector(sceneWillDeactivate(_:)), name: UIScene.willDeactivateNotification, object: nil)
         installGestures()
         addInteraction(UIPointerInteraction(delegate: self))
+        addInteraction(UIDropInteraction(delegate: self))
+    }
+
+    // MARK: Services (clipboard, files)
+
+    /// The clipboard and file transfers of the connection this window shows.
+    private var services: AppWindowServices? { stream?.services }
+
+    private func observeTransfers() {
+        if let transfersObserver { NotificationCenter.default.removeObserver(transfersObserver) }
+        transfersObserver = nil
+        guard let files = services?.files else { transfersHUD?.update(items: [], cancel: { _ in }); return }
+        transfersObserver = NotificationCenter.default.addObserver(
+            forName: AppFileTransfers.didChange, object: files, queue: .main
+        ) { [weak self, weak files] _ in
+            MainActor.assumeIsolated { self?.refreshTransfersHUD(files) }
+        }
+        refreshTransfersHUD(files)
+    }
+
+    private func refreshTransfersHUD(_ files: AppFileTransfers?) {
+        guard let files else { return }
+        if transfersHUD == nil, !files.items.isEmpty {
+            let hud = FileTransfersHUD()
+            hud.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(hud)
+            NSLayoutConstraint.activate([
+                hud.centerXAnchor.constraint(equalTo: centerXAnchor),
+                hud.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -16),
+                hud.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -32),
+                hud.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
+            ])
+            transfersHUD = hud
+        }
+        transfersHUD?.update(items: files.items) { [weak files] id in files?.cancel(id) }
+        if !files.items.isEmpty, files.items.allSatisfy(\.isFinished) {
+            Task { @MainActor [weak files] in
+                try? await Task.sleep(for: .seconds(5))
+                if let files, files.items.allSatisfy(\.isFinished) { files.dismissFinished() }
+            }
+        }
+    }
+
+    // MARK: Input gate
+
+    /// Sends intents to the Mac in order. While a paste is waiting for the clipboard to reach the Mac they queue up behind it.
+    private func emit(_ intents: [InputIntent]) {
+        guard !intents.isEmpty else { return }
+        if holdTask != nil { heldIntents.append(intents) } else { onIntents?(intents) }
+    }
+
+    /// ⌘V needs the iPad's clipboard on the Mac first: the offer, the Mac's request and the data take a round trip.
+    private func holdInputForPaste() {
+        holdTask?.cancel()
+        holdTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            self?.flushHeldInput()
+        }
+    }
+
+    /// Sends what was held back, now, in order.
+    private func flushHeldInput() {
+        holdTask?.cancel()
+        holdTask = nil
+        let batches = heldIntents
+        heldIntents = []
+        for batch in batches { onIntents?(batch) }
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -291,7 +368,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         }
         let output = touchMapper.handle(event, in: space, isZoomed: space.isZoomed)
         if !output.intents.isEmpty {
-            onIntents?(output.intents)
+            emit(output.intents)
             requestFrame()
         }
         if let pan = output.viewportPan {
@@ -331,6 +408,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         pencilRecognizer.minimumPressDuration = 0
         pencilRecognizer.allowableMovement = .greatestFiniteMagnitude
         pencilRecognizer.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pencilRecognizer.cancelsTouchesInView = false  // the view reads force and angles from the touches themselves
 
         let indirect = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         let primaryMouse = UILongPressGestureRecognizer(target: self, action: #selector(handleMouseButton(_:)))
@@ -404,8 +482,38 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         case .ended: pencil.ended(at: point, time: time)
         default: pencil.cancelled()
         }
-        for action in actions { dispatch(.pencil(action)) }
+        for action in actions {
+            if let sample = strokeSample(for: action) { dispatch(.pencilStroke(action, sample)) } else { dispatch(.pencil(action)) }
+        }
+        if recognizer.state == .ended || recognizer.state == .cancelled || recognizer.state == .failed { pencilPeakPressure = 0 }
     }
+
+    /// The pencil's pressure and tilt for an action, when the Mac takes them and the system reported them.
+    private func strokeSample(for action: PencilAction) -> PencilSample? {
+        guard services?.supportsTablet == true, var sample = pencilSample else { return nil }
+        switch action {
+        case .click: sample.pressure = max(sample.pressure, pencilPeakPressure)  // the tip is already lifting when a tap is recognised
+        case .rightClick: return nil
+        default: break
+        }
+        return sample
+    }
+
+    private func notePencil(_ touches: Set<UITouch>) {
+        guard let touch = touches.first(where: { $0.type == .pencil }) else { return }
+        let sample = PencilSample(
+            force: Double(touch.force), maximumForce: Double(touch.maximumPossibleForce),
+            altitude: Double(touch.altitudeAngle), azimuth: Double(touch.azimuthAngle(in: self))
+        )
+        pencilSample = sample
+        pencilPeakPressure = max(pencilPeakPressure, sample.pressure)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        notePencil(touches)
+        super.touchesMoved(touches, with: event)
+    }
+
 
     @objc private func handleMouseButton(_ recognizer: UILongPressGestureRecognizer) {
         stopMomentum()
@@ -421,7 +529,16 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
 
     @objc private func handleHover(_ recognizer: UIHoverGestureRecognizer) {
         guard recognizer.state == .began || recognizer.state == .changed else { return }
-        dispatch(.hover(recognizer.location(in: self)))
+        let location = recognizer.location(in: self)
+        // A hovering Apple Pencil reports its height; a mouse or trackpad reports none. The Mac gets a stylus in proximity, not a mouse.
+        if services?.supportsTablet == true, recognizer.zOffset > 0 {
+            let sample = PencilSample(
+                force: 0, maximumForce: 1, altitude: Double(recognizer.altitudeAngle), azimuth: Double(recognizer.azimuthAngle(in: self))
+            )
+            dispatch(.pencilHover(location, sample))
+            return
+        }
+        dispatch(.hover(location))
     }
 
     @objc private func handleWheel(_ recognizer: UIPanGestureRecognizer) {
@@ -470,18 +587,20 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
     override var editingInteractionConfiguration: UIEditingInteractionConfiguration { .none }
 
     override func resignFirstResponder() -> Bool {
+        flushHeldInput()
         commitComposition()
         let resigned = super.resignFirstResponder()
         if resigned {
             let intents = keyboard.releaseAll()
             updateKeyRepeat()
-            if !intents.isEmpty { onIntents?(intents) }
+            if !intents.isEmpty { emit(intents) }
         }
         return resigned
     }
 
     @objc private func sceneDidActivate(_ notification: Notification) {
         guard isOwnScene(notification) else { return }
+        services?.sceneBecameActive()
         if window != nil, !isFirstResponder { _ = becomeFirstResponder() }
     }
 
@@ -498,18 +617,20 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
 
     /// Releases keys and buttons and ends scrolling, so the Mac is never left with a stuck key or mouse button.
     func releaseAllInput() {
+        flushHeldInput()
         momentum.stop()
         commitComposition()
         mouseButtons = []
         router.cancel()
         let intents = keyboard.releaseAll() + touchMapper.releaseAll()
         updateKeyRepeat()
-        if !intents.isEmpty { onIntents?(intents) }
+        if !intents.isEmpty { emit(intents) }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if window != nil, !isFirstResponder { _ = becomeFirstResponder() }
         stopMomentum()
+        notePencil(touches)
         super.touchesBegan(touches, with: event)
     }
 
@@ -521,7 +642,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         return [escape]
     }
 
-    @objc private func escapePressed() { onIntents?(InputIntent.tap(0xFF1B, macKeyCode: 53)) }
+    @objc private func escapePressed() { emit(InputIntent.tap(0xFF1B, macKeyCode: 53)) }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         if !handle(presses, isDown: true) { super.pressesBegan(presses, with: event) }
@@ -557,6 +678,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
             let isPlainCharacter = !isModifierKey && modifiers.isDisjoint(with: [.control, .command])
                 && key.characters.unicodeScalars.count == 1 && (key.characters.unicodeScalars.first.map { $0.value >= 0x20 && $0.value < 0xF700 } ?? false)
             if inputMethodComposes, isPlainCharacter { continue }
+            if isDown, modifiers.contains(.command), !isModifierKey { noteClipboardShortcut(key.charactersIgnoringModifiers) }
             let result = keyboard.handle(KeyPress(
                 hidUsage: key.keyCode.rawValue, characters: key.characters,
                 charactersIgnoringModifiers: key.charactersIgnoringModifiers, modifiers: modifiers, isDown: isDown
@@ -564,9 +686,18 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
             if !result.isEmpty { handled = true }
             intents += result
         }
-        if !intents.isEmpty { onIntents?(intents) }
+        if !intents.isEmpty { emit(intents) }
         updateKeyRepeat()
         return handled
+    }
+
+    /// ⌘C / ⌘X: the Mac's clipboard is about to change. ⌘V: give the Mac the iPad's clipboard first, and hold the keys until it has had time.
+    private func noteClipboardShortcut(_ characters: String) {
+        switch characters.lowercased() {
+        case "c", "x": services?.copyShortcutPressed()
+        case "v": if services?.pasteShortcutPressed() == true { holdInputForPaste() }
+        default: break
+        }
     }
 
     private func updateKeyRepeat() {
@@ -586,7 +717,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
 
     private func repeatOnce(_ key: RepeatingKey) -> Bool {
         guard keyboard.repeating == key else { return false }
-        onIntents?([.key(key.keysym, isDown: true)])
+        emit([.key(key.keysym, isDown: true)])
         return true
     }
 
@@ -601,7 +732,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         composing = ""
         composingSelection = NSRange(location: 0, length: 0)
         didChangeText()
-        onIntents?(Self.intents(forTyped: text))
+        emit(Self.intents(forTyped: text))
     }
 
     func deleteBackward() {
@@ -611,7 +742,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
             composingSelection = NSRange(location: (composing as NSString).length, length: 0)
             didChangeText()
         } else {
-            onIntents?(InputIntent.tap(0xFF08, macKeyCode: 51))
+            emit(InputIntent.tap(0xFF08, macKeyCode: 51))
         }
     }
 
@@ -646,7 +777,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         composing = ""
         composingSelection = NSRange(location: 0, length: 0)
         didChangeText()
-        onIntents?(Self.intents(forTyped: text))
+        emit(Self.intents(forTyped: text))
     }
 
     private func willChangeText() {
@@ -802,5 +933,153 @@ extension AppWindowView: UIPointerInteractionDelegate {
     /// The Mac cursor is drawn locally, so the iPad's own pointer is hidden over the window.
     func pointerInteraction(_ interaction: UIPointerInteraction, styleFor region: UIPointerRegion) -> UIPointerStyle? {
         acceptsRemoteInput ? .hidden() : nil
+    }
+}
+
+// MARK: - Dropping files
+
+extension AppWindowView: UIDropInteractionDelegate {
+    func dropInteraction(_ interaction: UIDropInteraction, canHandle session: UIDropSession) -> Bool {
+        guard stream?.services?.supportsFiles == true, acceptsRemoteInput else { return false }
+        return session.hasItemsConforming(toTypeIdentifiers: [UTType.data.identifier, UTType.directory.identifier])
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction, sessionDidUpdate session: UIDropSession) -> UIDropProposal {
+        UIDropProposal(operation: .copy)
+    }
+
+    /// Each dropped item is copied to a private temporary file inside the provider's callback (its own file disappears when the callback
+    /// returns), then queued. The Mac opens the file with this window's app, and only if it is a plain document type.
+    func dropInteraction(_ interaction: UIDropInteraction, performDrop session: UIDropSession) {
+        guard let services = stream?.services, let window = stream?.window else { return }
+        let target = services.bundleID(window)
+        for item in session.items.prefix(FileDropPolicy.maxQueued + 4) {
+            let provider = item.itemProvider
+            let suggested = provider.suggestedName ?? String(localized: "File")
+            let typeIdentifier = provider.registeredTypeIdentifiers.first { identifier in
+                UTType(identifier)?.conforms(to: .data) == true || UTType(identifier)?.conforms(to: .directory) == true
+            } ?? UTType.data.identifier
+            provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+                guard let url else {
+                    Task { @MainActor in services.files.refuse(name: suggested, reason: .unreadable) }
+                    return
+                }
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                if values?.isDirectory == true {
+                    Task { @MainActor in services.files.refuse(name: suggested, reason: .folder) }
+                    return
+                }
+                if let size = values?.fileSize, !FileDropPolicy.isAcceptable(size: UInt64(size)) {
+                    let reason: AppFileTransfers.Item.Refusal = size == 0 ? .empty : .tooLarge
+                    Task { @MainActor in services.files.refuse(name: suggested, reason: reason) }
+                    return
+                }
+                let folder = FileManager.default.temporaryDirectory
+                    .appending(path: AppFileTransfers.temporaryFolderName, directoryHint: .isDirectory)
+                    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+                let copy = folder.appending(path: "file", directoryHint: .notDirectory)
+                do {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: url, to: copy)
+                } catch {
+                    try? FileManager.default.removeItem(at: folder)
+                    Task { @MainActor in services.files.refuse(name: suggested, reason: .unreadable) }
+                    return
+                }
+                Task { @MainActor in services.files.enqueue(copiedFile: copy, suggestedName: suggested, targetBundleID: target) }
+            }
+        }
+    }
+}
+
+/// The list of files being sent, over the bottom of the window: name, progress, a cancel button; finished ones show how they ended.
+@MainActor
+final class FileTransfersHUD: UIView {
+    private let stack = UIStackView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        blur.layer.cornerRadius = 14
+        blur.clipsToBounds = true
+        addSubview(blur)
+        stack.axis = .vertical
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        blur.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            blur.leadingAnchor.constraint(equalTo: leadingAnchor), blur.trailingAnchor.constraint(equalTo: trailingAnchor),
+            blur.topAnchor.constraint(equalTo: topAnchor), blur.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: blur.contentView.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: blur.contentView.trailingAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: blur.contentView.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: blur.contentView.bottomAnchor, constant: -12),
+        ])
+        accessibilityIdentifier = "file-transfers"
+        accessibilityLabel = String(localized: "File transfers")
+        isHidden = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func update(items: [AppFileTransfers.Item], cancel: @escaping (UInt32) -> Void) {
+        for view in stack.arrangedSubviews { stack.removeArrangedSubview(view); view.removeFromSuperview() }
+        isHidden = items.isEmpty
+        for item in items {
+            let label = UILabel()
+            label.font = .preferredFont(forTextStyle: .subheadline)
+            label.adjustsFontForContentSizeCategory = true
+            label.numberOfLines = 2
+            label.text = Self.text(for: item)
+            label.textColor = Self.isFailure(item) ? .systemRed : .label
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+            let row = UIStackView(arrangedSubviews: [label])
+            row.axis = .horizontal
+            row.spacing = 10
+            row.alignment = .center
+            if !item.isFinished {
+                let progress = UIProgressView(progressViewStyle: .default)
+                progress.progress = Float(item.fraction)
+                progress.widthAnchor.constraint(equalToConstant: 90).isActive = true
+                var configuration = UIButton.Configuration.plain()
+                configuration.image = UIImage(systemName: "xmark.circle.fill")
+                let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in cancel(item.id) })
+                button.accessibilityLabel = String(localized: "Cancel")
+                button.accessibilityIdentifier = "cancel-transfer"
+                row.addArrangedSubview(progress)
+                row.addArrangedSubview(button)
+            }
+            row.isAccessibilityElement = false
+            stack.addArrangedSubview(row)
+        }
+    }
+
+    private static func isFailure(_ item: AppFileTransfers.Item) -> Bool {
+        switch item.state {
+        case .failed, .refused: true
+        default: false
+        }
+    }
+
+    static func text(for item: AppFileTransfers.Item) -> String {
+        let name = item.name
+        switch item.state {
+        case .queued: return String(localized: "Waiting to send “\(name)”")
+        case .sending: return String(localized: "Sending “\(name)”")
+        case .sent: return String(localized: "Sent “\(name)”")
+        case .cancelled: return String(localized: "Cancelled “\(name)”")
+        case .failed: return String(localized: "Couldn't send “\(name)”")
+        case .refused(let reason):
+            switch reason {
+            case .tooLarge: return String(localized: "“\(name)” is too large to send.")
+            case .empty: return String(localized: "“\(name)” is empty.")
+            case .folder: return String(localized: "“\(name)” is a folder. Folders can't be sent.")
+            case .unreadable: return String(localized: "“\(name)” couldn't be read.")
+            case .queueFull: return String(localized: "Too many files are waiting. “\(name)” was not sent.")
+            case .notConnected: return String(localized: "Not connected to the Mac. “\(name)” was not sent.")
+            }
+        }
     }
 }

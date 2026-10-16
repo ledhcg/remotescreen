@@ -14,6 +14,8 @@ public struct AudioPlayoutStats: Sendable, Equatable {
     public var bufferedMillis = 0.0
     public var targetMillis = 0.0
 
+    public init() {}
+
     /// Underruns and overflows: what the person can hear.
     public var glitches: Int { underruns + overflows }
 }

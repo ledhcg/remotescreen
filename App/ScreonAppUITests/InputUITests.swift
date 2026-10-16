@@ -15,7 +15,8 @@ final class InputUITests: XCTestCase {
 
     func testTouchGesturesAndTypingReachTheServer() throws {
         let app = XCUIApplication()
-        app.launchEnvironment = ["RFB_HOST": "127.0.0.1", "RFB_PORT": "5959"]
+        // The toolbar moves off the centre line: `twoFingerTap()` puts one finger at the top centre, which on an iPad is the toolbar.
+        app.launchEnvironment = ["RFB_HOST": "127.0.0.1", "RFB_PORT": "5959", "SCREON_TOOLBAR_ALIGN": "trailing"]
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
 

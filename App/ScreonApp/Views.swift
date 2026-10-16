@@ -90,6 +90,16 @@ struct SessionView: View {
         [toolbarFrame, keyBarFrame, bannerFrame].filter { $0 != .zero }.map { $0.insetBy(dx: -12, dy: -12) }
     }
 
+    /// The toolbar floats at the top centre. DEBUG UI tests can move it with `SCREON_TOOLBAR_ALIGN=trailing`: XCUITest's `twoFingerTap()`
+    /// puts its two fingers on the vertical centre line at the very top and bottom of the screen view, and on an iPad the top finger
+    /// lands on the centred toolbar, so the view never sees a second touch.
+    private static var toolbarAlignment: Alignment {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["SCREON_TOOLBAR_ALIGN"] == "trailing" { return .trailing }
+        #endif
+        return .center
+    }
+
     private var showsSidebar: Bool { controller.sidebarPosition != .hidden }
 
     var body: some View {
@@ -118,6 +128,7 @@ struct SessionView: View {
             }
             VStack(spacing: 8) {
                 toolbar.claimingTouches(frame: $toolbarFrame)
+                    .frame(maxWidth: .infinity, alignment: Self.toolbarAlignment)
                 if controller.isStatsVisible {
                     Text(controller.statsLine)
                         .font(.caption.monospacedDigit())

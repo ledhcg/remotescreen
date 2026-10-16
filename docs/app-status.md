@@ -70,6 +70,7 @@ The first attempt on the iPad reported `NWError 50` (`ENETDOWN`, "Network is dow
 | A real Mac screen is displayed, with continuous updates | App in the simulator connected to a real `screensharingd`, content seen changing between captures |
 | GPU drawing matches the CPU coordinate transform | Real Metal test reading pixels back (`FramebufferRendererTests`), including when zooming and panning |
 | One-finger tap, double tap, two-finger tap (right click), press-and-hold then drag | XCUITest + fake server: 13 checks match |
+| The same runners on an iPad Pro 11-inch (M5) simulator, iOS 26 | `run_input_test.sh` 13 checks match; `run_gesture_test.sh`, `run_keyboard_test.sh`, `run_cursor_test.sh` ALL MATCH. The right-click check used to fail on iPad only because of the test: XCUITest's `twoFingerTap()` puts one finger at the top centre of the view, where the iPad's centred toolbar is, so the view saw one touch (measured: `touchesBegan` had 1 touch while the event had 2). The test now launches with DEBUG `SCREON_TOOLBAR_ALIGN=trailing`. Not a product bug: InputKit/ScreonView were not changed. |
 | Virtual keyboard (`A`, `b`, Return), no stuck keys | As above |
 | The send queue keeps the right order (press before release) | 4 tests, 200 event pairs |
 | **Real iPad**: one-finger tap at the right coordinates | The fake server received (201,220), (599,449), (300,399) for targets (200,220), (600,450), (300,400): off by ≤ 1 Mac pixel |

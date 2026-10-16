@@ -163,7 +163,8 @@ struct ClientSessionMachine {
         guard let mac = try? PairingProof.mac(
             secret: payload.secret, nonce: payload.nonce, binding: binding, macSPKIHash: peerSPKIHash,
             ipadSPKIHash: ownSPKIHash, deviceName: pairName),
-            let prove = try? LinkPairProve(deviceName: pairName, ipadSPKIHash: LinkBytes32(ownSPKIHash), mac: LinkBytes32(mac))
+            let prove = try? LinkPairProve(
+                nonce: LinkBytes16(payload.nonce), deviceName: pairName, ipadSPKIHash: LinkBytes32(ownSPKIHash), mac: LinkBytes32(mac))
         else { return fail(.pairingFailed("cannot build proof")) }
         return [.send(.pairProve(prove))]
     }
@@ -416,7 +417,7 @@ struct HelperSessionMachine {
         let exporter = self.exporter, challenge = self.challenge
         let macHash = configuration.helperSPKIHash, ipadHash = peerSPKIHash, received = p.mac.data
         do {
-            try ledger.attemptAny { offer in
+            try ledger.attempt(nonce: p.nonce.data, source: source) { offer in
                 let binding: PairingBinding
                 if let exporter { binding = .exporter(exporter) }
                 else if let challenge { binding = .helperChallenge(nonce: offer.nonce, challenge: challenge) }

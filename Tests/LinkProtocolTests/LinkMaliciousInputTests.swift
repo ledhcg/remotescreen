@@ -157,6 +157,27 @@ struct LinkMaliciousInputTests {
         #expect(isMalformed(payloadError(.inputPointer, pointer(flags: 1, floats: []))))
     }
 
+    @Test func pairProveCarriesAnExactSizeNonce() throws {
+        func prove(nonceBytes: Int, nameBytes: Int = 3, trailing: Int = 0) -> [UInt8] {
+            var w = LinkWriter()
+            w.raw(Data(repeating: 7, count: nonceBytes))
+            w.u16(UInt16(nameBytes)); w.raw(Data(repeating: 0x61, count: nameBytes))
+            w.raw(Data(repeating: 1, count: 32)); w.raw(Data(repeating: 2, count: 32))
+            w.raw(Data(repeating: 0, count: trailing))
+            return w.bytes
+        }
+        #expect(payloadError(.pairProve, prove(nonceBytes: 16)) == nil)
+        // A proof from before the nonce existed (no nonce field) is malformed, never half-read.
+        var old = LinkWriter()
+        old.u16(3); old.raw(Data("abc".utf8)); old.raw(Data(repeating: 1, count: 32)); old.raw(Data(repeating: 2, count: 32))
+        #expect(payloadError(.pairProve, old.bytes) != nil)
+        #expect(payloadError(.pairProve, prove(nonceBytes: 15)) != nil)
+        #expect(isMalformed(payloadError(.pairProve, prove(nonceBytes: 16, trailing: 1))))
+        #expect(payloadError(.pairProve, prove(nonceBytes: 16, nameBytes: 300)) != nil)
+        #expect(throws: LinkError.self) { try LinkBytes16(Data(count: 17)) }
+        #expect(throws: LinkError.self) { try LinkBytes16(Data(count: 15)) }
+    }
+
     @Test func badBooleansAndEnumsAreMalformed() {
         #expect(isMalformed(payloadError(.appsList, [9])))
         #expect(isMalformed(payloadError(.pairDenied, [200])))

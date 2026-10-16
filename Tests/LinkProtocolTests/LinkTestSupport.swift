@@ -86,7 +86,7 @@ enum Samples {
         .status(.stage(.active)),
         .approvalRequired,
         .close(code: .protocolViolation, reason: "bad frame"),
-        .pairProve(LinkPairProve(deviceName: "Alice's iPad", ipadSPKIHash: LinkBytes32(repeating: 3), mac: LinkBytes32(repeating: 4))),
+        .pairProve(LinkPairProve(nonce: LinkBytes16(repeating: 2), deviceName: "Alice's iPad", ipadSPKIHash: LinkBytes32(repeating: 3), mac: LinkBytes32(repeating: 4))),
         .pairChallenge(LinkBytes32(repeating: 5)),
         .pairOK(LinkPairOK(macName: "mac.local", helperID: LinkBytes32(repeating: 6))),
         .pairDenied(.tooManyAttempts),

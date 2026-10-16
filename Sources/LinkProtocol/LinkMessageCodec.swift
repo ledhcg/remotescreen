@@ -54,6 +54,7 @@ extension LinkMessage {
             w.u16(code.rawValue)
             try w.string(reason, maxBytes: Limits.maxReasonBytes, "reason")
         case .pairProve(let m):
+            w.bytes16(m.nonce)
             try w.string(m.deviceName, maxBytes: Limits.maxDeviceNameBytes, "deviceName")
             w.bytes32(m.ipadSPKIHash); w.bytes32(m.mac)
         case .pairChallenge(let b), .sasCommit(let b), .sasReveal(let b):
@@ -262,6 +263,7 @@ extension LinkMessage {
             return .close(code: LinkCloseCode(rawValue: try r.u16("code")), reason: try r.string(maxBytes: Limits.maxReasonBytes, "reason"))
         case .pairProve:
             return .pairProve(LinkPairProve(
+                nonce: try r.bytes16("nonce"),
                 deviceName: try r.string(maxBytes: Limits.maxDeviceNameBytes, "deviceName"),
                 ipadSPKIHash: try r.bytes32("ipadSPKIHash"), mac: try r.bytes32("mac")
             ))

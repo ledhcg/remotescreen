@@ -38,6 +38,19 @@ public struct LinkBytes32: Sendable, Hashable {
     public init(repeating byte: UInt8) { data = Data(repeating: byte, count: 32) }
 }
 
+/// Exactly 16 bytes: the pairing offer's nonce. Wrong sizes cannot be represented.
+public struct LinkBytes16: Sendable, Hashable {
+    public let data: Data
+
+    public init(_ data: Data) throws {
+        guard data.count == 16 else { throw LinkError.invalidValue("expected 16 bytes, got \(data.count)") }
+        self.data = Data(data)
+    }
+
+    /// All bytes equal to `byte`; convenient in tests.
+    public init(repeating byte: UInt8) { data = Data(repeating: byte, count: 16) }
+}
+
 /// A point in Mac points. Finite and within `LinkLimits.maxCoordinate` when sent or accepted.
 public struct LinkPoint: Sendable, Hashable {
     public var x: Double

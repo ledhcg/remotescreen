@@ -87,6 +87,10 @@ public struct LinkReader: Sendable {
         Data(bytes[try take(count, what)])
     }
 
+    public mutating func bytes16(_ what: String) throws -> LinkBytes16 {
+        try LinkBytes16(try fixed(16, what))
+    }
+
     public mutating func bytes32(_ what: String) throws -> LinkBytes32 {
         try LinkBytes32(try fixed(32, what))
     }
@@ -185,6 +189,7 @@ public struct LinkWriter: Sendable {
 
     public mutating func raw(_ value: Data) { bytes.append(contentsOf: value) }
     public mutating func bytes32(_ value: LinkBytes32) { raw(value.data) }
+    public mutating func bytes16(_ value: LinkBytes16) { raw(value.data) }
 
     /// Writes a count (`u16`) after checking it against `max`.
     public mutating func count(_ n: Int, max: Int, _ what: String) throws {

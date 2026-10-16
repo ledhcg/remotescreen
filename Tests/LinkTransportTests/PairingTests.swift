@@ -190,8 +190,8 @@ final class TestClock: @unchecked Sendable {
         let offer = try ledger.issue()
         let ex = PairingBinding.exporter(try LinkRandom.bytes(32))
         let m = try proof(offer, binding: ex)
-        try ledger.attempt(nonce: offer.nonce) { verify(m, $0, binding: ex) }
-        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offer.nonce) { verify(m, $0, binding: ex) } }
+        try ledger.attempt(nonce: offer.nonce, source: "a") { verify(m, $0, binding: ex) }
+        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offer.nonce, source: "a") { verify(m, $0, binding: ex) } }
     }
 
     @Test func ledgerExpiry() throws {
@@ -199,39 +199,80 @@ final class TestClock: @unchecked Sendable {
         let ledger = PairingSecretLedger(clock: clock.clock)
         let offer = try ledger.issue()
         clock.advance(299)
-        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce) { _ in false } }
+        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce, source: "a") { _ in false } }
         clock.advance(2)
-        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offer.nonce) { _ in true } }
+        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offer.nonce, source: "a") { _ in true } }
     }
 
     @Test func ledgerAttemptLimitPerSecret() throws {
         let clock = TestClock()
         let ledger = PairingSecretLedger(clock: clock.clock)
         let offer = try ledger.issue()
-        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce) { _ in false } }
-        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce) { _ in false } }
-        #expect(throws: PairingError.tooManyAttempts) { try ledger.attempt(nonce: offer.nonce) { _ in false } }
+        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce, source: "a") { _ in false } }
+        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce, source: "a") { _ in false } }
+        #expect(throws: PairingError.tooManyAttempts) { try ledger.attempt(nonce: offer.nonce, source: "a") { _ in false } }
         // Even a correct proof is refused afterwards.
-        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offer.nonce) { _ in true } }
+        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offer.nonce, source: "a") { _ in true } }
     }
 
-    @Test func ledgerGlobalRateLimit() throws {
+    @Test func ledgerRateLimitIsPerSource() throws {
         let clock = TestClock()
         let ledger = PairingSecretLedger(clock: clock.clock)
-        for _ in 0..<10 { _ = try? ledger.attempt(nonce: Data(count: 16)) { _ in false } }
-        let offer = try ledger.issue()
-        #expect(throws: PairingError.rateLimited) { try ledger.attempt(nonce: offer.nonce) { _ in true } }
-        clock.advance(3601)
+        // One host guesses against a real offer until its own budget is spent.
+        for _ in 0..<PairingSecretLedger.maxAttemptsPerHour {
+            let offer = try ledger.issue()
+            #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: offer.nonce, source: "attacker") { _ in false } }
+        }
+        let target = try ledger.issue()
+        #expect(throws: PairingError.rateLimited) { try ledger.attempt(nonce: target.nonce, source: "attacker") { _ in true } }
+        // Another host is unaffected.
         let fresh = try ledger.issue()
-        try ledger.attempt(nonce: fresh.nonce) { _ in true }
+        try ledger.attempt(nonce: fresh.nonce, source: "alice") { _ in true }
+        // The budget returns after an hour.
+        clock.advance(3601)
+        let later = try ledger.issue()
+        try ledger.attempt(nonce: later.nonce, source: "attacker") { _ in true }
+    }
+
+    @Test func unknownNonceFloodDoesNotTouchValidOffersOrOtherSources() throws {
+        let ledger = PairingSecretLedger(clock: TestClock().clock)
+        let valid = try ledger.issue()
+        let other = try ledger.issue()
+        for i in 0..<50 {
+            do { try ledger.attempt(nonce: Data(repeating: UInt8(i), count: 16), source: "flooder") { _ in
+                Issue.record("check must not run for an unknown nonce"); return false } }
+            catch PairingError.unknownOrUsedSecret { continue }
+            catch PairingError.rateLimited { continue }
+        }
+        // The flooder is now limited, cheaply...
+        #expect(throws: PairingError.rateLimited) {
+            try ledger.attempt(nonce: Data(repeating: 0xEE, count: 16), source: "flooder") { _ in true }
+        }
+        // ...and the real offers are intact: no failure was charged to them, and the honest source has its full budget.
+        try ledger.attempt(nonce: valid.nonce, source: "alice") { _ in true }
+        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: other.nonce, source: "alice") { _ in false } }
+        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: other.nonce, source: "alice") { _ in false } }
+    }
+
+    @Test func aWrongProofIsChargedOnlyToItsOwnOffer() throws {
+        let ledger = PairingSecretLedger(clock: TestClock().clock)
+        let a = try ledger.issue()
+        let b = try ledger.issue()
+        for _ in 0..<(PairingSecretLedger.maxFailedAttempts - 1) {
+            #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: a.nonce, source: "x") { _ in false } }
+        }
+        #expect(throws: PairingError.tooManyAttempts) { try ledger.attempt(nonce: a.nonce, source: "x") { _ in false } }
+        // Offer B never failed once: it still allows its full number of attempts and then the right proof.
+        #expect(throws: PairingError.invalidProof) { try ledger.attempt(nonce: b.nonce, source: "y") { _ in false } }
+        try ledger.attempt(nonce: b.nonce, source: "y") { _ in true }
     }
 
     @Test func ledgerCapsOutstandingOffersAndSecretsAreRandom() throws {
         let ledger = PairingSecretLedger(clock: TestClock().clock)
         let offers = try (0..<6).map { _ in try ledger.issue() }
         #expect(Set(offers.map(\.secret)).count == 6)
-        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offers[0].nonce) { _ in true } }
-        try ledger.attempt(nonce: offers[5].nonce) { _ in true }
+        #expect(throws: PairingError.unknownOrUsedSecret) { try ledger.attempt(nonce: offers[0].nonce, source: "a") { _ in true } }
+        try ledger.attempt(nonce: offers[5].nonce, source: "a") { _ in true }
     }
 }
 

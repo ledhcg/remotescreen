@@ -446,6 +446,61 @@ private func qrRig(
         #expect(last == .busy)
     }
 
+    /// A rig whose client proves with a nonce the helper never issued.
+    private func rigWithUnknownNonce(ledger: PairingSecretLedger, clock: TestClock, source: String) throws -> MachineRig {
+        var rig = try MachineRig.make(mode: .reconnect(nil), ledger: ledger, clock: clock, source: source)
+        var payload = PairingQRPayload(
+            hostHints: ["h"], port: 1, macSPKIHash: rig.helperSPKI, secret: try LinkRandom.bytes(16), nonce: try LinkRandom.bytes(16),
+            expiry: clock.now.addingTimeInterval(300))
+        payload.macSPKIHash = rig.helperSPKI
+        rig.client = ClientSessionMachine(
+            hello: rig.client.hello, mode: .pairWithQR(payload), ownSPKIHash: rig.clientSPKI, peerSPKIHash: rig.helperSPKI,
+            exporter: Data(repeating: 7, count: 32))
+        return rig
+    }
+
+    @Test func proofWithAnUnknownNonceIsRefusedWithoutChargingAnyOffer() throws {
+        let clock = TestClock()
+        let ledger = PairingSecretLedger(clock: clock.clock)
+        // A real offer is outstanding while a stranger sends a proof for a nonce nobody issued.
+        var good = try qrRig(ledger: ledger, clock: clock)
+        var stranger = try rigWithUnknownNonce(ledger: ledger, clock: clock, source: "v4:10.0.0.66")
+        let refused = stranger.run()
+        #expect(refused.helperDenied == .expired)
+        #expect(refused.approvals.isEmpty)
+        // The offer is untouched: it still pairs.
+        let out = good.run()
+        #expect(out.helperReady?.newlyPaired == true)
+    }
+
+    @Test func aHostFloodingUnknownNoncesCannotBlockPairingFromAnotherHost() throws {
+        let clock = TestClock()
+        let ledger = PairingSecretLedger(clock: clock.clock)
+        var results: [LinkPairDenyReason?] = []
+        for _ in 0..<(PairingSecretLedger.maxUnknownNonceAttemptsPerHour + 5) {
+            var stranger = try rigWithUnknownNonce(ledger: ledger, clock: clock, source: "v4:10.0.0.66")
+            results.append(stranger.run().helperDenied)
+        }
+        #expect(results.contains(.busy), "the flooding address is limited")
+        // Many more failures than the old global budget of 10 per hour, and the real user can still pair.
+        var legit = try qrRig(ledger: ledger, clock: clock)
+        let out = legit.run()
+        #expect(out.helperReady?.newlyPaired == true)
+        #expect(out.helperDenied == nil)
+    }
+
+    @Test func wrongProofsForOneOfferDoNotBurnAnother() throws {
+        let clock = TestClock()
+        let ledger = PairingSecretLedger(clock: clock.clock)
+        var victim = try qrRig(ledger: ledger, clock: clock)
+        // An attacker (own address) fails three times against its own offer.
+        for _ in 0..<PairingSecretLedger.maxFailedAttempts {
+            var bad = try qrRig(tamperSecret: true, ledger: ledger, clock: clock)
+            _ = bad.run()
+        }
+        #expect(victim.run().helperReady?.newlyPaired == true)
+    }
+
     @Test func qrForAnotherMacIsRejectedByTheClient() throws {
         var rig = try qrRig()
         guard case .pairWithQR(var p) = rig.client.mode else { return }

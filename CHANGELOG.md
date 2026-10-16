@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Screon Helper 0.3.0 (build 4): fills a window's transparent rounded corners with black (no more dark wedges on the iPad),
+  re-sends a key frame when its stream config could not go out, and finishes a window's old stream before opening the new
+  one when the iPad re-subscribes.
+
 ## 0.3.0 — 2026-10-16 (TestFlight beta, build 6)
 
 - The App Mode fixes on the Mac side (black window corners, a key frame re-sent when its stream config could not go out, a

@@ -6,6 +6,13 @@
   link or comparing six digits; each Mac window can open in its own iPad window with video, child menus and popovers, a local
   cursor, touch, Apple Pencil, mouse, trackpad and keyboard input, input methods such as Vietnamese Telex, and clear messages when
   the Mac is locked, a permission is missing, the device was removed or the apps need updating.
+- App Mode launcher and multi-window experience (iPadOS 26): a launcher scene with running apps (and their window counts), recent
+  and all installed apps, search and cached icons; opening an app shows its windows as separate iPad windows or as tabs in one
+  window (setting); an already open window comes forward instead of opening twice; iPad windows follow the Mac window (title,
+  size limits) and resize it once you stop dragging; the Mac app's menus appear in the iPad menu bar and in a "Menus" button,
+  Mac key equivalents work as shortcuts, and ⌘W either closes the iPad window or goes to the Mac (setting); window actions (close,
+  minimise, zoom, exit full screen, show on full desktop); new Mac windows open by themselves or show a badge; windows are found
+  again after a reconnect, a helper restart or a relaunch; on iPhone one window at a time with a window switcher.
 - Helper (App Mode): input is injected only when the target window is verifiably the topmost window under the pointer (or the
   same app's own popup); otherwise the window is raised first. Unknown window numbers and foreign overlays fail closed.
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation

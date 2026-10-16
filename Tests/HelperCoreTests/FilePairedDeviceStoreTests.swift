@@ -4,7 +4,7 @@ import LinkTransport
 import Testing
 @testable import HelperCore
 
-@Suite struct FilePairedDeviceStoreTests {
+@Suite(.timeLimit(.minutes(2))) struct FilePairedDeviceStoreTests {
     let folder: URL
     var file: URL { folder.appending(path: "paired-devices.json") }
 

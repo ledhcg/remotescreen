@@ -4,7 +4,7 @@ import LinkProtocol
 import Testing
 @testable import HelperCore
 
-@Suite struct WindowTrackerTests {
+@Suite(.timeLimit(.minutes(2))) struct WindowTrackerTests {
     func makeTracker(_ system: FakeWindowSystem) async -> (WindowTracker, EventRecorder) {
         let tracker = WindowTracker(system: system)
         let recorder = EventRecorder()
@@ -512,7 +512,7 @@ import Testing
     }
 }
 
-@Suite struct FrameSetterTests {
+@Suite(.timeLimit(.minutes(2))) struct FrameSetterTests {
     func system(enhanced: Bool?) -> (FakeWindowSystem, AXWindowToken) {
         let system = FakeWindowSystem()
         system.pids = [100]

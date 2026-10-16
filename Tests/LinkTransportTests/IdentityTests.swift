@@ -15,7 +15,7 @@ private func hex(_ s: String) -> Data {
     return d
 }
 
-@Suite struct IdentityTests {
+@Suite(.timeLimit(.minutes(2))) struct IdentityTests {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     @Test func certificateParsesWithSecurityFramework() throws {

@@ -4,7 +4,7 @@ import LinkProtocol
 import Testing
 @testable import HelperCore
 
-@Suite struct FocusFailClosedTests {
+@Suite(.timeLimit(.minutes(2))) struct FocusFailClosedTests {
     func setup(cg: [CGWindowRecord]) async -> (TrackerWindowFocuser, WindowID, FakeWindowSystem, WindowTracker) {
         let system = FakeWindowSystem()
         system.pids = [10]

@@ -136,16 +136,12 @@ actor ApprovalLog {
     private var answer = true
     private var holding = false
     private var pendingPrompts: [CheckedContinuation<Bool, Never>] = []
-    private var requestWaiters: [(count: Int, cont: CheckedContinuation<Void, Never>)] = []
 
     func setAnswer(_ a: Bool) { answer = a }
     func hold(_ on: Bool) { holding = on }
 
     func decide(_ r: PairingApprovalRequest) async -> Bool {
         requests.append(r)
-        let ready = requestWaiters.filter { requests.count >= $0.count }
-        requestWaiters.removeAll { requests.count >= $0.count }
-        for w in ready { w.cont.resume() }
         guard holding else { return answer }
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in pendingPrompts.append(c) }
@@ -154,20 +150,14 @@ actor ApprovalLog {
         }
     }
 
-    private var cancelWaiters: [CheckedContinuation<Void, Never>] = []
-
-    /// Suspends until the server has cancelled at least `count` prompts.
-    func waitForCancelledPrompts(_ count: Int) async {
-        if cancelledPrompts >= count { return }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in cancelWaiters.append(c) }
-        await waitForCancelledPrompts(count)
+    /// Suspends until the server has cancelled at least `count` prompts. Never hangs: past `timeout`, or when the test is
+    /// cancelled (its time limit), it records an issue and returns.
+    func waitForCancelledPrompts(_ count: Int, timeout: Duration = .seconds(20)) async {
+        await waitUntil(timeout, "\(count) cancelled prompts") { $0.cancelledPrompts >= count }
     }
 
     private func promptCancelled() {
         cancelledPrompts += 1
-        let waiting = cancelWaiters
-        cancelWaiters = []
-        for w in waiting { w.resume() }
         let all = pendingPrompts
         pendingPrompts = []
         for c in all { c.resume(returning: false) }
@@ -180,9 +170,22 @@ actor ApprovalLog {
         for c in all { c.resume(returning: approved) }
     }
 
-    func waitForRequests(_ count: Int) async {
-        if requests.count >= count { return }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in requestWaiters.append((count, c)) }
+    /// Suspends until at least `count` approval requests arrived. Never hangs (see `waitForCancelledPrompts`).
+    func waitForRequests(_ count: Int, timeout: Duration = .seconds(20)) async {
+        await waitUntil(timeout, "\(count) approval requests") { $0.requests.count >= count }
+    }
+
+    /// Polls `condition` on the actor. A waiter that only a future event resumes hung the whole test run when the event never
+    /// came (a test process was found still waiting after 16 hours): polling with a deadline cannot.
+    private func waitUntil(_ timeout: Duration, _ what: String, _ condition: (isolated ApprovalLog) -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(self) {
+            if ContinuousClock.now >= deadline || Task.isCancelled {
+                Issue.record("timed out waiting for \(what) (requests: \(requests.count), cancelled prompts: \(cancelledPrompts))")
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
     }
 }
 

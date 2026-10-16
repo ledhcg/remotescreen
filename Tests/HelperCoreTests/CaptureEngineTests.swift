@@ -74,7 +74,7 @@ private final class Collector: @unchecked Sendable {
     func count(_ match: @Sendable (CaptureEvent) -> Bool) -> Int { events.get().filter(match).count }
 }
 
-@Suite struct CaptureEngineTests {
+@Suite(.timeLimit(.minutes(2))) struct CaptureEngineTests {
     @Test func thousandSubscriptionsLeakNothing() async throws {
         let system = FakeCaptureSystem()
         let engine = CaptureEngine(system: system)

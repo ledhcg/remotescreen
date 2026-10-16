@@ -4,7 +4,7 @@ import LinkProtocol
 import Testing
 @testable import HelperCore
 
-@Suite struct HelperServiceTests {
+@Suite(.timeLimit(.minutes(2))) struct HelperServiceTests {
     // MARK: Lifecycle and snapshot
 
     @Test func startPublishesStatusAndSendsSnapshotToANewSession() async throws {
@@ -620,7 +620,7 @@ import Testing
 
 // MARK: - Adapters
 
-@Suite struct WindowAdapterTests {
+@Suite(.timeLimit(.minutes(2))) struct WindowAdapterTests {
     func makeTracker() async -> (WindowTracker, FakeWindowSystem) {
         let system = FakeWindowSystem()
         system.pids = [10, 11]

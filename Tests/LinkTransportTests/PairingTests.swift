@@ -23,7 +23,7 @@ final class TestClock: @unchecked Sendable {
     var clock: LinkClock { { [self] in now } }
 }
 
-@Suite struct PrimitiveVectorTests {
+@Suite(.timeLimit(.minutes(2))) struct PrimitiveVectorTests {
     @Test func hkdfRFC5869Case1() {
         let ikm = SymmetricKey(data: Data(repeating: 0x0b, count: 22))
         let salt = hex("000102030405060708090a0b0c")
@@ -52,7 +52,7 @@ final class TestClock: @unchecked Sendable {
     }
 }
 
-@Suite struct QRPayloadTests {
+@Suite(.timeLimit(.minutes(2))) struct QRPayloadTests {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     func sample(expiry: TimeInterval = 300) throws -> PairingQRPayload {
@@ -127,7 +127,7 @@ final class TestClock: @unchecked Sendable {
     }
 }
 
-@Suite struct ProofAndLedgerTests {
+@Suite(.timeLimit(.minutes(2))) struct ProofAndLedgerTests {
     let mac = Data(repeating: 0xAA, count: 32)
     let ipad = Data(repeating: 0xBB, count: 32)
 
@@ -276,7 +276,7 @@ final class TestClock: @unchecked Sendable {
     }
 }
 
-@Suite struct SASTests {
+@Suite(.timeLimit(.minutes(2))) struct SASTests {
     @Test func bothSidesComputeEqualCodes() throws {
         var a = SASExchange(), b = SASExchange()
         try a.receivePeerCommit(b.commit)
@@ -329,7 +329,7 @@ final class TestClock: @unchecked Sendable {
     }
 }
 
-@Suite struct ResumeTokenTests {
+@Suite(.timeLimit(.minutes(2))) struct ResumeTokenTests {
     let id = Data(repeating: 1, count: 32)
 
     @Test func singleUse() throws {

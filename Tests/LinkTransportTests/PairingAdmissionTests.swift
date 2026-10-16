@@ -3,7 +3,7 @@ import Network
 import Testing
 @testable import LinkTransport
 
-@Suite struct PairingAdmissionTests {
+@Suite(.timeLimit(.minutes(2))) struct PairingAdmissionTests {
     @Test func windowOpensExpiresAndCloses() {
         let clock = TestClock()
         let admission = PairingAdmission(clock: clock.clock)

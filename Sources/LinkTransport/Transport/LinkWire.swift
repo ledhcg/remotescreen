@@ -54,29 +54,40 @@ protocol LinkWireStream: AnyObject, Sendable {
 final class OneShot<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var result: Result<T, Error>?
-    private var waiters: [CheckedContinuation<T, Error>] = []
+    private var waiters: [UInt64: CheckedContinuation<T, Error>] = [:]
+    private var nextWaiter: UInt64 = 0
 
     /// The first call wins.
     func complete(_ r: Result<T, Error>) {
         let toResume: [CheckedContinuation<T, Error>] = lock.withLock {
             guard result == nil else { return [] }
             result = r
-            defer { waiters = [] }
-            return waiters
+            defer { waiters = [:] }
+            return Array(waiters.values)
         }
         for w in toResume { w.resume(with: r) }
     }
 
     var isComplete: Bool { lock.withLock { result != nil } }
 
+    /// Waits for the result. A cancelled waiter stops waiting with `CancellationError`: before, it waited until someone
+    /// completed the value, so a cancelled task (a test past its time limit, a session being shut down) could hang forever.
     func wait() async throws -> T {
-        try await withCheckedThrowingContinuation { cont in
-            let done: Result<T, Error>? = lock.withLock {
-                if let result { return result }
-                waiters.append(cont)
-                return nil
+        let id: UInt64 = lock.withLock { defer { nextWaiter += 1 }; return nextWaiter }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                let done: Result<T, Error>? = lock.withLock {
+                    if let result { return result }
+                    // The cancel flag is set before the handler runs: checked under the lock, no waiter is left behind.
+                    if Task.isCancelled { return .failure(CancellationError()) }
+                    waiters[id] = cont
+                    return nil
+                }
+                if let done { cont.resume(with: done) }
             }
-            if let done { cont.resume(with: done) }
+        } onCancel: {
+            let cont = lock.withLock { waiters.removeValue(forKey: id) }
+            cont?.resume(throwing: CancellationError())
         }
     }
 }

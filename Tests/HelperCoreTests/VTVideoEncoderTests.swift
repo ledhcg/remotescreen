@@ -85,7 +85,7 @@ private func decodeSize(of frame: LinkVideoFrame, format: CMVideoFormatDescripti
     return result.get().map { (width: $0.0, height: $0.1) }
 }
 
-@Suite struct VTVideoEncoderTests {
+@Suite(.timeLimit(.minutes(2))) struct VTVideoEncoderTests {
     @Test(.enabled(if: encoderIsAvailable, "no VideoToolbox encoder session available"))
     func encodesKeyFirstHonoursForcedKeysAndRoundTrips() async throws {
         let width = 640, height = 368

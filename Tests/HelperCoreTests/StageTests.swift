@@ -106,7 +106,7 @@ private func inside(_ inner: LinkRect, _ outer: LinkRect) -> Bool {
 
 // MARK: Layout
 
-@Suite struct StageLayoutTests {
+@Suite(.timeLimit(.minutes(2))) struct StageLayoutTests {
     private func request(_ id: Int, _ w: Double, _ h: Double, min: LinkSize = LinkSize(width: 100, height: 80),
                          max: LinkSize = StageSizeLimits.unbounded.maximum) -> TileRequest {
         TileRequest(id: StageWindowKey(pid: 1, windowNumber: UInt32(id)), desired: LinkSize(width: w, height: h), minimum: min, maximum: max)
@@ -190,7 +190,7 @@ private func inside(_ inner: LinkRect, _ outer: LinkRect) -> Bool {
 
 // MARK: Stage
 
-@Suite struct StageTests {
+@Suite(.timeLimit(.minutes(2))) struct StageTests {
     let display = FakeDisplayStage()
     let frames = FakeFrames()
     let journal = MemoryJournal()
@@ -452,7 +452,7 @@ extension MemoryJournal {
 
 // MARK: Journal file
 
-@Suite struct FileStageJournalStoreTests {
+@Suite(.timeLimit(.minutes(2))) struct FileStageJournalStoreTests {
     private func temp() throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appending(path: "screon-journal-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

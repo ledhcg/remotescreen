@@ -4,7 +4,7 @@ import LinkProtocol
 import Testing
 @testable import HelperCore
 
-@Suite struct AppCatalogTests {
+@Suite(.timeLimit(.minutes(2))) struct AppCatalogTests {
     static func running(_ pid: Int32, _ id: String?, regular: Bool = true, active: Bool = false) -> RunningAppInfo {
         RunningAppInfo(pid: pid, bundleID: id, name: "App \(pid)", version: "1.0", bundleURL: URL(fileURLWithPath: "/Applications/\(id ?? "x").app"),
                        isActive: active, isRegular: regular)
@@ -174,7 +174,7 @@ import Testing
     }
 }
 
-@Suite struct FileManagerAppScannerTests {
+@Suite(.timeLimit(.minutes(2))) struct FileManagerAppScannerTests {
     func plist(_ id: String, name: String? = nil, type: String = "APPL", extra: [String: Any] = [:]) -> [String: Any] {
         var dict: [String: Any] = ["CFBundleIdentifier": id, "CFBundlePackageType": type, "CFBundleShortVersionString": "2.1"]
         if let name { dict["CFBundleName"] = name }

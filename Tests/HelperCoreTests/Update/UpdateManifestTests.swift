@@ -4,7 +4,7 @@ import Foundation
 import Testing
 @testable import HelperCore
 
-@Suite struct SemanticVersionTests {
+@Suite(.timeLimit(.minutes(2))) struct SemanticVersionTests {
     @Test func parsesAndOrders() throws {
         let v = { (s: String) throws -> SemanticVersion in try #require(SemanticVersion(s)) }
         #expect(try v("1.2.3") == SemanticVersion(major: 1, minor: 2, patch: 3))
@@ -26,7 +26,7 @@ import Testing
     }
 }
 
-@Suite struct UpdateVerifierTests {
+@Suite(.timeLimit(.minutes(2))) struct UpdateVerifierTests {
     let key = Curve25519.Signing.PrivateKey()
     let current = SemanticVersion(major: 0, minor: 1, patch: 0)
     let macOS = SemanticVersion(major: 15, minor: 0, patch: 0)
@@ -124,7 +124,7 @@ import Testing
     }
 }
 
-@Suite struct UpdateCheckerTests {
+@Suite(.timeLimit(.minutes(2))) struct UpdateCheckerTests {
     let key = Curve25519.Signing.PrivateKey()
     let manifestURL = URL(string: "https://example.com/releases/latest/download/update-manifest.json")!
 

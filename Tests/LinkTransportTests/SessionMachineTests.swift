@@ -141,7 +141,7 @@ private func qrRig(
     return rig
 }
 
-@Suite struct ReconnectMachineTests {
+@Suite(.timeLimit(.minutes(2))) struct ReconnectMachineTests {
     @Test func pairedDeviceGetsWelcome() throws {
         var rig = try MachineRig.make(mode: .reconnect(nil), paired: true)
         let out = rig.run()
@@ -301,7 +301,7 @@ private func qrRig(
     }
 }
 
-@Suite struct QRPairingMachineTests {
+@Suite(.timeLimit(.minutes(2))) struct QRPairingMachineTests {
     @Test func successfulPairing() throws {
         var rig = try qrRig()
         let out = rig.run()
@@ -559,7 +559,7 @@ private func qrRig(
     }
 }
 
-@Suite struct SASPairingMachineTests {
+@Suite(.timeLimit(.minutes(2))) struct SASPairingMachineTests {
     @Test func bothSidesShowTheSameCodeAndPair() throws {
         var rig = try MachineRig.make(mode: .pairWithSAS)
         let out = rig.run()

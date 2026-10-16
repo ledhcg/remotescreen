@@ -27,7 +27,8 @@ final class AppAudioPlayer: @unchecked Sendable {
     private struct State {
         var streams: [Int32: Stream] = [:]
         var mutedPIDs: Set<Int32> = []
-        var reader: Task<Void, Never>?
+        /// Which reader may play: each `attach` starts a new generation, and `shutdown` ends them all.
+        var readerGeneration = 0
     }
 
     private let state = OSAllocatedUnfairLock(uncheckedState: State())
@@ -53,27 +54,28 @@ final class AppAudioPlayer: @unchecked Sendable {
     // MARK: Feeding
 
     /// Starts reading the audio stream. Replaces an earlier reader (the stream was reopened).
+    ///
+    /// Readers are never cancelled: a replaced or shut-down one keeps draining its stream to the end without playing, because
+    /// an inbox nobody reads fills up and, on the TCP fallback, stalls the reader every stream of the link shares.
     func attach(_ inbox: LinkInbox<LinkMessage>) {
-        let reader = Task.detached(priority: .userInitiated) { [weak self] in
+        let generation = state.withLockUnchecked { state -> Int in
+            state.readerGeneration += 1
+            return state.readerGeneration
+        }
+        Task.detached(priority: .userInitiated) { [weak self] in
             for await message in inbox {
-                guard let self, !Task.isCancelled else { return }
+                guard let self, self.state.withLockUnchecked({ $0.readerGeneration == generation }) else { continue }
                 self.handle(message)
             }
         }
-        let old = state.withLockUnchecked { state -> Task<Void, Never>? in
-            let old = state.reader
-            state.reader = reader
-            return old
-        }
-        old?.cancel()
     }
 
     func shutdown() {
-        let (reader, streams) = state.withLockUnchecked { state -> (Task<Void, Never>?, [Stream]) in
-            defer { state.reader = nil; state.streams = [:] }
-            return (state.reader, Array(state.streams.values))
+        let streams = state.withLockUnchecked { state -> [Stream] in
+            state.readerGeneration += 1 // the current reader stops playing and only drains
+            defer { state.streams = [:] }
+            return Array(state.streams.values)
         }
-        reader?.cancel()
         for stream in streams { engine.detach(stream.node) }
         engine.stop()
     }

@@ -16,7 +16,8 @@ public final class LinkInbox<Element: Sendable>: AsyncSequence, @unchecked Senda
     private var bytes = 0
     private var finished = false
     private var consumer: CheckedContinuation<Element?, Never>?
-    private var producers: [CheckedContinuation<Void, Never>] = []
+    private var producers: [UInt64: CheckedContinuation<Void, Never>] = [:]
+    private var nextProducer: UInt64 = 0
 
     public init(capacity: Int = 256, byteCapacity: Int = 32 << 20) {
         self.capacity = capacity
@@ -38,21 +39,28 @@ public final class LinkInbox<Element: Sendable>: AsyncSequence, @unchecked Senda
             return nil
         }
         if let c = handedOff { c.resume(returning: element); return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            let resumeNow: Bool = lock.withLock {
-                if finished || hasSpace { return true }
-                producers.append(cont)
-                return false
+        // The element is buffered; a cancelled producer only stops waiting for room (it never blocks a cancelled reader task).
+        let id: UInt64 = lock.withLock { defer { nextProducer += 1 }; return nextProducer }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                let resumeNow: Bool = lock.withLock {
+                    if finished || hasSpace || Task.isCancelled { return true }
+                    producers[id] = cont
+                    return false
+                }
+                if resumeNow { cont.resume() }
             }
-            if resumeNow { cont.resume() }
+        } onCancel: {
+            let cont = lock.withLock { producers.removeValue(forKey: id) }
+            cont?.resume()
         }
     }
 
     func finish() {
         let (c, ps): (CheckedContinuation<Element?, Never>?, [CheckedContinuation<Void, Never>]) = lock.withLock {
             finished = true
-            let c = consumer, ps = producers
-            consumer = nil; producers = []
+            let c = consumer, ps = Array(producers.values)
+            consumer = nil; producers = [:]
             return (c, ps)
         }
         c?.resume(returning: nil)
@@ -70,27 +78,34 @@ public final class LinkInbox<Element: Sendable>: AsyncSequence, @unchecked Senda
         finish()
     }
 
+    /// The next element, or `nil` when the inbox is finished. A cancelled reader gets `nil` at once, so `for await` over an
+    /// inbox ends when its task is cancelled; before, it waited for one more message, and forever on a quiet stream.
     fileprivate func next() async -> Element? {
-        await withCheckedContinuation { (cont: CheckedContinuation<Element?, Never>) in
-            var result: Element??
-            var wake: [CheckedContinuation<Void, Never>] = []
-            lock.withLock {
-                if head < items.count {
-                    let item = items[head]
-                    head += 1
-                    bytes -= item.cost
-                    if head == items.count { items.removeAll(keepingCapacity: true); head = 0 }
-                    else if head > 128 { items.removeFirst(head); head = 0 }
-                    result = .some(item.element)
-                    if hasSpace { wake = producers; producers = [] }
-                } else if finished {
-                    result = .some(nil)
-                } else {
-                    consumer = cont
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Element?, Never>) in
+                var result: Element??
+                var wake: [CheckedContinuation<Void, Never>] = []
+                lock.withLock {
+                    if head < items.count {
+                        let item = items[head]
+                        head += 1
+                        bytes -= item.cost
+                        if head == items.count { items.removeAll(keepingCapacity: true); head = 0 }
+                        else if head > 128 { items.removeFirst(head); head = 0 }
+                        result = .some(item.element)
+                        if hasSpace { wake = Array(producers.values); producers = [:] }
+                    } else if finished || Task.isCancelled {
+                        result = .some(nil)
+                    } else {
+                        consumer = cont
+                    }
                 }
+                for p in wake { p.resume() }
+                if let result { cont.resume(returning: result) }
             }
-            for p in wake { p.resume() }
-            if let result { cont.resume(returning: result) }
+        } onCancel: {
+            let cont: CheckedContinuation<Element?, Never>? = lock.withLock { defer { consumer = nil }; return consumer }
+            cont?.resume(returning: nil)
         }
     }
 

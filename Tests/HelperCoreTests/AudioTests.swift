@@ -21,7 +21,7 @@ final class FakeAudioCapture: AudioCapturing, @unchecked Sendable {
     func stop(pid: Int32) async { stopped.withValue { $0 += 1 }; continuation.get()?.finish() }
 }
 
-@Suite struct AudioTests {
+@Suite(.timeLimit(.minutes(2))) struct AudioTests {
     @Test func packetsAreFixedSizeSequencedAndTimestamped() throws {
         var p = try AudioPacketizer(pid: 42, frameMilliseconds: 10)
         #expect(p.frameSamples == 480 && p.frameBytes == 1920 && p.frameDurationMicros == 10_000)

@@ -3,7 +3,7 @@ import Foundation
 import Testing
 @testable import HelperCore
 
-@Suite struct KeysymMappingTests {
+@Suite(.timeLimit(.minutes(2))) struct KeysymMappingTests {
     @Test func lettersAndDigitsMapToTheUSLayout() {
         #expect(KeysymMapping.resolve(0x61) == .key(keycode: 0, shift: false))   // a
         #expect(KeysymMapping.resolve(0x41) == .key(keycode: 0, shift: true))    // A

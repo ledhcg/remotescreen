@@ -4,7 +4,7 @@ import LinkProtocol
 import Testing
 @testable import HelperCore
 
-@Suite struct InputInjectorTests {
+@Suite(.timeLimit(.minutes(2))) struct InputInjectorTests {
     let poster = RecordingPoster()
     let geometry = FakeGeometry()
     let focuser = FakeFocuser()
@@ -550,7 +550,7 @@ import Testing
     }
 }
 
-@Suite struct TextChunkerTests {
+@Suite(.timeLimit(.minutes(2))) struct TextChunkerTests {
     private func units(_ chunks: [String]) -> [Int] { chunks.map { $0.utf16.count } }
 
     @Test func emptyTextHasNoChunks() { #expect(TextChunker.chunks("").isEmpty) }

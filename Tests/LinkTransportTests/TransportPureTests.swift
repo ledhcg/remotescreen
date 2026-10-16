@@ -3,7 +3,7 @@ import LinkProtocol
 import Testing
 @testable import LinkTransport
 
-@Suite struct StreamPreambleTests {
+@Suite(.timeLimit(.minutes(2))) struct StreamPreambleTests {
     @Test func roundTrip() {
         for kind in [LinkStreamKind.control, .input, .audio, .window(WindowID(rawValue: 0xDEAD_BEEF))] {
             let bytes = kind.preamble
@@ -22,7 +22,7 @@ import Testing
     }
 }
 
-@Suite struct MuxFramingTests {
+@Suite(.timeLimit(.minutes(2))) struct MuxFramingTests {
     @Test func roundTripAndByteAtATime() throws {
         let frames: [LinkMuxFrame] = [
             .open(streamID: 1, kind: .control), .open(streamID: 2, kind: .window(7)),
@@ -122,7 +122,7 @@ import Testing
     }
 }
 
-@Suite struct MessageRulesTests {
+@Suite(.timeLimit(.minutes(2))) struct MessageRulesTests {
     let pointer = LinkMessage.inputPointer(LinkPointerEvent(
         window: 1, point: LinkPoint(x: 1, y: 2), buttons: [], modifiers: []))
     let frame = LinkMessage.videoFrame(LinkVideoFrame(window: 5, sequence: 1, ptsMicros: 0, flags: [.key], data: Data([1])))
@@ -159,7 +159,7 @@ import Testing
     }
 }
 
-@Suite struct OutboundQueueTests {
+@Suite(.timeLimit(.minutes(2))) struct OutboundQueueTests {
     func pointer(x: Double, buttons: LinkMouseButtons = [], window: WindowID = 1) -> LinkMessage {
         .inputPointer(LinkPointerEvent(window: window, point: LinkPoint(x: x, y: 0), buttons: buttons, modifiers: []))
     }

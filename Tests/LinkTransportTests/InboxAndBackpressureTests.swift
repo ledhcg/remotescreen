@@ -4,7 +4,7 @@ import Network
 import Testing
 @testable import LinkTransport
 
-@Suite struct LinkInboxTests {
+@Suite(.timeLimit(.minutes(2))) struct LinkInboxTests {
     @Test func deliversInOrderAndDrainsAfterFinish() async {
         let inbox = LinkInbox<Int>(capacity: 8)
         for i in 0..<5 { await inbox.push(i, cost: 1) }
@@ -87,7 +87,7 @@ actor Counter {
     func increment() { value += 1 }
 }
 
-@Suite struct BonjourTests {
+@Suite(.timeLimit(.minutes(2))) struct BonjourTests {
     @Test func txtRecordCarriesVersionAndShortFingerprint() throws {
         let hash = Data((0..<32).map { UInt8($0) })
         #expect(LinkBonjour.fingerprint(spkiHash: hash) == "00010203")

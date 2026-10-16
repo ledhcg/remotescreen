@@ -3,7 +3,7 @@ import LinkProtocol
 import Testing
 @testable import LinkTransport
 
-@Suite struct AdmissionReservationTests {
+@Suite(.timeLimit(.minutes(2))) struct AdmissionReservationTests {
     private final class Flag: @unchecked Sendable {
         private let lock = NSLock()
         private var value = false

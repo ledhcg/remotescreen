@@ -60,7 +60,8 @@ final class WindowStream: @unchecked Sendable {
         var cursorVersion = 0
         var sawFrame = false
         var onWake: (@Sendable () -> Void)?
-        var reader: Task<Void, Never>?
+        /// Which reader may decode: each `attach` starts a new generation, and `shutdown` ends them all.
+        var readerGeneration = 0
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -123,30 +124,26 @@ final class WindowStream: @unchecked Sendable {
     // MARK: Feeding
 
     /// Starts reading the Mac's stream for this window. Replaces an earlier reader (the stream was reopened).
+    ///
+    /// Readers are never cancelled: a replaced or shut-down reader keeps draining its stream to the end without decoding. An
+    /// inbox nobody reads fills up, and on the TCP fallback that stalls the one reader every stream of the link shares. Each
+    /// stream ends on its own (the Mac finishes it, or the link closes), and the reader with it.
     func attach(_ inbox: LinkInbox<LinkMessage>) {
-        let reader = Task.detached(priority: .userInitiated) { [weak self] in
+        let generation = state.withLock { state -> Int in
+            state.readerGeneration += 1
+            return state.readerGeneration
+        }
+        Task.detached(priority: .userInitiated) { [weak self] in
             for await message in inbox {
-                // A replaced or shut-down reader keeps draining to the stream's end without decoding: an inbox nobody reads
-                // fills up, and on the TCP fallback that stalls the one reader every stream of the link shares.
-                guard let self, !Task.isCancelled else { continue }
+                guard let self, self.state.withLock({ $0.readerGeneration == generation }) else { continue }
                 await self.queue.run { self.process(message) }
             }
         }
-        let old = state.withLock { state -> Task<Void, Never>? in
-            let old = state.reader
-            state.reader = reader
-            return old
-        }
-        old?.cancel()
     }
 
     /// The window went away or the connection ended.
     func shutdown() {
-        let reader = state.withLock { state -> Task<Void, Never>? in
-            defer { state.reader = nil }
-            return state.reader
-        }
-        reader?.cancel()
+        state.withLock { $0.readerGeneration += 1 } // the current reader stops decoding and only drains
         decoder.onNeedsKeyframe = nil
         decoder.onFrameAvailable = nil
         decoder.reset()

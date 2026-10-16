@@ -41,13 +41,18 @@ final class MuxStream: LinkWireStream, @unchecked Sendable {
             return buffered > Self.maxBufferedBytes
         }
         guard mustWait else { return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            let resumeNow: Bool = lock.withLock {
-                if buffered <= Self.maxBufferedBytes || failure != nil { return true }
-                spaceWaiter = cont
-                return false
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                let resumeNow: Bool = lock.withLock {
+                    if buffered <= Self.maxBufferedBytes || failure != nil || Task.isCancelled { return true }
+                    spaceWaiter = cont
+                    return false
+                }
+                if resumeNow { cont.resume() }
             }
-            if resumeNow { cont.resume() }
+        } onCancel: {
+            let cont: CheckedContinuation<Void, Never>? = lock.withLock { defer { spaceWaiter = nil }; return spaceWaiter }
+            cont?.resume()
         }
     }
 
@@ -90,13 +95,20 @@ final class MuxStream: LinkWireStream, @unchecked Sendable {
             case .fin: return nil
             case .error(let e): throw e
             case .wait:
-                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                    let resumeNow: Bool = lock.withLock {
-                        if !chunks.isEmpty || failure != nil || peerFinished { return true }
-                        readWaiter = cont
-                        return false
+                // A cancelled reader stops waiting and throws; before, it waited for data that might never come.
+                try Task.checkCancellation()
+                await withTaskCancellationHandler {
+                    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                        let resumeNow: Bool = lock.withLock {
+                            if !chunks.isEmpty || failure != nil || peerFinished || Task.isCancelled { return true }
+                            readWaiter = cont
+                            return false
+                        }
+                        if resumeNow { cont.resume() }
                     }
-                    if resumeNow { cont.resume() }
+                } onCancel: {
+                    let cont: CheckedContinuation<Void, Never>? = lock.withLock { defer { readWaiter = nil }; return readWaiter }
+                    cont?.resume()
                 }
             }
         }

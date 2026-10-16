@@ -82,7 +82,7 @@ final class FakeMenuSystem: MenuSystem, @unchecked Sendable {
     }
 }
 
-@Suite struct MenuReaderTests {
+@Suite(.timeLimit(.minutes(2))) struct MenuReaderTests {
     static func sample() -> [FakeMenu] {
         [
             FakeMenu(title: "Apple", children: [FakeMenu(title: "About This Mac")]),
@@ -291,7 +291,7 @@ final class FakeMenuSystem: MenuSystem, @unchecked Sendable {
 
 /// Real accessibility checks. They need the Accessibility permission and a logged-in Mac, so they only run when asked:
 /// `SCREON_AX_TESTS=1 swift test --filter RealAccessibilitySmokeTests`.
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["SCREON_AX_TESTS"] == "1")) struct RealAccessibilitySmokeTests {
+@Suite(.timeLimit(.minutes(2)), .enabled(if: ProcessInfo.processInfo.environment["SCREON_AX_TESTS"] == "1")) struct RealAccessibilitySmokeTests {
     @Test func windowListAndMenuBarOfFinder() async throws {
         let windows = AXWindowSystem()
         #expect(!windows.trackablePIDs().isEmpty)

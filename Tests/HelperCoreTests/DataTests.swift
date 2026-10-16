@@ -41,7 +41,7 @@ struct FakeTranscoder: ImageTranscoder {
 
 private let pngBytes = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
 
-@Suite struct PasteboardBridgeTests {
+@Suite(.timeLimit(.minutes(2))) struct PasteboardBridgeTests {
     let pasteboard = FakePasteboard()
     let bridge: PasteboardBridge
 
@@ -201,7 +201,7 @@ final class TestClock: @unchecked Sendable {
     func advance(_ seconds: TimeInterval) { lock.withLock { current = current.addingTimeInterval(seconds) } }
 }
 
-@Suite struct FileInboxTests {
+@Suite(.timeLimit(.minutes(2))) struct FileInboxTests {
     let base: URL
     let clock = TestClock()
     let opener = FakeOpener()

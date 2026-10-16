@@ -46,7 +46,7 @@ private func makeController(_ clock: FakeClock, initial: Int = 40_000_000) -> Ra
     return RateController(config: config, clock: { clock.now })
 }
 
-@Suite struct RateControllerTests {
+@Suite(.timeLimit(.minutes(2))) struct RateControllerTests {
     @Test func focusedWindowGetsTheLargestShareAndOthersAreCapped() {
         let clock = FakeClock()
         var rc = makeController(clock)

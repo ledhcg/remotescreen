@@ -293,18 +293,18 @@ public actor LinkServer {
 
     private func accept(_ wire: any LinkWire) async {
         guard running, pending < configuration.maxPendingConnections else { wire.close(); return }
-        var slotSource = wire.remoteAddress
-        guard claimSourceSlot(slotSource) else { wire.close(); return }
+        let firstSource = wire.remoteAddress
+        var slotSource: String? = firstSource
+        guard claimSourceSlot(firstSource) else { wire.close(); return }
         pending += 1
-        defer { pending -= 1; releaseSourceSlot(slotSource) }
+        defer { pending -= 1; if let slotSource { releaseSourceSlot(slotSource) } }
         do {
             try await wire.start(timeout: .seconds(10))
             // QUIC learns the remote address only once the connection is up: count it against that address from now on.
             let known = wire.remoteAddress
-            if known != slotSource {
-                releaseSourceSlot(slotSource)
-                slotSource = LinkRemoteAddress.unknown  // nothing to give back if the new address is refused
-                guard claimSourceSlot(known) else { wire.close(); return }
+            if let held = slotSource, known != held {
+                releaseSourceSlot(held)
+                guard claimSourceSlot(known) else { slotSource = nil; wire.close(); return }
                 slotSource = known
             }
             let channel = LinkChannel(wire: wire, role: .helper)
@@ -330,16 +330,19 @@ public actor LinkServer {
         }
     }
 
-    private func claimSourceSlot(_ source: String) -> Bool {
-        guard source != LinkRemoteAddress.unknown else { return true }
+    /// Counts a handshake against its address. An address that is not known yet shares one bucket with a smaller cap: it is
+    /// limited, never skipped (fail closed).
+    func claimSourceSlot(_ source: String) -> Bool {
         let count = pendingBySource[source, default: 0]
-        guard count < configuration.maxPendingPerSource else { return false }
+        let cap = source == LinkRemoteAddress.unknown
+            ? max(1, configuration.maxPendingConnections / 2) : configuration.maxPendingPerSource
+        guard count < cap else { return false }
         pendingBySource[source] = count + 1
         return true
     }
 
-    private func releaseSourceSlot(_ source: String) {
-        guard source != LinkRemoteAddress.unknown, let count = pendingBySource[source] else { return }
+    func releaseSourceSlot(_ source: String) {
+        guard let count = pendingBySource[source] else { return }
         pendingBySource[source] = count > 1 ? count - 1 : nil
     }
 

@@ -245,6 +245,20 @@ import Testing
         await rig.tearDown()
     }
 
+    @Test func anUnknownRemoteAddressIsLimitedNotSkipped() async throws {
+        let rig = try LoopbackRig.make()
+        let config = LinkServerConfiguration(
+            identity: rig.helperSec, macName: "Test Mac", capabilities: [], pairedDevices: rig.devices,
+            approvalHandler: { _ in true }, loopbackOnly: true, maxPendingConnections: 8, maxPendingPerSource: 2)
+        let server = try LinkServer(configuration: config)
+        var admitted = 0
+        for _ in 0..<20 where await server.claimSourceSlot(LinkRemoteAddress.unknown) { admitted += 1 }
+        #expect(admitted == 4, "handshakes from an address that cannot be determined share one smaller bucket")
+        await server.releaseSourceSlot(LinkRemoteAddress.unknown)
+        #expect(await server.claimSourceSlot(LinkRemoteAddress.unknown), "a released slot can be used again")
+        await rig.tearDown()
+    }
+
     @Test func clientMachineRejectsUnexpectedHelperMessages() {
         let hello = LinkHello(
             protocolMin: 1, protocolMax: 1, capabilities: [], deviceName: "x",

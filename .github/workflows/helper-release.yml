@@ -37,6 +37,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Require Helper/project.yml
         run: test -f Helper/project.yml || { echo "Helper/project.yml is missing"; exit 1; }
+      - name: Check the version and the update public key
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          PROJECT_VERSION="$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' Helper/project.yml | head -n1)"
+          [ "$PROJECT_VERSION" = "$VERSION" ] || { echo "Helper/project.yml says $PROJECT_VERSION, not $VERSION"; exit 1; }
+          if grep -q 'REPLACE_WITH_BASE64_ED25519_PUBLIC_KEY' Helper/project.yml; then
+            echo "ScreonUpdatePublicKey in Helper/project.yml is still the placeholder; embed the real public key first"; exit 1
+          fi
       - name: Select Xcode
         env:
           XCODE_VERSION: ${{ inputs.xcode }}
@@ -106,12 +116,19 @@ jobs:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           set -euo pipefail
-          # TODO: generate the manifest (version, url, sha256, minimum macOS, release notes) from the dmg.
+          # Format read by HelperCore UpdateVerifier: version, url, sha256, releaseURL, minimumMacOS. The signature is detached
+          # (base64 Ed25519 over these exact bytes) and must be published next to the manifest as update-manifest.json.sig,
+          # because the helper fetches "<manifest URL>.sig".
           DMG="$RUNNER_TEMP/ScreonHelper-$VERSION.dmg"
           SHA="$(shasum -a 256 "$DMG" | cut -d' ' -f1)"
-          printf '{"version":"%s","sha256":"%s"}\n' "$VERSION" "$SHA" > "$RUNNER_TEMP/update-manifest.json"
+          BASE="https://github.com/${{ github.repository }}/releases"
+          TAG="helper-v$VERSION"
+          printf '{"version":"%s","url":"%s/download/%s/ScreonHelper-%s.dmg","sha256":"%s","releaseURL":"%s/tag/%s","minimumMacOS":"15.0"}\n' \
+            "$VERSION" "$BASE" "$TAG" "$VERSION" "$SHA" "$BASE" "$TAG" > "$RUNNER_TEMP/update-manifest.json"
           swift scripts/sign-update-manifest.swift "$RUNNER_TEMP/update-manifest.json" "$RUNNER_TEMP/update-manifest.json.sig"
       - name: Remove the temporary keychain
         if: always()
         run: security delete-keychain "$KEYCHAIN_NAME" || true
-      # TODO: upload the dmg, manifest and signature to the GitHub Release (only when the maintainer asks to publish).
+      # TODO: upload ScreonHelper-<version>.dmg, update-manifest.json and update-manifest.json.sig to the GitHub Release tagged
+      # helper-v<version> (only when the maintainer asks to publish). The helper's default manifest URL is
+      # https://github.com/<repo>/releases/latest/download/update-manifest.json, so that release must be the latest one.

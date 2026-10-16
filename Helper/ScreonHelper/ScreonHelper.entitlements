@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Deliberately empty: no App Sandbox (the helper drives other apps through Accessibility and a private virtual display
+	     API, which a sandbox forbids), and the Hardened Runtime is enabled by the build settings. Permissions the helper needs
+	     (Accessibility, Screen Recording, Local Network) are user grants, not entitlements. -->
+</dict>
+</plist>

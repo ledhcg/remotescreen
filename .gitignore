@@ -24,3 +24,8 @@ __pycache__/
 # Claude Code local-only files
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Screon Helper (macOS): generated project, per-machine signing, local builds
+Helper/*.xcodeproj
+Helper/Signing.local.xcconfig
+Helper/build/

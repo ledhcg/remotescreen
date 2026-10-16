@@ -1,0 +1,12 @@
+// Shared configuration for Screon Helper. Per-machine signing details live in Helper/Signing.local.xcconfig (not committed).
+// Without that file the app builds ad-hoc signed ("-"), which is enough to run it locally. Never ship an ad-hoc build:
+// macOS ties permission grants to the signing identity, so users would be asked again after every update.
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Automatic
+ENABLE_HARDENED_RUNTIME = YES
+
+// The `?` makes the include optional. Example content:
+//   DEVELOPMENT_TEAM = <your team id>
+//   CODE_SIGN_IDENTITY = Developer ID Application
+//   CODE_SIGN_STYLE = Manual
+#include? "../Signing.local.xcconfig"

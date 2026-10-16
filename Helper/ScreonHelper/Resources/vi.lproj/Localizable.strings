@@ -1,0 +1,106 @@
+/* Vietnamese translation. The key is the exact English source string. */
+
+/* Menu: status */
+"Screon Helper" = "Screon Helper";
+"Not running" = "Không chạy";
+"Stopped" = "Đã dừng";
+"Starting…" = "Đang khởi động…";
+"Listening on port %lld" = "Đang lắng nghe ở cổng %lld";
+"Listening" = "Đang lắng nghe";
+"Screon Helper could not start listening for iPads." = "Screon Helper không thể bắt đầu lắng nghe các iPad.";
+"Try Again" = "Thử lại";
+"Set Up Permissions…" = "Thiết lập quyền…";
+"Some changes apply after the iPad disconnects." = "Một số thay đổi sẽ áp dụng sau khi iPad ngắt kết nối.";
+
+/* Menu: sessions and devices */
+"Connected iPads" = "iPad đang kết nối";
+"since" = "từ";
+"%lld windows" = "%lld cửa sổ";
+"Disconnect" = "Ngắt kết nối";
+"Paired iPads" = "iPad đã ghép đôi";
+"No iPad is paired yet." = "Chưa có iPad nào được ghép đôi.";
+"Name" = "Tên";
+"Save" = "Lưu";
+"Cancel" = "Hủy";
+"Revoke “%@”?" = "Thu hồi “%@”?";
+"Revoke" = "Thu hồi";
+"Revoke…" = "Thu hồi…";
+"Rename" = "Đổi tên";
+"Paired %@" = "Ghép đôi %@";
+
+/* Menu: actions */
+"Pair New iPad…" = "Ghép đôi iPad mới…";
+"Pair Without Camera…" = "Ghép đôi không cần camera…";
+"Disconnect All" = "Ngắt kết nối tất cả";
+"Restore Windows" = "Khôi phục cửa sổ";
+
+/* Menu: settings */
+"Ask before each session" = "Hỏi trước mỗi phiên";
+"Use a virtual display for windows" = "Dùng màn hình ảo cho các cửa sổ";
+"Stream app audio" = "Phát âm thanh của ứng dụng";
+"Open at login" = "Mở khi đăng nhập";
+"Approve Screon Helper in Login Items." = "Hãy cho phép Screon Helper trong Mục đăng nhập.";
+"Open Settings" = "Mở Cài đặt";
+"Could not change the login item." = "Không thể thay đổi mục đăng nhập.";
+"Check for updates automatically" = "Tự động kiểm tra cập nhật";
+
+/* Menu: updates and footer */
+"Checking for updates…" = "Đang kiểm tra cập nhật…";
+"Screon Helper is up to date." = "Screon Helper đã là bản mới nhất.";
+"Update available: %@" = "Có bản cập nhật: %@";
+"View Release" = "Xem bản phát hành";
+"Version %@ needs a newer macOS." = "Phiên bản %@ cần macOS mới hơn.";
+"Update checks are not set up in this build." = "Bản dựng này chưa thiết lập kiểm tra cập nhật.";
+"Could not check for updates." = "Không thể kiểm tra cập nhật.";
+"Check Now" = "Kiểm tra ngay";
+"Version %@" = "Phiên bản %@";
+"Set Up…" = "Thiết lập…";
+"About" = "Giới thiệu";
+"Quit" = "Thoát";
+
+/* Approval window */
+"Do these digits match the iPad?" = "Các chữ số này có khớp với iPad không?";
+"Approving lets this iPad see and control windows on this Mac. You will be asked to confirm with Touch ID or your password." = "Việc chấp thuận cho phép iPad này xem và điều khiển các cửa sổ trên máy Mac này. Bạn sẽ được yêu cầu xác nhận bằng Touch ID hoặc mật khẩu.";
+"Denied automatically in %lld s" = "Tự động từ chối sau %lld giây";
+"Deny" = "Từ chối";
+"Approve…" = "Chấp thuận…";
+"They Match…" = "Khớp…";
+"Pair “%@” with this Mac?" = "Ghép đôi “%@” với máy Mac này?";
+"Allow “%@” to connect?" = "Cho phép “%@” kết nối?";
+"pair with “%@”" = "ghép đôi với “%@”";
+"let “%@” control this Mac" = "cho phép “%@” điều khiển máy Mac này";
+
+/* Pairing window */
+"Pair a New iPad" = "Ghép đôi iPad mới";
+"Scan this code with Screon on your iPad." = "Hãy quét mã này bằng Screon trên iPad của bạn.";
+"Pairing code" = "Mã ghép đôi";
+"The code works once. Your Mac will ask you to confirm with Touch ID or your password." = "Mã chỉ dùng được một lần. Máy Mac sẽ yêu cầu bạn xác nhận bằng Touch ID hoặc mật khẩu.";
+"On your iPad, choose Pair Without Camera." = "Trên iPad, hãy chọn Ghép đôi không cần camera.";
+"Six digits will appear here and on the iPad. Confirm that they match." = "Sáu chữ số sẽ hiện ở đây và trên iPad. Hãy xác nhận rằng chúng khớp nhau.";
+"iPad paired." = "Đã ghép đôi iPad.";
+"Paired with “%@”." = "Đã ghép đôi với “%@”.";
+"The pairing code expired." = "Mã ghép đôi đã hết hạn.";
+"New Code" = "Mã mới";
+"Pair Without Camera" = "Ghép đôi không cần camera";
+"Close" = "Đóng";
+"Expires in %lld:%@" = "Hết hạn sau %lld:%@";
+
+/* Setup window */
+"Set Up Screon Helper" = "Thiết lập Screon Helper";
+"Screon Helper streams your Mac's windows to your iPad. macOS needs your permission for each part." = "Screon Helper truyền các cửa sổ trên máy Mac của bạn sang iPad. macOS cần bạn cho phép từng phần.";
+"Accessibility" = "Trợ năng";
+"Lets the helper find windows and move the pointer and keys you send from the iPad." = "Cho phép trình hỗ trợ tìm cửa sổ và thực hiện thao tác con trỏ, phím bạn gửi từ iPad.";
+"Control input" = "Điều khiển nhập liệu";
+"Lets the helper post mouse and keyboard events. It is granted together with Accessibility on most Macs." = "Cho phép trình hỗ trợ gửi sự kiện chuột và bàn phím. Trên hầu hết máy Mac, quyền này được cấp cùng với Trợ năng.";
+"Screen Recording" = "Ghi màn hình";
+"Lets the helper capture window contents. Newer versions of macOS may list this as Remote Desktop instead; macOS gives apps no way to check that one, so if windows stay black after you allow it, check both lists." = "Cho phép trình hỗ trợ ghi lại nội dung cửa sổ. Các phiên bản macOS mới hơn có thể liệt kê quyền này là Màn hình từ xa; macOS không cho ứng dụng cách kiểm tra quyền đó, nên nếu cửa sổ vẫn đen sau khi bạn cho phép, hãy kiểm tra cả hai danh sách.";
+"Local Network" = "Mạng cục bộ";
+"The helper is listening. macOS has no way to check this permission: if your iPad cannot find this Mac, make sure Screon Helper is allowed here." = "Trình hỗ trợ đang lắng nghe. macOS không có cách kiểm tra quyền này: nếu iPad không tìm thấy máy Mac, hãy đảm bảo Screon Helper được cho phép ở đây.";
+"macOS asks for this when the helper starts listening. It has no way to check this permission." = "macOS sẽ hỏi quyền này khi trình hỗ trợ bắt đầu lắng nghe. Không có cách nào để kiểm tra quyền này.";
+"Some permissions only take effect after the helper restarts." = "Một số quyền chỉ có hiệu lực sau khi trình hỗ trợ khởi động lại.";
+"Restart Helper" = "Khởi động lại trình hỗ trợ";
+"Done" = "Xong";
+"Allow…" = "Cho phép…";
+"Open System Settings" = "Mở Cài đặt Hệ thống";
+"Allowed" = "Đã cho phép";
+"Not allowed yet" = "Chưa được cho phép";

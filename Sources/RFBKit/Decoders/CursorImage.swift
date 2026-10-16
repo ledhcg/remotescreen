@@ -12,6 +12,9 @@ public struct CursorImage: Equatable, Sendable {
     public var hotspotY: Int
     /// BGRA, 4 bytes per pixel. An opaque pixel is `[B, G, R, 255]`, a transparent pixel is `[0, 0, 0, 0]`.
     public var bgra: [UInt8]
+    /// Image pixels per cursor pixel. 1 for cursors from the server; a locally drawn cursor is rasterized at a higher density so it stays
+    /// sharp when shown large. Width, height and hotspot are in image pixels; divide by `scale` for the cursor's own size.
+    public var scale = 1
 
     public var isEmpty: Bool { width == 0 || height == 0 }
 
@@ -51,14 +54,15 @@ public struct CursorImage: Equatable, Sendable {
     }
 
     /// Builds from ready-made BGRA (the format of `bgra`). Returns `nil` if the byte count does not match the size or is too large.
-    public init?(width: Int, height: Int, hotspotX: Int, hotspotY: Int, bgra: [UInt8]) {
-        guard width >= 0, height >= 0, width <= Self.maxDimension, height <= Self.maxDimension,
+    public init?(width: Int, height: Int, hotspotX: Int, hotspotY: Int, bgra: [UInt8], scale: Int = 1) {
+        guard width >= 0, height >= 0, width <= Self.maxDimension, height <= Self.maxDimension, scale >= 1,
               bgra.count == width * height * 4 else { return nil }
         self.width = width
         self.height = height
         self.hotspotX = hotspotX
         self.hotspotY = hotspotY
         self.bgra = bgra
+        self.scale = scale
     }
 
     static let empty = CursorImage(emptyWithHotspotX: 0, y: 0)

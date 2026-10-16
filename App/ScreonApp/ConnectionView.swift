@@ -60,6 +60,11 @@ struct ConnectionView: View {
                 }
             }
             .navigationTitle("Screon")
+            .toolbar {
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    ToolbarItem(placement: .topBarTrailing) { AppPointerMenu() }
+                }
+            }
             .modifier(AppModePairingSheet(computer: $pairingFor, model: model))
             .sheet(item: $streamingFor) { computer in AppModeSettingsView(computer: computer, model: model) }
             .modifier(PhoneAppModeCover(computer: $phoneAppMode))

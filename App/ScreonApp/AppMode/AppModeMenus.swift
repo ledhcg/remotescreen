@@ -163,6 +163,7 @@ struct RemoteMenuItems: View {
 final class ScreonAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         if #available(iOS 26, *) { MainActor.assumeIsolated { RemoteMenuBar.install() } }
+        MainActor.assumeIsolated { AppPointer.shared.install() }
         return true
     }
 }

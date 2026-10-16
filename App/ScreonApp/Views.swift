@@ -340,9 +340,21 @@ struct SessionView: View {
                 }
             }
 
-            Toggle("Show Mac cursor", systemImage: "cursorarrow", isOn: Binding(
-                get: { controller.isRemoteCursorVisible }, set: { controller.setRemoteCursorVisible($0) }
-            ))
+            Menu("Cursor", systemImage: "cursorarrow") {
+                Toggle("Show Mac cursor", isOn: Binding(
+                    get: { controller.isRemoteCursorVisible }, set: { controller.setRemoteCursorVisible($0) }
+                ))
+                Picker("Cursor style", selection: Binding(get: { controller.cursorStyle }, set: { controller.setCursorStyle($0) })) {
+                    ForEach(CursorStyle.allCases, id: \.self) { style in
+                        Label { Text(style.title) } icon: { style.menuIcon }.tag(style)
+                    }
+                }
+                .pickerStyle(.inline)
+                .disabled(!controller.isRemoteCursorVisible || !controller.drawsCursorLocally)
+                if !controller.drawsCursorLocally {
+                    Text("In Best performance the Mac draws its own cursor")
+                }
+            }
 
             Picker("Picture quality", selection: Binding(get: { controller.qualityMode }, set: { controller.setQualityMode($0) })) {
                 Label("Automatic", systemImage: "wand.and.stars").tag(QualityMode.adaptive)

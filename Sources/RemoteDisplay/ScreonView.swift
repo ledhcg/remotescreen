@@ -105,7 +105,7 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
         if let device {
             renderer = try? FramebufferRenderer(device: device, colorPixelFormat: colorPixelFormat)
-            renderer?.setCursor(.defaultArrow) // used temporarily until the server sends the real cursor image
+            setCursor(.defaultArrow) // used temporarily until the server sends the real cursor image
         }
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
@@ -191,8 +191,17 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
     /// Sets the cursor image sent by the server. Apple's server separates the cursor from the screen image, so we have to draw it ourselves.
     /// An empty image means the server hides the cursor.
     public func setCursor(_ cursor: CursorImage) {
-        renderer?.setCursor(cursor)
+        macCursor = cursor
+        renderer?.setCursor(cursorStyle.replacement(for: cursor) ?? cursor)
         requestFrame()
+    }
+
+    /// The last cursor from the server, kept so changing `cursorStyle` can switch back to it.
+    private var macCursor = CursorImage.defaultArrow
+
+    /// Draw the Mac's own cursor or one of Screon's arrows.
+    public var cursorStyle = CursorStyle.default {
+        didSet { if cursorStyle != oldValue { setCursor(macCursor) } }
     }
 
     // MARK: - Draw tick

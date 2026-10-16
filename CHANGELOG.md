@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Cursor styles: the session menu has a Cursor submenu where you can keep the Mac's own pointer or pick one of six Screon
+  arrows (filled or outlined, plain or with click rays, dots, a dashed or a dotted ring). The arrows are drawn as vectors
+  at high resolution with a white halo, so they stay sharp and visible on dark and light content; App Mode windows use the
+  same choice. When the Mac hides its pointer, the chosen arrow is hidden too.
+- iPad pointer: with a mouse or trackpad, the round iPadOS pointer can be replaced by one of the same six arrows on the app's own
+  screens (Pointer menu in the computer list's toolbar). Buttons keep their hover effect, and the Mac screen still shows the
+  Mac's cursor.
 - Fix: in the session's options menu the item icons were tinted white (the toolbar button's colour) while their text was
   dark, so the icons were almost invisible in Light Mode. Icons now follow the text colour.
 

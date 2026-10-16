@@ -68,6 +68,7 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
     private(set) var geometry = ViewportGeometry(remoteSize: .zero, viewSize: .zero)
     private var lastLayout: WindowStreamLayout?
     private var lastCursorVersion = -1
+    private var lastCursorStyleVersion = -1
     private var touchMapper = TouchMapper()
     private var router = InputRouter()
     private var keyboard = KeyboardState()
@@ -277,9 +278,11 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
             }
         }
         let cursor = stream.currentCursor()
-        if cursor.version != lastCursorVersion {
+        if cursor.version != lastCursorVersion || CursorStylePreference.version != lastCursorStyleVersion {
             lastCursorVersion = cursor.version
-            renderer.setCursor(cursor.image ?? .defaultArrow)
+            lastCursorStyleVersion = CursorStylePreference.version
+            let macCursor = cursor.image ?? .defaultArrow
+            renderer.setCursor(CursorStylePreference.current.replacement(for: macCursor) ?? macCursor)
         }
     }
 

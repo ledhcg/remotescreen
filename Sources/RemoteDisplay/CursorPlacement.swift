@@ -13,11 +13,12 @@ public enum CursorPlacement {
     /// without hiding content.
     public static let displayPointRange: ClosedRange<Double> = 20...48
 
-    /// Points per pixel of the cursor image.
+    /// Points per pixel of the cursor image (an image pixel, so a cursor drawn at `scale` 6 gets a sixth of the points per pixel).
     public static func pointsPerCursorPixel(for cursor: CursorImage, geometry: ViewportGeometry) -> Double {
-        let longest = Double(max(cursor.width, cursor.height))
-        guard longest > 0 else { return geometry.scale }
-        return min(max(geometry.scale, displayPointRange.lowerBound / longest), displayPointRange.upperBound / longest)
+        let density = Double(max(cursor.scale, 1))
+        let longest = Double(max(cursor.width, cursor.height)) / density
+        guard longest > 0 else { return geometry.scale / density }
+        return min(max(geometry.scale, displayPointRange.lowerBound / longest), displayPointRange.upperBound / longest) / density
     }
 
     /// Cursor rectangle in the viewport (points, origin at top left) when the cursor is at Mac pixel `pointer`.

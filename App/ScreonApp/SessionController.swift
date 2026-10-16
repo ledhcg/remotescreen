@@ -37,6 +37,8 @@ final class SessionController {
     private(set) var isViewOnly = false
     /// Draw the Mac cursor on screen (the server does not draw it into the frame).
     private(set) var isRemoteCursorVisible = true
+    /// The Mac's own cursor or one of Screon's arrows. Persisted between launches, shared with App Mode windows.
+    private(set) var cursorStyle: CursorStyle
     /// Stream statistics panel (frames/s, Mbit/s, decode ms, draw ms): to tell whether lag comes from the network, decoding or drawing.
     private(set) var isStatsVisible = false
     private(set) var streamStats: StreamStats?
@@ -134,6 +136,7 @@ final class SessionController {
         self.defaults = defaults
         qualityMode = defaults.string(forKey: Self.qualityModeKey).flatMap(QualityMode.init(rawValue:)) ?? .default
         displayMode = defaults.string(forKey: Self.displayModeKey).flatMap(DisplayMode.init(rawValue:)) ?? .default
+        cursorStyle = defaults.string(forKey: CursorStylePreference.key).flatMap(CursorStyle.init(rawValue:)) ?? .default
         sidebarPosition = defaults.string(forKey: Self.sidebarPositionKey).flatMap(SidebarPosition.init(rawValue:)) ?? .default
         smoothScroll = defaults.object(forKey: Self.smoothScrollKey) as? Bool ?? true
         pinchSendsToMac = defaults.bool(forKey: Self.pinchToMacKey)
@@ -166,6 +169,7 @@ final class SessionController {
         view.touchPolicy = touchPolicy
         view.pinchSendsToMac = pinchSendsToMac && isAppleServer
         view.showsRemoteCursor = isRemoteCursorVisible
+        view.cursorStyle = cursorStyle
         view.displayMode = displayMode
         view.acceptsRemoteInput = !isViewOnly
         view.onPixelSizeChange = { [weak self] size in self?.viewPixelSizeChanged(size) }
@@ -561,6 +565,17 @@ final class SessionController {
         isRemoteCursorVisible = visible
         screenView?.showsRemoteCursor = visible
     }
+
+    func setCursorStyle(_ style: CursorStyle) {
+        guard style != cursorStyle else { return }
+        cursorStyle = style
+        defaults.set(style.rawValue, forKey: CursorStylePreference.key)
+        CursorStylePreference.current = style
+        screenView?.cursorStyle = style
+    }
+
+    /// `false` in "Best performance" (16-bit): the Mac draws its cursor into the picture, so no cursor style applies.
+    var drawsCursorLocally: Bool { sessionDepth != .reduced }
 
     func setDisplayMode(_ mode: DisplayMode) {
         guard mode != displayMode else { return }

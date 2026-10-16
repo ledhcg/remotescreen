@@ -55,8 +55,10 @@ public struct ScreenCaptureKitSystem: CaptureSystem {
         c.ignoreGlobalClipSingleWindow = true
         c.shouldBeOpaque = true
         // The transparent rounded corners of the window are filled with this colour; the iPad letterboxes with the same black, so
-        // the corners blend in instead of showing as wedges.
-        c.backgroundColor = CGColor(gray: 0, alpha: 1)
+        // the corners blend in instead of showing as wedges. The property is `assign` in Objective-C (not retained): it must be a
+        // colour that lives for the whole process. A temporary `CGColor(gray:alpha:)` was freed at once, and SCStream's copy of the
+        // configuration then crashed the helper on every window subscription (0.3.0 build 4).
+        c.backgroundColor = CGColor.black
         if #available(macOS 14.2, *) { c.includeChildWindows = true }
         c.colorSpaceName = CGColorSpace.sRGB
         c.colorMatrix = CGDisplayStream.yCbCrMatrix_ITU_R_709_2

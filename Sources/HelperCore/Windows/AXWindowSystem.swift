@@ -109,10 +109,11 @@ private let axObserverCallback: AXObserverCallback = { _, _, notification, refco
 }
 
 /// A thread that only runs a run loop, for the observer sources.
-private final class RunLoopThread: Thread, @unchecked Sendable {
+final class RunLoopThread: Thread, @unchecked Sendable {
     private let ready = DispatchSemaphore(value: 0)
     private let lock = NSLock()
     private var loop: CFRunLoop?
+    private var started = false
 
     override init() {
         super.init()
@@ -130,8 +131,15 @@ private final class RunLoopThread: Thread, @unchecked Sendable {
         CFRunLoopRun()
     }
 
+    /// Safe from any number of threads at once. `WindowTracker` starts observing every app in parallel, and `isExecuting` only
+    /// turns true once the thread is running: two callers both saw it false, both called `start()`, and the second start of the
+    /// same NSThread raised an exception that aborted the helper.
     func runLoop() -> CFRunLoop {
-        if !isExecuting && !isFinished { start() }
+        lock.lock()
+        let mustStart = !started
+        started = true
+        lock.unlock()
+        if mustStart { start() }
         ready.wait(); ready.signal()
         lock.lock(); defer { lock.unlock() }
         return loop!

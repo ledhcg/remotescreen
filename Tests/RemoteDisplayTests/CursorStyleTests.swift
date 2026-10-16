@@ -11,6 +11,25 @@ import Testing
         #expect(CursorStyle.mac.artwork(.onScreen) == nil)
     }
 
+    /// A blank picture of `width`×`height` with its hotspot at (`x`, `y`): only the size and hotspot matter here.
+    private func macCursor(_ width: Int, _ height: Int, hotspot x: Int, _ y: Int) throws -> CursorImage {
+        try #require(CursorImage(width: width, height: height, hotspotX: x, hotspotY: y, bgra: [UInt8](repeating: 255, count: width * height * 4)))
+    }
+
+    @Test func onlyMacArrowsAreReplaced() throws {
+        let arrows = [try macCursor(17, 23, hotspot: 4, 4), try macCursor(34, 46, hotspot: 8, 8), CursorImage.defaultArrow]
+        let contextual = [
+            try macCursor(9, 18, hotspot: 4, 9),    // text I-beam
+            try macCursor(24, 24, hotspot: 12, 12), // resize arrows, crosshair
+            try macCursor(16, 16, hotspot: 6, 1),   // pointing hand: the fingertip is not in the corner
+            try macCursor(16, 16, hotspot: 8, 8),   // open or closed hand
+        ]
+        for style in CursorStyle.allCases where style != .mac {
+            for arrow in arrows { #expect(style.replacement(for: arrow) != nil) }
+            for cursor in contextual { #expect(style.replacement(for: cursor) == nil, "\(cursor.width)x\(cursor.height) @ \(cursor.hotspotX),\(cursor.hotspotY)") }
+        }
+    }
+
     @Test func aHiddenMacCursorStaysHidden() throws {
         let hidden = try #require(CursorImage(width: 0, height: 0, hotspotX: 0, hotspotY: 0, bgra: []))
         for style in CursorStyle.allCases { #expect(style.replacement(for: hidden) == nil) }

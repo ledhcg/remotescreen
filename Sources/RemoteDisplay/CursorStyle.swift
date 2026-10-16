@@ -52,11 +52,20 @@ public enum CursorStyle: String, CaseIterable, Sendable {
         return cursorImage
     }
 
-    /// Whether a chosen style replaces this (visible) Mac cursor.
+    /// Whether a chosen style replaces this (visible) Mac cursor: only the arrows. The cursors that tell what a click will do (the
+    /// text I-beam, resize arrows, the pointing hand over a link, the crosshair) stay the Mac's own, or the user would lose them.
+    ///
+    /// RFB sends a cursor as a picture with no name, so the kind is told by its hotspot: an arrow clicks at its tip in the top-left
+    /// corner of the picture, while the others click at their centre or, for the hand, at a fingertip well inside the picture.
     static func replacesMacCursor(_ macCursor: CursorImage) -> Bool {
-        // TODO: decide which Mac cursors the chosen arrow replaces.
-        true
+        guard macCursor.width > 0, macCursor.height > 0 else { return false }
+        let x = Double(macCursor.hotspotX) / Double(macCursor.width)
+        let y = Double(macCursor.hotspotY) / Double(macCursor.height)
+        return x < arrowHotspotLimit && y < arrowHotspotLimit
     }
+
+    /// An arrow's hotspot lies within this fraction of the picture from its top-left corner (the Mac's arrow: about 0.2).
+    static let arrowHotspotLimit = 0.3
 
     // MARK: - Artwork
 

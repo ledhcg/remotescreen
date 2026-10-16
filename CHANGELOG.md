@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Helper (App Mode): input is injected only when the target window is verifiably the topmost window under the pointer (or the
+  same app's own popup); otherwise the window is raised first. Unknown window numbers and foreign overlays fail closed.
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation
   in `vi.lproj` tables and `README.vi.md`. New `Localization` target; the iOS permission prompt is localized too.
 - The app is now called **Screon** (Screen + On: a screen that stays connected), with a new app icon. Bundle identifier is `com.ledinhcuong.screon`.

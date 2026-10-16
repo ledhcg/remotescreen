@@ -23,15 +23,15 @@ public struct TrackerWindowFocuser: WindowFocuser {
         self.tracker = tracker; self.system = system; self.workspace = workspace
     }
 
+    /// Fails closed: true only when the topmost on-screen window under `point` is `window` itself or another window of the same
+    /// process (its own menu, popover, sheet or tooltip). Any other window on top, whatever its layer or alpha (a floating
+    /// panel, a notification, a system dialog, an invisible overlay that would catch the click), makes this false so the
+    /// injector raises the target first. No layer is skipped: there is no click-through system layer the helper may assume.
     public func isFrontmost(_ window: WindowID, at point: LinkPoint) async -> Bool {
-        guard let number = await tracker.cgWindowNumber(of: window) else {
-            // No window-server number (the private AX call failed and no CGWindowList record matched): the active window of the
-            // frontmost app is the best guess.
-            return await tracker.snapshot().activeWindow == window
-        }
-        // CGWindowList is ordered front to back: the first on-screen, visible window under the point is the topmost one.
-        for record in system.cgWindows() where record.isOnScreen && record.alpha > 0.01 && record.layer < 20 {
-            if Self.contains(record.bounds, point) { return record.id == number }
+        guard let number = await tracker.cgWindowNumber(of: window), let info = await tracker.info(of: window) else { return false }
+        // CGWindowList is ordered front to back.
+        for record in system.cgWindows() where record.isOnScreen && Self.contains(record.bounds, point) {
+            return record.id == number || record.pid == info.pid
         }
         return false
     }

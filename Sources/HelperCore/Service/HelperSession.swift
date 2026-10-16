@@ -44,6 +44,8 @@ actor HelperSession: HelperConnectionHandler {
         var hasAck = false
         var lastKeyRequest = -Double.infinity
         var encoderFailures = 0
+        /// Pipeline milestones already logged (first captured frame, first encoded frame, first sent frame).
+        var logged: Set<String> = []
 
         init(window: WindowID, token: Int, pid: Int32, bundleID: String, request: CaptureRequest, native: LinkSize, quality: LinkQualityTier) {
             self.window = window; self.token = token; self.pid = pid; self.bundleID = bundleID; self.request = request
@@ -296,7 +298,8 @@ actor HelperSession: HelperConnectionHandler {
     // MARK: Subscriptions
 
     private func subscribe(_ request: LinkSubscribe) async {
-        guard let info = await resources.tracker.info(of: request.window), info.kind == .managed else {
+        log.notice("video pipeline: subscribe requested (\(request.pixelWidth, privacy: .public)x\(request.pixelHeight, privacy: .public) @\(request.maxFramesPerSecond, privacy: .public))")
+        guard let found = await resources.tracker.info(of: request.window), found.kind == .managed else {
             await send(.windowSubscribeFailed(window: request.window, reason: .unknownWindow))
             return
         }
@@ -313,6 +316,19 @@ actor HelperSession: HelperConnectionHandler {
             await host.reportPermissionDenied(.screenRecording)
             await send(.windowSubscribeFailed(window: request.window, reason: .permission))
             return
+        }
+
+        // A minimised window delivers no frames (ScreenCaptureKit reports it suspended), and the iPad would wait for the first
+        // frame forever. Opening a window on the iPad means wanting to see it, so bring it back first.
+        var info = found
+        if info.flags.contains(.minimised) {
+            do {
+                try await resources.tracker.restoreFromMinimised(window: request.window)
+                if let refreshed = await resources.tracker.info(of: request.window) { info = refreshed }
+                log.notice("video pipeline: restored a minimised window before capture")
+            } catch {
+                log.notice("video pipeline: could not restore a minimised window: \(String(describing: error), privacy: .public)")
+            }
         }
 
         let limits = self.info.sceneLimits
@@ -356,6 +372,7 @@ actor HelperSession: HelperConnectionHandler {
             return
         }
 
+        log.notice("video pipeline: capture started, native \(Int(native.width), privacy: .public)x\(Int(native.height), privacy: .public)")
         nextToken += 1
         let stream = WindowStream(
             window: request.window, token: nextToken, pid: info.pid, bundleID: info.bundleID, request: capRequest, native: native,
@@ -418,6 +435,10 @@ actor HelperSession: HelperConnectionHandler {
 
     private func captureEvent(_ event: CaptureEvent, window: WindowID, token: Int) async {
         guard let stream = streams[window], stream.token == token, !closed else { return }
+        let kind = String(describing: event).prefix(while: { $0 != "(" })
+        if stream.logged.insert("capture.\(kind)").inserted {
+            log.notice("video pipeline: first capture event \(kind, privacy: .public) for a window")
+        }
         switch event {
         case .frame(let frame):
             stream.lastFrame = frame
@@ -470,6 +491,9 @@ actor HelperSession: HelperConnectionHandler {
             stream.encoderFailures = 0
         } catch {
             if options.forceKeyFrame { stream.pending.forceKeyFrame = true }
+            if stream.logged.insert("encode.error").inserted {
+                log.error("video pipeline: encoding failed: \(String(describing: error), privacy: .public)")
+            }
             stream.encoderFailures += 1
             if case VideoEncoderError.invalidSettings = error { stream.encoder?.invalidate(); stream.encoder = nil }
             if stream.encoderFailures >= 30 { await unsubscribe(stream.window, tellDevice: true) }
@@ -512,6 +536,10 @@ actor HelperSession: HelperConnectionHandler {
 
     private func encoderEvent(_ event: EncoderEvent, window: WindowID, token: Int, generation: Int) async {
         guard let stream = streams[window], stream.token == token, stream.encoderGeneration == generation, !closed else { return }
+        let kind = String(describing: event).prefix(while: { $0 != "(" })
+        if stream.logged.insert("encoder.\(kind)").inserted {
+            log.notice("video pipeline: first encoder output \(kind, privacy: .public) for a window")
+        }
         switch event {
         case .parameterSets(let sets):
             stream.sets = sets
@@ -530,7 +558,11 @@ actor HelperSession: HelperConnectionHandler {
         let meta = stream.lastFrame?.metadata
         let content = meta?.contentRect ?? LinkRect(x: 0, y: 0, width: Double(sets.width), height: Double(sets.height))
         let config = sets.makeConfig(window: stream.window, contentRect: content, scale: meta?.scaleFactor ?? 2)
-        if await send(.videoConfig(config)) { stream.configSent = true }
+        if await send(.videoConfig(config)) {
+            stream.configSent = true
+        } else if stream.logged.insert("config.unsent").inserted {
+            log.notice("video pipeline: the video config could not be sent")
+        }
     }
 
     /// Encodes the newest frame again with `options` (a key frame or a refresh for a window that has stopped changing).

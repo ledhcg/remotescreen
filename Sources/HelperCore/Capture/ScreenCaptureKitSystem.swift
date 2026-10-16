@@ -100,6 +100,8 @@ public struct ScreenCaptureKitSystem: CaptureSystem {
         let queue = DispatchQueue(label: "com.screon.helper.capture", qos: .userInteractive)
         private let output: @Sendable (CaptureStreamOutput) -> Void
         private let stopping = OSAllocatedUnfairLock(initialState: false)
+        private let samples = OSAllocatedUnfairLock(initialState: 0)
+        private static let log = Logger(subsystem: "app.screon.helper", category: "capture")
 
         init(output: @escaping @Sendable (CaptureStreamOutput) -> Void) { self.output = output }
 
@@ -107,7 +109,12 @@ public struct ScreenCaptureKitSystem: CaptureSystem {
 
         func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
             guard type == .screen, CMSampleBufferIsValid(sampleBuffer) else { return }
-            guard let meta = Self.metadata(from: sampleBuffer) else { return }
+            let count = samples.withLock { $0 += 1; return $0 }
+            let meta = Self.metadata(from: sampleBuffer)
+            if count <= 3 || count == 30 {
+                Self.log.debug("capture sample \(count, privacy: .public): status \(meta.map { String(describing: $0.status) } ?? "unreadable", privacy: .public), image \(CMSampleBufferGetImageBuffer(sampleBuffer) != nil, privacy: .public)")
+            }
+            guard let meta else { return }
             let image = CMSampleBufferGetImageBuffer(sampleBuffer)
             output(.frame(CapturedFrame(pixelBuffer: image, metadata: meta)))
         }

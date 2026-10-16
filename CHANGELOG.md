@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix (Screon Helper): every Mac app showed "0 windows" and no window could be opened with the release build of the helper:
+  an optimizer-only bug attached every window to pid 0. Windows now list and stream correctly.
+- Fix (Screon Helper): opening a window that is minimised on the Mac showed "Waiting for the first frame" forever; the helper
+  now restores it first, because a minimised window delivers no frames.
+
 - App Mode over Tailscale (or another VPN): the helper's pairing code and window now include its Tailscale address (100.x)
   next to the LAN ones, and a paired iPhone or iPad remembers every address and tries them in turn when it reconnects, so App
   Mode keeps working away from the home network. Devices paired earlier need to pair again once to learn the extra address.

@@ -495,7 +495,7 @@ final class TestClock: @unchecked Sendable {
     }
 
     /// Only plain document types are opened; anything else is refused even with a harmless application.
-    @Test(arguments: ["archive.zip", "page.html", "tool.py", "data.bin", "noextension", "image.dmg", "script.swift", "bundle.tar.gz"])
+    @Test(arguments: ["archive.zip", "page.html", "tool.py", "data.bin", "noextension", "image.dmg", "script.swift", "bundle.tar.gz", "macro.docm", "sheet.xlsm", "deck.pptm", "logo.svg"])
     func nonDocumentTypesAreRefused(name: String) async throws {
         defer { cleanUp() }
         let inbox = try makeInbox()

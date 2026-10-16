@@ -140,3 +140,47 @@
 "Actual size" = "Kích thước thật";
 "Reset zoom" = "Đặt lại thu phóng";
 "Window options" = "Tùy chọn cửa sổ";
+
+/* App Mode: launcher */
+"Settings" = "Cài đặt";
+"Show on full desktop" = "Hiện trên toàn màn hình máy tính";
+"Computers" = "Máy tính";
+"Search apps" = "Tìm ứng dụng";
+"No apps" = "Không có ứng dụng";
+"Open an app on the Mac to see it here." = "Hãy mở một ứng dụng trên máy Mac để thấy nó ở đây.";
+"Open" = "Mở";
+"Quit" = "Thoát";
+"Launch" = "Khởi chạy";
+"1 window" = "1 cửa sổ";
+"%lld windows" = "%lld cửa sổ";
+"%lld new windows" = "%lld cửa sổ mới";
+
+/* App Mode: settings */
+"Opening an app shows its windows as" = "Khi mở một ứng dụng, hiện các cửa sổ của nó dưới dạng";
+"Separate windows" = "Các cửa sổ riêng";
+"Tabs in one window" = "Các thẻ trong một cửa sổ";
+"New windows on the Mac" = "Cửa sổ mới trên máy Mac";
+"A new window" = "Khi có cửa sổ mới";
+"Open in a new window" = "Mở trong một cửa sổ mới";
+"Only show a badge" = "Chỉ hiện huy hiệu";
+"⌘W" = "⌘W";
+"Closes the iPad window" = "Đóng cửa sổ trên iPad";
+"Is sent to the Mac" = "Được gửi sang máy Mac";
+"Other shortcuts of the Mac app are sent to the Mac. ⌘H, ⌘Space and ⌘Tab stay with the iPad." = "Các phím tắt khác của ứng dụng Mac được gửi sang máy Mac. ⌘H, ⌘Space và ⌘Tab vẫn thuộc về iPad.";
+"Done" = "Xong";
+
+/* App Mode: window switcher, menus and window actions */
+"Windows" = "Cửa sổ";
+"Apps" = "Ứng dụng";
+"Menus" = "Menu";
+"No menu available" = "Không có menu";
+"Mac App" = "Ứng dụng Mac";
+"No Mac app in focus" = "Không có ứng dụng Mac nào đang được chọn";
+"Resize Mac window to fit" = "Đổi cỡ cửa sổ Mac cho vừa";
+"Minimise" = "Thu nhỏ";
+"Zoom" = "Phóng to";
+"Exit full screen" = "Thoát toàn màn hình";
+"Close Mac window" = "Đóng cửa sổ Mac";
+"Close this window" = "Đóng cửa sổ này";
+"Back to apps" = "Quay lại ứng dụng";
+"Close window" = "Đóng cửa sổ";

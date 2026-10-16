@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Privacy declarations for the App Store. The app does not track users and collects no data that leaves the device.
-     APIs that need a declared reason: UserDefaults (stores the app's own quality mode, display mode and clipboard mode: CA92.1). -->
+     APIs that need a declared reason: UserDefaults (stores the app's own quality mode, display mode and clipboard mode: CA92.1);
+     file timestamps (App Mode reads the modification dates of its own cached app icons in Caches/ to evict the oldest: C617.1). -->
 <plist version="1.0">
 <dict>
     <key>NSPrivacyTracking</key>
@@ -18,6 +19,14 @@
             <key>NSPrivacyAccessedAPITypeReasons</key>
             <array>
                 <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
             </array>
         </dict>
     </array>

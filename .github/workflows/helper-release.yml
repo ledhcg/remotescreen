@@ -22,9 +22,14 @@ on:
         required: false
         default: ""
         type: string
+      publish:
+        description: "Publish a GitHub Release helper-v<version> with the disk image and the signed update manifest"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
-  contents: read
+  contents: read   # the build job holds the signing material and gets no write access; only `publish` below can write
 
 jobs:
   release:
@@ -35,6 +40,8 @@ jobs:
       KEYCHAIN_NAME: helper-release.keychain-db
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Require Helper/project.yml
         run: test -f Helper/project.yml || { echo "Helper/project.yml is missing"; exit 1; }
       - name: Check the version and the update public key
@@ -88,7 +95,7 @@ jobs:
             ENABLE_HARDENED_RUNTIME=YES archive
           ditto "$RUNNER_TEMP/ScreonHelper.xcarchive/Products/Applications/ScreonHelper.app" "$RUNNER_TEMP/ScreonHelper.app"
           codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/ScreonHelper.app"
-      - name: Notarize and staple
+      - name: Notarize and staple the app
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
@@ -103,13 +110,25 @@ jobs:
           rm -f "$KEY"
           xcrun stapler staple "$RUNNER_TEMP/ScreonHelper.app"
           xcrun stapler validate "$RUNNER_TEMP/ScreonHelper.app"
-      - name: Build the disk image
+      - name: Build, sign, notarize and staple the disk image
         env:
           VERSION: ${{ inputs.version }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
         run: |
           set -euo pipefail
-          scripts/make-helper-dmg.sh "$RUNNER_TEMP/ScreonHelper.app" "$RUNNER_TEMP/ScreonHelper-$VERSION.dmg"
-          # The app inside is already stapled. TODO: also notarize and staple the .dmg itself (same notarytool call as above).
+          DMG="$RUNNER_TEMP/ScreonHelper-$VERSION.dmg"
+          # The image is signed too, so Gatekeeper checks it before the app inside is even opened.
+          SIGN_IDENTITY="Developer ID Application" OTHER_KEYCHAIN="$KEYCHAIN_NAME" \
+            scripts/make-helper-dmg.sh "$RUNNER_TEMP/ScreonHelper.app" "$DMG"
+          KEY="$RUNNER_TEMP/notary-key.p8"
+          printf '%s' "$NOTARY_KEY_P8" > "$KEY"
+          xcrun notarytool submit "$DMG" --key "$KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
+          rm -f "$KEY"
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -t open --context context:primary-signature -vv "$DMG"
       - name: Sign the update manifest
         env:
           VERSION: ${{ inputs.version }}
@@ -126,9 +145,46 @@ jobs:
           printf '{"version":"%s","url":"%s/download/%s/ScreonHelper-%s.dmg","sha256":"%s","releaseURL":"%s/tag/%s","minimumMacOS":"15.0"}\n' \
             "$VERSION" "$BASE" "$TAG" "$VERSION" "$SHA" "$BASE" "$TAG" > "$RUNNER_TEMP/update-manifest.json"
           swift scripts/sign-update-manifest.swift "$RUNNER_TEMP/update-manifest.json" "$RUNNER_TEMP/update-manifest.json.sig"
+      - name: Keep the disk image and the manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ScreonHelper-${{ inputs.version }}
+          path: |
+            ${{ runner.temp }}/ScreonHelper-${{ inputs.version }}.dmg
+            ${{ runner.temp }}/update-manifest.json
+            ${{ runner.temp }}/update-manifest.json.sig
+          if-no-files-found: error
+          retention-days: 30
       - name: Remove the temporary keychain
         if: always()
         run: security delete-keychain "$KEYCHAIN_NAME" || true
-      # TODO: upload ScreonHelper-<version>.dmg, update-manifest.json and update-manifest.json.sig to the GitHub Release tagged
-      # helper-v<version> (only when the maintainer asks to publish). The helper's default manifest URL is
-      # https://github.com/<repo>/releases/latest/download/update-manifest.json, so that release must be the latest one.
+
+  # Separate job so the token that can write releases never shares a runner with the signing certificate or notary key.
+  # The helper's default manifest URL is https://github.com/<repo>/releases/latest/download/update-manifest.json, so the
+  # release is marked latest. Runs only when the maintainer checked `publish`.
+  publish:
+    name: Publish the GitHub Release
+    needs: release
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch the release output
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ScreonHelper-${{ inputs.version }}
+          path: out
+      - name: Create the release
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="helper-v$VERSION"
+          SHA="$(sha256sum "out/ScreonHelper-$VERSION.dmg" | cut -d' ' -f1)"
+          printf 'Screon Helper %s, signed with Developer ID and notarized by Apple (app and disk image).\n\nSHA-256 of the disk image: `%s`\n' \
+            "$VERSION" "$SHA" > notes.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Screon Helper $VERSION" --latest \
+            --notes-file notes.md \
+            "out/ScreonHelper-$VERSION.dmg" out/update-manifest.json out/update-manifest.json.sig

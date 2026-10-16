@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The helper release workflow now signs, notarizes and staples the disk image too, keeps the image and the signed update
+  manifest as a run artifact, and publishes the GitHub Release only when `publish` is checked.
 - Screon Helper 0.3.0 (build 4): fills a window's transparent rounded corners with black (no more dark wedges on the iPad),
   re-sends a key frame when its stream config could not go out, and finishes a window's old stream before opening the new
   one when the iPad re-subscribes.

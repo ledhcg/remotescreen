@@ -21,8 +21,9 @@ rm -f "$OUT"
 hdiutil create -volname "$VOLNAME" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$OUT"
 
 # Optional: sign the disk image when SIGN_IDENTITY (a Developer ID Application identity name) is set by the caller.
+# OTHER_KEYCHAIN, when set, names the keychain holding that identity (the temporary keychain of the release workflow).
 if [ -n "${SIGN_IDENTITY:-}" ]; then
-  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$OUT"
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" ${OTHER_KEYCHAIN:+--keychain "$OTHER_KEYCHAIN"} "$OUT"
 fi
 
 echo "created $OUT"

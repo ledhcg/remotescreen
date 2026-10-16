@@ -73,12 +73,15 @@ public actor WindowTracker {
         var parentKey: Key?
         var isFocusedAX = false
         var isMainAX = false
+        /// The window-server number, when it is known (from the AX call or from matching a CGWindowList record).
+        var cgNumber: UInt32?
     }
 
     private let system: any WindowSystem
     private let log = Logger(subsystem: "app.screon.helper", category: "windows")
     private var entries: [Key: Entry] = [:]
     private var tokens: [WindowID: AXWindowToken] = [:]
+    private var cgNumbers: [WindowID: UInt32] = [:]
     private var order: [WindowID] = []
     private var active: WindowID?
     private var axCache: [Int32: [AXWindowState]] = [:]
@@ -167,6 +170,30 @@ public actor WindowTracker {
 
     public func info(of window: WindowID) -> LinkWindowInfo? {
         entries.values.first { $0.id == window }?.info
+    }
+
+    // MARK: Lookups for the adapters (stage, input geometry, focus)
+
+    /// The window-server number of a managed window, when known.
+    public func cgWindowNumber(of window: WindowID) -> UInt32? { cgNumbers[window] }
+
+    /// The key the stage journal stores for `window`. Without a window-server number the key is derived from the AX handle
+    /// (high bit set, so it cannot collide with a real number): it works for restoring within this run, but not after a crash.
+    public func stageKey(of window: WindowID) -> StageWindowKey? {
+        guard let token = tokens[window] else { return nil }
+        let number = cgNumbers[window] ?? (0x8000_0000 | UInt32(truncatingIfNeeded: token.id))
+        return StageWindowKey(pid: token.pid, windowNumber: number)
+    }
+
+    /// Reverse of `stageKey(of:)` for the windows that exist now.
+    public func window(forStageKey key: StageWindowKey) -> WindowID? {
+        tokens.keys.first { stageKey(of: $0) == key }
+    }
+
+    /// The frame as the app reports it right now (one AX read), falling back to the last reconciled frame. Global points.
+    public func liveFrame(of window: WindowID) async -> LinkRect? {
+        if let token = tokens[window], let state = try? await system.axWindow(token) { return state.frame }
+        return info(of: window)?.frame
     }
 
     public func isUnresponsive(pid: Int32) -> Bool { unresponsive.contains(pid) }
@@ -358,6 +385,7 @@ public actor WindowTracker {
                     title: HelperText.bounded(state.title, maxBytes: LinkLimits.maxTitleBytes), flags: flags)
                 var desired = Desired(
                     key: .ax(state.token), info: info, zIndex: record.flatMap { zIndexByCG[$0.id] } ?? Int.max)
+                desired.cgNumber = record?.id ?? state.cgWindowID
                 desired.isFocusedAX = state.isFocused
                 desired.isMainAX = state.isMain
                 ofThisApp.append(desired)
@@ -494,6 +522,12 @@ public actor WindowTracker {
                 pending.append(.updated(update))
             }
         }
+
+        var numbers: [WindowID: UInt32] = [:]
+        for wanted in desired {
+            if let number = wanted.cgNumber, let entry = next[wanted.key] { numbers[entry.id] = number }
+        }
+        cgNumbers = numbers
 
         let newOrder = desired.compactMap { next[$0.key]?.id }
         let orderChanged = newOrder != order || newActive != active

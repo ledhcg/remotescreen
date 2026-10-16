@@ -1,3 +1,11 @@
 /* Vietnamese translation. The key is the exact English source string. */
 
 "%@ is not responding." = "%@ không phản hồi.";
+
+"Accessibility permission is missing. Windows cannot be tracked or controlled." = "Thiếu quyền Trợ năng (Accessibility). Không thể theo dõi hoặc điều khiển các cửa sổ.";
+"Screen Recording permission is missing. Windows cannot be streamed." = "Thiếu quyền Ghi màn hình (Screen Recording). Không thể truyền các cửa sổ.";
+"A permission that Screon Helper needs is missing." = "Thiếu một quyền mà Screon Helper cần.";
+"The virtual display is unavailable. Windows are resized where they are." = "Màn hình ảo không khả dụng. Các cửa sổ được đổi kích thước ngay tại chỗ.";
+"This Mac is locked. Unlock it to continue streaming windows." = "Máy Mac này đang bị khóa. Hãy mở khóa để tiếp tục truyền các cửa sổ.";
+"Typing is blocked by a password field on this Mac." = "Việc gõ phím đang bị chặn bởi một ô mật khẩu trên máy Mac này.";
+"Screon Helper could not start listening for iPads." = "Screon Helper không thể bắt đầu lắng nghe kết nối từ iPad.";

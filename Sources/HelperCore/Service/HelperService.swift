@@ -207,7 +207,7 @@ public actor HelperService {
         let wasIdle = sessions.isEmpty
         sessions[info.sessionID] = Entry(session: session, task: Task {}, info: info)
         hub.update { $0.sessions.append(HelperStatus.Session(info: info, connectedAt: options.now())) }
-        if wasIdle { dependencies.awake.release(); dependencies.awake.acquire() }
+        if wasIdle { dependencies.awake.acquire() }
         await startStageIfNeeded()
         guard sessions[info.sessionID] != nil else { return }  // stop() or an early disconnect ran meanwhile
         await session.start()

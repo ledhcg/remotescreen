@@ -77,6 +77,8 @@ actor HelperSession: HelperConnectionHandler {
     private var nextToken = 0
     private var snapshotVersion: UInt64 = 0
     private var started = false
+    /// The snapshot is out: status changes may be delivered (they would otherwise arrive before the snapshot).
+    private var ready = false
     private var closed = false
     /// The transport ended; nothing more can be sent but cleanup is still due.
     private var transportGone = false
@@ -118,6 +120,7 @@ actor HelperSession: HelperConnectionHandler {
         let snapshot = await resources.tracker.linkSnapshot(apps: apps)
         snapshotVersion = snapshot.stateVersion
         await send(.snapshot(snapshot))
+        ready = true
         await sendConditions()
 
         tasks.append(Task { [weak self] in
@@ -171,7 +174,10 @@ actor HelperSession: HelperConnectionHandler {
     }
 
     /// Delivers a condition change decided by the service (lock state, permissions, stage, secure input).
-    func deliver(status: LinkStatus) async { await send(.status(status)) }
+    func deliver(status: LinkStatus) async {
+        guard ready else { return }
+        await send(.status(status))
+    }
 
     private func sendConditions() async {
         let c = await host.conditions()

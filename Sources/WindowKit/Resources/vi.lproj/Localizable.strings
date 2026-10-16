@@ -34,3 +34,9 @@
 "Connection lost" = "Mất kết nối";
 "Screon could not reach the Mac." = "Screon không thể kết nối tới máy Mac.";
 "Typing is blocked by a password field on the Mac" = "Việc gõ phím bị chặn bởi một ô mật khẩu trên máy Mac";
+
+/* Launcher sections */
+"Running" = "Đang chạy";
+"Recent" = "Gần đây";
+"All apps" = "Tất cả ứng dụng";
+"Results" = "Kết quả";

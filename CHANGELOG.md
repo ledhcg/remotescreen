@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Security (App Mode helper): one host on the network can no longer hold every pending handshake slot; each remote address may have at most three handshakes in progress.
 - Security (App Mode): a device that is revoked or disconnected can no longer act on input, clipboard or file messages it had queued before the session ended, nor during the short moment the link spends closing.
 - Screon Helper (macOS menu bar app for App Mode): shows who is connected, pairs iPads with a QR code or six digits (approved on the
   Mac with Touch ID or your password), lists, renames and revokes paired iPads, guides you through the macOS permissions, can open at

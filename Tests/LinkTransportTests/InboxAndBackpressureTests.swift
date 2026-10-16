@@ -49,6 +49,30 @@ import Testing
         await producer.value
     }
 
+    @Test func discardDropsBufferedItemsAndReleasesBlockedProducers() async {
+        let inbox = LinkInbox<Int>(capacity: 2, byteCapacity: 1 << 20)
+        let producer = Task { for i in 0..<50 { await inbox.push(i, cost: 1) } }
+        try? await Task.sleep(for: .milliseconds(50))
+        inbox.discardBufferedAndFinish()
+        #expect(await within(.seconds(2)) { await producer.value }, "a producer blocked on capacity is released")
+        var got = 0
+        for await _ in inbox { got += 1 }
+        #expect(got == 0, "nothing buffered survives the discard, nothing is accepted afterwards")
+    }
+
+    @Test func concurrentPushFinishAndConsumeNeverHangsOrDuplicates() async {
+        for _ in 0..<200 {
+            let inbox = LinkInbox<Int>(capacity: 4)
+            let producer = Task { for i in 0..<20 { await inbox.push(i, cost: 1) } }
+            let consumer = Task { () -> [Int] in var r: [Int] = []; for await v in inbox { r.append(v) }; return r }
+            await Task.yield()
+            inbox.finish()
+            await producer.value
+            let got = await consumer.value
+            #expect(got == Array(0..<got.count), "in order, no duplicates, no gaps")
+        }
+    }
+
     @Test func finishWakesAWaitingConsumer() async {
         let inbox = LinkInbox<Int>()
         let consumer = Task { () -> Int? in var it = inbox.makeAsyncIterator(); return await it.next() }

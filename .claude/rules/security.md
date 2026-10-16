@@ -52,4 +52,5 @@ can attack the iPad, a rogue or replayed client can attack the Mac).
 - **Bound every length, count and id on both sides** before allocating; decoders throw, never trap. Every new message needs a
   malicious-input test in `LinkProtocolTests` / `MaliciousPeerTests`.
 - Keys and pairing material live in the Keychain only; never in logs, `UserDefaults`, JSON or test fixtures (tests generate
-  identities per run).
+  identities per run). Link identity keys use `AfterFirstUnlockThisDeviceOnly` (a locked iPad or Mac must still reconnect);
+  passwords keep `WhenUnlockedThisDeviceOnly`.

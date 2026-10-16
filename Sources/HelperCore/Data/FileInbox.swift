@@ -341,7 +341,8 @@ public struct WorkspaceFileOpener: FileOpening {
         var values = URLResourceValues()
         values.quarantineProperties = ["LSQuarantineType": "LSQuarantineTypeOtherDownload"]
         var target = file
-        try? target.setResourceValues(values)
+        // Fail closed: a file whose quarantine mark could not be set is not opened, so Gatekeeper always judges it.
+        do { try target.setResourceValues(values) } catch { throw FileInboxError.notOpenable }
         _ = try await NSWorkspace.shared.open([file], withApplicationAt: application, configuration: NSWorkspace.OpenConfiguration())
     }
 }

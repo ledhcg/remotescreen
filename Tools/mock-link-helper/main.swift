@@ -15,6 +15,9 @@ let usage = """
       --inbox-dir <dir>       where received files go (default: a temporary directory removed on exit)
       --no-quic               TCP+TLS only
       --self-test             run an in-process client against the helper and exit 0/1
+      --probe <file>          diagnostic client: pair with a real helper using the link in <file>, print counts, exit
+      --probe-host <host>     with --probe: connect here instead of the link's first address
+      --probe-subscribe <id>  with --probe: subscribe to the first window of this bundle id and count video frames
     """
 
 func fail(_ message: String) -> Never {
@@ -50,6 +53,9 @@ func parseOptions(_ arguments: [String]) -> Options {
         case "--inbox-dir": options.inboxDir = value(argument)
         case "--no-quic": options.enableQUIC = false
         case "--self-test": options.selfTest = true
+        case "--probe": options.probeFile = value(argument)
+        case "--probe-host": options.probeHost = value(argument)
+        case "--probe-subscribe": options.probeSubscribe = value(argument)
         case "--help", "-h":
             print(usage)
             exit(0)
@@ -148,7 +154,9 @@ func runHelper(options: Options) async -> Int32 {
 }
 
 let options = parseOptions(Array(CommandLine.arguments.dropFirst()))
-if options.selfTest {
+if let probe = options.probeFile {
+    exit(await Probe.run(linkFile: probe, host: options.probeHost, subscribeBundle: options.probeSubscribe))
+} else if options.selfTest {
     exit(await SelfTest.run())
 } else {
     exit(await runHelper(options: options))

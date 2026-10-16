@@ -16,6 +16,9 @@ struct Options: Sendable {
     var inboxDir: String?
     var enableQUIC = true
     var selfTest = false
+    var probeFile: String?
+    var probeHost: String?
+    var probeSubscribe: String?
 }
 
 /// The fake Mac: scripted apps and windows, synthetic video, and a log of everything the iPad sends.

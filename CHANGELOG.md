@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- App Mode over Tailscale (or another VPN): the helper's pairing code and window now include its Tailscale address (100.x)
+  next to the LAN ones, and a paired iPhone or iPad remembers every address and tries them in turn when it reconnects, so App
+  Mode keeps working away from the home network. Devices paired earlier need to pair again once to learn the extra address.
+
 ## 0.2.0 — 2026-10-16 (TestFlight beta)
 
 - Screon Helper 0.2.0 (build 2), the same version as the iOS app.

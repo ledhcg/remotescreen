@@ -320,11 +320,12 @@ final class HelperModel {
         }
     }
 
-    /// Where an iPad reaches this Mac, for typing into "Pair with code": the first host hint (the `.local` name, else a LAN
-    /// address) and the listening port.
-    var pairingAddress: (host: String, port: UInt16)? {
-        guard let port = status.listeningPort, let host = HostHints.current().first else { return nil }
-        return (host, port)
+    /// Where an iPad reaches this Mac, for typing into "Pair with code": every host hint (the `.local` name, LAN addresses,
+    /// a Tailscale address for use away from home) and the listening port.
+    var pairingAddress: (hosts: [String], port: UInt16)? {
+        let hosts = HostHints.current()
+        guard let port = status.listeningPort, !hosts.isEmpty else { return nil }
+        return (hosts, port)
     }
 
     func copyPairingLink() {

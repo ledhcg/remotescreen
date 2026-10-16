@@ -15,13 +15,27 @@ enum HostHints {
         if let name = SCDynamicStoreCopyLocalHostName(nil) as String?, !name.isEmpty {
             hints.append(name + ".local")
         }
-        hints.append(contentsOf: ipv4Addresses())
+        // Keep room for a VPN address (Tailscale, 100.64.0.0/10 on a utun interface): away from home it is the only one the
+        // iPad can reach. At most two LAN addresses, then the VPN one, then whatever is left.
+        let lan = ipv4Addresses(prefix: "en")
+        let vpn = ipv4Addresses(prefix: "utun").filter(isCarrierGradeNAT)
+        hints.append(contentsOf: lan.prefix(2))
+        hints.append(contentsOf: vpn.prefix(1))
+        hints.append(contentsOf: lan.dropFirst(2))
+        hints.append(contentsOf: vpn.dropFirst(1))
         var seen = Set<String>()
         return hints.filter { $0.utf8.count <= 253 && seen.insert($0).inserted }.prefix(maxCount).map { $0 }
     }
 
-    /// Private/LAN IPv4 addresses of running Ethernet and Wi-Fi interfaces (`en*`), never loopback or link-local.
-    static func ipv4Addresses() -> [String] {
+    /// 100.64.0.0/10, the range Tailscale (and other overlay VPNs) assign.
+    static func isCarrierGradeNAT(_ text: String) -> Bool {
+        let parts = text.split(separator: ".").compactMap { Int($0) }
+        return parts.count == 4 && parts[0] == 100 && (64...127).contains(parts[1])
+    }
+
+    /// IPv4 addresses of running interfaces whose name starts with `prefix` (`en` for Ethernet/Wi-Fi, `utun` for VPN tunnels),
+    /// never loopback or link-local.
+    static func ipv4Addresses(prefix: String = "en") -> [String] {
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(head) }
@@ -31,7 +45,7 @@ enum HostHints {
             guard let address = entry.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else { continue }
             let flags = Int32(entry.ifa_flags)
             guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0 else { continue }
-            guard String(cString: entry.ifa_name).hasPrefix("en") else { continue }
+            guard String(cString: entry.ifa_name).hasPrefix(prefix) else { continue }
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
             let status = getnameinfo(address, socklen_t(address.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST)
             guard status == 0 else { continue }

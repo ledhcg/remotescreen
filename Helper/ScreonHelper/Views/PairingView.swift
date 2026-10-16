@@ -68,8 +68,14 @@ private struct AddressLine: View {
 
     var body: some View {
         if let address = model.pairingAddress {
-            HStack(spacing: 16) {
-                LabeledContent("Address") { Text(address.host).textSelection(.enabled) }
+            VStack(alignment: .leading, spacing: 4) {
+                LabeledContent("Address") {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        ForEach(address.hosts, id: \.self) { host in
+                            Text(host + (HostHints.isCarrierGradeNAT(host) ? "  (Tailscale / VPN)" : "")).textSelection(.enabled)
+                        }
+                    }
+                }
                 LabeledContent("Port") { Text(String(address.port)).textSelection(.enabled) }
             }
             .font(.callout.monospaced())

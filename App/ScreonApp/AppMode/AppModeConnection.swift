@@ -240,11 +240,23 @@ final class AppModeConnection: AppModeSession {
 
     private func connect() async throws -> LinkConnection {
         guard let computer = resolveComputer(), let helperEndpoint = computer.helper,
-              let host = helperEndpoint.lastKnownHost, let port = helperEndpoint.lastKnownPort else {
+              let port = helperEndpoint.lastKnownPort, !helperEndpoint.candidateHosts.isEmpty else {
             throw LinkSessionError.notAuthorized
         }
         let configuration = try LinkPairing.reconnectConfiguration(computerID: computerID, resume: credentials, settings: settings)
-        return try await LinkConnection.connect(to: LinkEndpoint(host: host, port: port), configuration: configuration)
+        // The address that worked last first, then the others the helper offered (home LAN, `.local`, Tailscale…): away from
+        // home only the VPN address answers. The pin is the same for all of them, so a wrong host cannot impersonate the Mac.
+        var lastError: Error = LinkSessionError.transport("no address")
+        for host in helperEndpoint.candidateHosts {
+            do {
+                return try await LinkConnection.connect(to: LinkEndpoint(host: host, port: port), configuration: configuration)
+            } catch let error as LinkSessionError where error.isPermanent {
+                throw error  // revoked, pin mismatch, version: another address will not change that
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
     }
 
     private func serve(_ connection: LinkConnection) async throws {

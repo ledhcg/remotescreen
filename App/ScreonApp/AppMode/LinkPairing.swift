@@ -60,9 +60,13 @@ struct PairingOutcome: Sendable, Equatable {
     var host: String
     var port: UInt16
     var pairedAt: Date
+    /// The other addresses the pairing code offered (LAN, `.local`, VPN such as Tailscale).
+    var otherHosts: [String] = []
 
     var helperEndpoint: HelperEndpoint {
-        HelperEndpoint(identityHash: identityHash, lastKnownHost: host, lastKnownPort: port, pairedAt: pairedAt)
+        HelperEndpoint(
+            identityHash: identityHash, lastKnownHost: host, lastKnownPort: port, pairedAt: pairedAt,
+            otherHosts: otherHosts.filter { $0 != host })
     }
 }
 
@@ -147,7 +151,9 @@ enum LinkPairing {
             do {
                 let configuration = try configuration(
                     mode: .pairWithQR(payload), computerID: computerID, pin: payload.macSPKIHash)
-                return try await finishPairing(host: host, port: payload.port, configuration: configuration)
+                var outcome = try await finishPairing(host: host, port: payload.port, configuration: configuration)
+                outcome.otherHosts = payload.hostHints
+                return outcome
             } catch let error as LinkSessionError where error.isPermanent {
                 throw error // wrong code, refused, expired: another address will not change that
             } catch {

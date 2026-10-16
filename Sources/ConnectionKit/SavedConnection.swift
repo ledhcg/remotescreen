@@ -10,14 +10,31 @@ public struct HelperEndpoint: Codable, Equatable, Sendable {
     /// Bonjour instance name of the `_screon-link._udp` service.
     public var bonjourName: String?
     public var pairedAt: Date
+    /// Every other address the helper offered when pairing (its `.local` name, LAN and VPN addresses such as Tailscale's
+    /// 100.x), tried after `lastKnownHost` when reconnecting, so the iPad still finds the Mac away from the home network.
+    /// Absent in files written before it existed.
+    public var otherHosts: [String]?
+
+    /// At most this many addresses are kept or tried.
+    public static let maxHosts = 8
 
     public init(identityHash: String, lastKnownHost: String? = nil, lastKnownPort: UInt16? = nil,
-                bonjourName: String? = nil, pairedAt: Date) {
+                bonjourName: String? = nil, pairedAt: Date, otherHosts: [String]? = nil) {
         self.identityHash = identityHash
         self.lastKnownHost = lastKnownHost
         self.lastKnownPort = lastKnownPort
         self.bonjourName = bonjourName
         self.pairedAt = pairedAt
+        self.otherHosts = otherHosts
+    }
+
+    /// The addresses to try, in order: the one that worked last, then the others. Deduplicated, bounded, sane lengths only
+    /// (the JSON file is ours, but it is still read back from disk).
+    public var candidateHosts: [String] {
+        var seen = Set<String>()
+        let all = [lastKnownHost].compactMap { $0 } + (otherHosts ?? [])
+        return all.filter { !$0.isEmpty && $0.utf8.count <= 253 && seen.insert($0.lowercased()).inserted }
+            .prefix(Self.maxHosts).map { $0 }
     }
 }
 

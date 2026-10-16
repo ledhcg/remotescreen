@@ -57,3 +57,26 @@ struct HelperEndpointTests {
         #expect(helper.lastKnownHost == nil && helper.lastKnownPort == nil && helper.bonjourName == nil)
     }
 }
+
+@Suite struct HelperEndpointCandidateTests {
+    @Test func lastWorkingAddressComesFirstThenTheOthersOnce() {
+        let endpoint = HelperEndpoint(
+            identityHash: String(repeating: "a", count: 64), lastKnownHost: "10.0.0.2", lastKnownPort: 7361, pairedAt: Date(),
+            otherHosts: ["mac.local", "10.0.0.2", "100.64.1.2", "MAC.local", ""])
+        #expect(endpoint.candidateHosts == ["10.0.0.2", "mac.local", "100.64.1.2"])
+    }
+
+    @Test func candidatesAreBounded() {
+        let many = (0..<20).map { "10.0.0.\($0)" } + [String(repeating: "x", count: 300)]
+        let endpoint = HelperEndpoint(identityHash: "", lastKnownHost: nil, pairedAt: Date(), otherHosts: many)
+        #expect(endpoint.candidateHosts.count == HelperEndpoint.maxHosts)
+        #expect(endpoint.candidateHosts.allSatisfy { $0.utf8.count <= 253 })
+    }
+
+    @Test func filesWithoutOtherHostsStillDecode() throws {
+        let json = #"{"identityHash":"ab","lastKnownHost":"mac.local","lastKnownPort":7361,"pairedAt":0}"#
+        let endpoint = try JSONDecoder().decode(HelperEndpoint.self, from: Data(json.utf8))
+        #expect(endpoint.otherHosts == nil)
+        #expect(endpoint.candidateHosts == ["mac.local"])
+    }
+}

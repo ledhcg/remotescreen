@@ -113,6 +113,18 @@ struct ResizeDebouncerTests {
         #expect(r11 == nil)  // nothing more pending
     }
 
+    @Test func sizesDuringTheWarmupMoveTheBaselineAndAreNotSent() {
+        var d = ResizeDebouncer(settleDelay: 0.1, warmup: 1)
+        d.observe(size(834, 1210), at: 0)
+        d.observe(size(834, 1099), at: 0.2)  // safe area appeared
+        d.observe(size(834, 1102.5), at: 0.6)
+        let early = d.poll(at: 3, isInteractivelyResizing: false)
+        #expect(early == nil)
+        d.observe(size(700, 1102.5), at: 5)  // the person resizes
+        let sent = d.poll(at: 6, isInteractivelyResizing: false)
+        #expect(sent == size(700, 1102.5))
+    }
+
     @Test func tinyChangesAndReturnToTheSameSizeSendNothing() {
         var d = ResizeDebouncer(settleDelay: 0.1, tolerance: 2)
         d.observe(size(800, 600), at: 0)
@@ -516,7 +528,12 @@ struct RemoteMenuTests {
 
     @Test func cacheIsBoundedInApps() {
         var cache = MenuTreeCache()
-        for i in 0..<(MenuTreeCache.maxApps + 10) { cache.receive(bundleID: "a\(i)", items: [], at: 0) }
+        for i in 0..<(MenuTreeCache.maxApps + 10) {
+            _ = cache.shouldRequest(bundleID: "a\(i)", at: 0)
+            cache.receive(bundleID: "a\(i)", items: [], at: 0)
+        }
+        let unasked = cache.receive(bundleID: "never-asked", items: [], at: 0)
+        #expect(!unasked)
         #expect(cache.entry(for: "a\(MenuTreeCache.maxApps + 5)") == nil)
         #expect(cache.entry(for: "a0") != nil)
     }

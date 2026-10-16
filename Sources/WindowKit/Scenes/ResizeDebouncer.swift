@@ -9,14 +9,19 @@ import LinkProtocol
 public struct ResizeDebouncer: Sendable, Equatable {
     public var settleDelay: TimeInterval
     public var tolerance: Double
+    /// Sizes seen this soon after the first one are the window settling into its place (safe areas, title bar, a first rotation),
+    /// not the person resizing it: they move the baseline instead of being sent.
+    public var warmup: TimeInterval
 
+    private var firstSeen: TimeInterval = 0
     private var baseline: LinkSize?
     private var pending: LinkSize?
     private var pendingSince: TimeInterval = 0
 
-    public init(settleDelay: TimeInterval = 0.3, tolerance: Double = 2) {
+    public init(settleDelay: TimeInterval = 0.3, tolerance: Double = 2, warmup: TimeInterval = 1) {
         self.settleDelay = settleDelay
         self.tolerance = tolerance
+        self.warmup = warmup
     }
 
     /// A size of the scene in points. Zero, negative and non-finite sizes are ignored.
@@ -24,6 +29,12 @@ public struct ResizeDebouncer: Sendable, Equatable {
         guard size.width.isFinite, size.height.isFinite, size.width >= 1, size.height >= 1 else { return }
         if baseline == nil {
             baseline = size
+            firstSeen = time
+            return
+        }
+        if time - firstSeen < warmup {
+            baseline = size
+            pending = nil
             return
         }
         if let pending, Self.isClose(pending, size, tolerance: 0.5) { return }

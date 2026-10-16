@@ -198,10 +198,11 @@ public struct MenuTreeCache: Sendable, Equatable {
         return true
     }
 
-    /// Stores a tree. Returns true when it differs from the one before (the menus must be rebuilt).
+    /// Stores a tree the iPad asked for (a tree nobody asked for is ignored). Returns true when it differs from the one before, so
+    /// the menus must be rebuilt.
     @discardableResult
     public mutating func receive(bundleID: String, items: [LinkMenuItem], at now: TimeInterval) -> Bool {
-        guard trees[bundleID] != nil || trees.count < Self.maxApps else { return false }
+        guard requested[bundleID] != nil, trees[bundleID] != nil || trees.count < Self.maxApps else { return false }
         let changed = trees[bundleID]?.items != items
         if changed || trees[bundleID] == nil {
             trees[bundleID] = Entry(items: items, entries: RemoteMenuMapper.entries(from: items), receivedAt: now)

@@ -370,9 +370,12 @@ import Testing
         let injector = self.injector
         let down = pointer(10, 10, .left)
         let up = pointer(10, 10, [])
-        async let first: Void = injector.handle(down)
-        async let second: Void = injector.handle(up)
-        _ = await (first, second)
+        // The press must be inside the injector (suspended while focusing) before the release arrives; two `async let`s
+        // would not guarantee which one reaches the actor first.
+        let first = Task { await injector.handle(down) }
+        while focuser.raised.isEmpty { await Task.yield() }
+        await injector.handle(up)
+        await first.value
         let kinds = poster.events.map { event -> String in
             switch event {
             case .mouseDown: "down"

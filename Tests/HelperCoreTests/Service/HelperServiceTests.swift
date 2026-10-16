@@ -144,7 +144,7 @@ import Testing
         // A third iPad does not get a session.
         let third = FakeConnection(id: 3)
         h.listener.connect(third)
-        #expect(await waitUntil { third.closeCodes == [.internalError] })
+        #expect(await waitUntil { third.closeCodes == [.tooManySessions] })
         #expect(await h.service.status.sessions.count == 2)
         await h.service.stop()
     }

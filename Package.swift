@@ -65,7 +65,8 @@ let package = Package(
         .executableTarget(
             name: "mock-link-helper",
             dependencies: ["LinkProtocol", "LinkTransport"],
-            path: "Tools/mock-link-helper"
+            path: "Tools/mock-link-helper",
+            exclude: ["README.md", "run_appmode_test.sh", "verify_appmode.py"]
         ),
         .executableTarget(
             name: "rfbprobe",

@@ -200,7 +200,7 @@ public actor HelperService {
     private func accept(_ connection: any HelperConnection) async {
         let info = connection.info
         guard started, !stopping, sessions.count < options.maxSessions, sessions[info.sessionID] == nil else {
-            await connection.close(code: stopping ? .helperShuttingDown : .internalError, reason: "too many sessions")
+            await connection.close(code: stopping ? .helperShuttingDown : .tooManySessions, reason: "too many sessions")
             return
         }
         let session = HelperSession(connection: connection, host: self, resources: makeResources())

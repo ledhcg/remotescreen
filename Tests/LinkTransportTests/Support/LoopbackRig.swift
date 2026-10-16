@@ -66,7 +66,6 @@ final class LoopbackRig: @unchecked Sendable {
     static func make() throws -> LoopbackRig {
         guard let shared = SharedTestIdentities.instance else {
             try Test.cancel("cannot create a temporary keychain / TLS identity on this machine")
-            fatalError("unreachable")
         }
         return LoopbackRig(
             shared: shared, helperIdentity: shared.helperIdentity, ipadIdentity: shared.ipadIdentity,

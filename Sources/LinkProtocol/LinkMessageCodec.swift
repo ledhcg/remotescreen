@@ -44,7 +44,7 @@ extension LinkMessage {
             case .macLocked(let locked): w.u8(0); w.bool(locked)
             case .permissionMissing(let kind): w.u8(1); w.enumeration(kind)
             case .stageUnavailable: w.u8(2)
-            case .secureInput(let pid): w.u8(3); Self.writeOptional(pid, &w) { $1.i32($0) }
+            case .secureInput(let active, let pid): w.u8(3); w.bool(active); Self.writeOptional(pid, &w) { $1.i32($0) }
             case .permission(let kind, let state): w.u8(4); w.enumeration(kind); w.enumeration(state)
             case .stage(let state): w.u8(5); w.enumeration(state)
             }
@@ -94,6 +94,8 @@ extension LinkMessage {
             try w.pixelDimension(m.pixelWidth, "target width"); try w.pixelDimension(m.pixelHeight, "target height")
             guard m.maxFramesPerSecond >= 1, m.maxFramesPerSecond <= Limits.maxFramesPerSecond else { throw LinkError.invalidValue("fps out of range") }
             w.u16(m.maxFramesPerSecond); w.enumeration(m.quality)
+        case .windowSubscribeFailed(let window, let reason):
+            w.u32(window.rawValue); w.enumeration(reason)
         case .windowSetFrame(let m):
             w.u32(m.window.rawValue); try w.size(m.size, "frame size"); w.enumeration(m.placement)
         case .windowCommand(let window, let command):
@@ -251,7 +253,7 @@ extension LinkMessage {
             case 0: return .status(.macLocked(try r.bool("macLocked")))
             case 1: return .status(.permissionMissing(try r.enumeration(LinkPermissionKind.self, "permission kind")))
             case 2: return .status(.stageUnavailable)
-            case 3: return .status(.secureInput(pid: try readOptional(&r) { try $0.i32("pid") }))
+            case 3: return .status(.secureInput(active: try r.bool("active"), pid: try readOptional(&r) { try $0.i32("pid") }))
             case 4: return .status(.permission(try r.enumeration(LinkPermissionKind.self, "permission kind"), try r.enumeration(LinkPermissionState.self, "permission state")))
             case 5: return .status(.stage(try r.enumeration(LinkStageState.self, "stage state")))
             default: throw LinkError.malformed("unknown status tag")
@@ -311,6 +313,8 @@ extension LinkMessage {
         case .windowCapabilities:
             return .windowCapabilities(window: WindowID(try r.u32("window")), capabilities: LinkWindowCapabilities(rawValue: try r.u16("capabilities")))
         case .streamKeyframe: return .streamKeyframe(WindowID(try r.u32("window")))
+        case .windowSubscribeFailed:
+            return .windowSubscribeFailed(window: WindowID(try r.u32("window")), reason: try r.enumeration(LinkSubscribeFailure.self, "subscribe failure"))
         case .videoConfig:
             let window = WindowID(try r.u32("window")), codec = try r.enumeration(LinkVideoCodec.self, "codec")
             let n = try r.count(max: Limits.maxParameterSets, minElementBytes: 4, "parameter sets")

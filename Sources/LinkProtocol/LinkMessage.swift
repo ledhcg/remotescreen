@@ -18,7 +18,7 @@ public enum LinkMessage: Sendable, Equatable {
     /// C↔H. The peer answers with `pong` carrying the same value.
     case ping(timestampMicros: UInt64)
     case pong(timestampMicros: UInt64)
-    /// C→H.
+    /// C→H. Counters are deltas since the previous report, not totals.
     case stats(LinkStats)
     /// H→C.
     case status(LinkStatus)
@@ -76,13 +76,15 @@ public enum LinkMessage: Sendable, Equatable {
     case windowCapabilities(window: WindowID, capabilities: LinkWindowCapabilities)
     /// C→H: ask for a key frame of this window's stream.
     case streamKeyframe(WindowID)
+    /// H→C: the matching `window.subscribe` was not honoured, so no video will arrive for this window.
+    case windowSubscribeFailed(window: WindowID, reason: LinkSubscribeFailure)
 
     // MARK: Media (per-window streams; every message names its window so a multiplexed fallback needs no extra state)
 
     /// H→C.
     case videoConfig(LinkVideoConfig)
     case videoFrame(LinkVideoFrame)
-    /// C→H: long-term reference frames the decoder holds.
+    /// C→H: long-term reference frames the decoder holds. Each token is the `sequence` of a `video.frame` that carried the `ltr` flag.
     case videoAck(window: WindowID, ltrTokens: [UInt32])
     /// C→H: frames `firstSequence...lastSequence` (wrapping) are missing.
     case videoLost(window: WindowID, firstSequence: UInt32, lastSequence: UInt32)
@@ -161,6 +163,7 @@ public enum LinkMessage: Sendable, Equatable {
         case .windowCommand: .windowCommand
         case .windowCapabilities: .windowCapabilities
         case .streamKeyframe: .streamKeyframe
+        case .windowSubscribeFailed: .windowSubscribeFailed
         case .videoConfig: .videoConfig
         case .videoFrame: .videoFrame
         case .videoAck: .videoAck

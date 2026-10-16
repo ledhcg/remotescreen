@@ -1,6 +1,6 @@
 # iPhone/iPad app status
 
-Updated: 2026-10-16 (0.3.0 build 6, TestFlight beta with App Mode). The app is named **Screon** and its bundle id is `com.ledinhcuong.screon`.
+Updated: 2026-10-16 (0.3.0 build 7, TestFlight beta with App Mode). The app is named **Screon** and its bundle id is `com.ledinhcuong.screon`.
 
 ## Localization
 

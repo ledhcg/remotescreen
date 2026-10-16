@@ -10,6 +10,12 @@ import UniformTypeIdentifiers
 struct BGRAImageDecoderTests {
     /// A PNG of `width` x `height` pixels, all the same RGBA colour (straight alpha).
     private func png(width: Int, height: Int, red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8 = 255) -> Data {
+        encoded(width: width, height: height, red: red, green: green, blue: blue, alpha: alpha, type: .png)
+    }
+
+    private func encoded(
+        width: Int, height: Int, red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8 = 255, type: UTType, frames: Int = 1
+    ) -> Data {
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
         for index in 0..<(width * height) {
             pixels[index * 4] = red; pixels[index * 4 + 1] = green; pixels[index * 4 + 2] = blue; pixels[index * 4 + 3] = alpha
@@ -21,8 +27,8 @@ struct BGRAImageDecoderTests {
             provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
         )!
         let output = NSMutableData()
-        let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil)!
-        CGImageDestinationAddImage(destination, image, nil)
+        let destination = CGImageDestinationCreateWithData(output, type.identifier as CFString, frames, nil)!
+        for _ in 0..<frames { CGImageDestinationAddImage(destination, image, nil) }
         CGImageDestinationFinalize(destination)
         return output as Data
     }
@@ -78,5 +84,35 @@ struct BGRAImageDecoderTests {
         #expect(surface.size == (2, 2))
         #expect(!surface.update(DecodedBGRAImage(width: 2, height: 2, bgra: [1, 2, 3])))
         #expect(surface.size == (2, 2))
+    }
+
+    @Test func hostileHotspotsDoNotTrap() throws {
+        let data = png(width: 8, height: 8, red: 255, green: 255, blue: 255)
+        for value in [1e300, -1e300, Double.greatestFiniteMagnitude, -Double.greatestFiniteMagnitude, .nan, -.infinity, 9.3e18] {
+            let cursor = try #require(BGRAImageDecoder.decodeCursor(data, hotspotX: value, hotspotY: value))
+            #expect((0...7).contains(cursor.hotspotX) && (0...7).contains(cursor.hotspotY))
+        }
+    }
+
+    @Test func onlyTheDeclaredFormatIsAccepted() throws {
+        let types: [UTType] = [.tiff, .gif, .bmp, .jpeg]
+        for type in types {
+            let data = encoded(width: 4, height: 4, red: 9, green: 9, blue: 9, alpha: type == .jpeg ? 255 : 255, type: type)
+            #expect(BGRAImageDecoder.decode(data, format: .png) == nil, "\(type.identifier) accepted as PNG")
+        }
+        let jpeg = encoded(width: 4, height: 4, red: 9, green: 9, blue: 9, type: .jpeg)
+        #expect(BGRAImageDecoder.decode(jpeg, format: .jpeg) != nil)
+        // Declared JPEG, data is PNG, and the other way round.
+        #expect(BGRAImageDecoder.decode(png(width: 4, height: 4, red: 1, green: 2, blue: 3), format: .jpeg) == nil)
+        #expect(BGRAImageDecoder.decode(jpeg, format: .png) == nil)
+        #expect(BGRAImageDecoder.decodeCursor(jpeg, hotspotX: 0, hotspotY: 0) == nil)
+    }
+
+    @Test func multiFrameImagesAreRejected() {
+        let tiff = encoded(width: 4, height: 4, red: 1, green: 1, blue: 1, type: .tiff, frames: 2)
+        #expect(BGRAImageDecoder.decode(tiff, format: .png) == nil)
+        #expect(BGRAImageDecoder.decode(tiff, format: .jpeg) == nil)
+        let gif = encoded(width: 4, height: 4, red: 1, green: 1, blue: 1, type: .gif, frames: 3)
+        #expect(BGRAImageDecoder.decode(gif, format: .png) == nil)
     }
 }

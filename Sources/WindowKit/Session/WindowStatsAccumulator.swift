@@ -50,7 +50,7 @@ public struct DecoderCounters: Sendable, Equatable {
 
     var p95Micros: UInt32 {
         guard decodeP95Millis.isFinite, decodeP95Millis > 0 else { return 0 }
-        return UInt32(clamping: Int((decodeP95Millis * 1000).rounded()))
+        return UInt32(exactly: min((decodeP95Millis * 1000).rounded(), Double(UInt32.max))) ?? UInt32.max
     }
 }
 

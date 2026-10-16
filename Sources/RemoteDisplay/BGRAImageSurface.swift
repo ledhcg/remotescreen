@@ -18,6 +18,19 @@ public struct DecodedBGRAImage: Sendable, Equatable {
     }
 }
 
+/// The picture formats the link allows. Anything else ImageIO could read (TIFF, GIF, HEIC, PDF...) is refused.
+public enum HelperImageFormat: Sendable, Equatable {
+    case png
+    case jpeg
+
+    var typeIdentifier: String {
+        switch self {
+        case .png: "public.png"
+        case .jpeg: "public.jpeg"
+        }
+    }
+}
+
 /// Decodes images that come from the Mac (child surfaces, cursors). The data is hostile: the pixel size is read from the header and
 /// checked against the limits BEFORE any pixel memory is allocated.
 public enum BGRAImageDecoder {
@@ -27,17 +40,26 @@ public enum BGRAImageDecoder {
     public static let maxPixelCount = 16 * 1024 * 1024
 
     /// Returns `nil` for data that is not a single readable PNG or JPEG image, or that is too big.
-    public static func decode(_ data: Data, maxDimension: Int = BGRAImageDecoder.maxDimension) -> DecodedBGRAImage? {
+    ///
+    /// The data must be exactly the declared `format` (checked from the content, not from a name or hint), hold exactly one image,
+    /// and decode to the size its header states.
+    public static func decode(
+        _ data: Data, format: HelperImageFormat = .png, maxDimension: Int = BGRAImageDecoder.maxDimension
+    ) -> DecodedBGRAImage? {
         guard !data.isEmpty else { return nil }
-        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        let options = [
+            kCGImageSourceShouldCache: false, kCGImageSourceTypeIdentifierHint: format.typeIdentifier as CFString,
+        ] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, options),
-              CGImageSourceGetCount(source) >= 1,
+              CGImageSourceGetType(source) as String? == format.typeIdentifier,
+              CGImageSourceGetCount(source) == 1,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
               width > 0, height > 0, width <= maxDimension, height <= maxDimension,
               width * height <= maxPixelCount,
-              let image = CGImageSourceCreateImageAtIndex(source, 0, options)
+              let image = CGImageSourceCreateImageAtIndex(source, 0, options),
+              image.width == width, image.height == height
         else { return nil }
 
         var pixels = [UInt8](repeating: 0, count: width * height * 4)
@@ -56,10 +78,11 @@ public enum BGRAImageDecoder {
 
     /// A cursor from PNG data. The hotspot is clamped into the image. `nil` when the picture is unreadable or larger than a cursor may be.
     public static func decodeCursor(_ data: Data, hotspotX: Double, hotspotY: Double) -> CursorImage? {
-        guard let image = decode(data, maxDimension: CursorImage.maxDimension) else { return nil }
+        guard let image = decode(data, format: .png, maxDimension: CursorImage.maxDimension) else { return nil }
         func clamp(_ value: Double, _ limit: Int) -> Int {
             guard value.isFinite else { return 0 }
-            return min(max(Int(value.rounded()), 0), max(limit - 1, 0))
+            // Clamp in the Double domain first: converting a huge Double to Int traps.
+            return Int(min(max(value.rounded(), 0), Double(max(limit - 1, 0))))
         }
         return CursorImage(
             width: image.width, height: image.height, hotspotX: clamp(hotspotX, image.width), hotspotY: clamp(hotspotY, image.height),

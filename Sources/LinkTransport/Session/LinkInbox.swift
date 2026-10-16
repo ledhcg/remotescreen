@@ -59,6 +59,17 @@ public final class LinkInbox<Element: Sendable>: AsyncSequence, @unchecked Senda
         for p in ps { p.resume() }
     }
 
+    /// Drops what is buffered, so a consumer that has not read it yet never sees it, then finishes. Used by the helper when a
+    /// session ends (revoke, close): messages a peer queued before that moment must not run afterwards.
+    func discardBufferedAndFinish() {
+        lock.withLock {
+            items.removeAll()
+            head = 0
+            bytes = 0
+        }
+        finish()
+    }
+
     fileprivate func next() async -> Element? {
         await withCheckedContinuation { (cont: CheckedContinuation<Element?, Never>) in
             var result: Element??

@@ -5,6 +5,8 @@ import Foundation
 public enum SceneRole: Codable, Hashable, Sendable {
     /// The classic full-screen view of a Mac (also the picker). The default scene.
     case desktop
+    /// The classic full-screen view of one saved computer, opened from an App Mode window (for example to unlock the Mac).
+    case computerDesktop(computerID: UUID)
     /// The list of a Mac's apps to open.
     case launcher(computerID: UUID)
     /// One window of a Mac app. `windowRef` is the helper's opaque identifier for that window.
@@ -14,7 +16,7 @@ public enum SceneRole: Codable, Hashable, Sendable {
     public var computerID: UUID? {
         switch self {
         case .desktop: nil
-        case .launcher(let id), .remoteWindow(let id, _): id
+        case .computerDesktop(let id), .launcher(let id), .remoteWindow(let id, _): id
         }
     }
 }

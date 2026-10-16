@@ -1,3 +1,4 @@
 /* Vietnamese translation of Info.plist strings. */
 
 "NSLocalNetworkUsageDescription" = "Ứng dụng cần truy cập mạng cục bộ để tìm và kết nối tới máy Mac của bạn.";
+"NSCameraUsageDescription" = "Screon chỉ dùng camera để quét mã ghép nối do Screon Helper hiển thị trên máy Mac của bạn.";

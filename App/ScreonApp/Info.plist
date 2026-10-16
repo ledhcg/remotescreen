@@ -29,6 +29,8 @@
 		<string>_rfb._tcp</string>
 		<string>_screon-link._udp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Screon uses the camera only to scan the pairing code shown by Screon Helper on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Screon needs local network access to find and connect to your Mac.</string>
 	<key>UIApplicationSceneManifest</key>

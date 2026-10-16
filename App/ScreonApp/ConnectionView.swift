@@ -19,6 +19,9 @@ struct ConnectionView: View {
     /// Saved computer just connected with its saved password, so on failure we can offer to re-enter the password.
     @State private var lastSaved: SavedConnection?
     @FocusState private var addressFocused: Bool
+    @Environment(\.openWindow) private var openWindow
+    /// The computer whose App Mode pairing sheet is open.
+    @State private var pairingFor: SavedConnection?
 
     private var sections: ComputerList.Sections {
         ComputerList.sections(saved: model.saved, discovered: browser.hosts)
@@ -53,6 +56,7 @@ struct ConnectionView: View {
                 }
             }
             .navigationTitle("Screon")
+            .modifier(AppModePairingSheet(computer: $pairingFor, model: model))
             .onAppear { browser.start() }
             .onDisappear { browser.stop() }
             .overlay { if controller.state == .connecting && login == nil { connectingCard } }
@@ -149,6 +153,16 @@ struct ConnectionView: View {
         Button("Connect", systemImage: "play") { open(row) }
         if case .saved(let connection) = row.source {
             Button("Re-enter password…", systemImage: "key") { login = LoginRequest(saved: connection) }
+            if #available(iOS 26, *) {
+                if connection.helper != nil {
+                    Button("Open App Mode windows", systemImage: "macwindow") {
+                        openWindow(id: AppModeScene.id, value: SceneRole.launcher(computerID: connection.id))
+                    }
+                }
+                Button(connection.helper == nil ? "Set up App Mode…" : "Pair App Mode again…", systemImage: "qrcode.viewfinder") {
+                    pairingFor = connection
+                }
+            }
             Button("Delete", systemImage: "trash", role: .destructive) { delete(connection) }
         }
     }

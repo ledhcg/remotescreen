@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## 0.3.0 — 2026-10-16 (TestFlight beta, build 6)
+
+- The App Mode fixes on the Mac side (black window corners, a key frame re-sent when its stream config could not go out, a
+  re-subscribed window stream replaced in order) need Screon Helper newer than 0.2.0 build 3; the iPad-side fixes work with
+  build 3 already.
+
+- Network: Screon now follows the device's network. Offline, it says so at once instead of timing out, and a dropped session
+  waits for the network without using up its reconnect attempts. A session is reconnected right away when the device switches
+  between Wi-Fi and mobile data or comes back after an outage of 3 s or more (shorter drops are left to the connection).
+- Tailscale: Screon detects when Tailscale is connected on the device and shows it under Network (new button in the computer
+  list), with a Use Tailscale switch. Tailscale addresses are skipped when they cannot answer, tried first on mobile data, and a
+  Tailscale address typed for Screen Sharing explains what to do when Tailscale is off. An App Mode window that can only reach
+  its Mac through Tailscale reconnects by itself once Tailscale connects.
+- Cursor styles replace only the Mac's arrow: the text I-beam, resize arrows, the pointing hand and the crosshair stay the
+  Mac's own, so you still see what a click will do.
+- App Mode launcher: a failure that needs you (pair again, Tailscale) no longer shows a spinner, and Try again appears only
+  where it can help.
+
+- Fix: the Mac screen was partly hidden by the device. The iOS status bar sat over the Mac menu bar, and the notch or Dynamic
+  Island, the home indicator and the rounded display corners covered the Mac's corners and Dock. The status bar is now hidden
+  during a session, Fit keeps the whole Mac screen clear of them, and in Fill or zoomed in the covered edges can be dragged into
+  view.
+- Fix (App Mode): Mac windows showed dark wedges at their rounded corners; the letterbox is now black like the corners.
+- Fix (App Mode): resizing or re-subscribing a window could drop the whole link ("reconnecting" on every window). A QUIC
+  window stream the Mac finished was taken for a read error, and a replacement stream that arrived first was rejected.
+- Fix (App Mode): a window could stay frozen on its last picture when the key frame after a reconnect or resize was lost; the
+  iPad now keeps asking (rate-limited) and the helper re-sends one when its stream config could not go out.
+- Fix (App Mode): a dead link (Wi-Fi change, Mac asleep) was not noticed for a minute or more; it is now closed and reconnected
+  when pings go unanswered for about 35 s, and probed at once when the app returns to the foreground.
+- Fix: closing a Screen Sharing window left its session running in the background; a write error left the screen frozen while
+  the toolbar still said "Controlling"; key releases sent just before disconnecting could be lost, leaving a modifier stuck on
+  the Mac; returning to the app during a failing reconnect attempt no longer waits out the full backoff.
+- On iPhone, the full-desktop view no longer has a Done button floating over the session toolbar: Disconnect closes it.
+- Session controls stay dark in Light Mode, wrapping banners use rounded rectangles, floating cards share continuous 18-point
+  corners, and the "Gestures on Mac" options are disabled with servers that do not support them.
+
 - Cursor styles: the session menu has a Cursor submenu where you can keep the Mac's own pointer or pick one of six Screon
   arrows (filled or outlined, plain or with click rays, dots, a dashed or a dotted ring). The arrows are drawn as vectors
   at high resolution with a white halo, so they stay sharp and visible on dark and light content; App Mode windows use the

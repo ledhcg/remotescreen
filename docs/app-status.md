@@ -1,6 +1,6 @@
 # iPhone/iPad app status
 
-Updated: 2026-10-16 (0.2.0 build 3, TestFlight beta with App Mode). The app is named **Screon** and its bundle id is `com.ledinhcuong.screon`.
+Updated: 2026-10-16 (0.3.0 build 6, TestFlight beta with App Mode). The app is named **Screon** and its bundle id is `com.ledinhcuong.screon`.
 
 ## Localization
 
@@ -405,6 +405,17 @@ Verified (`swift test`; `Tools/mock-link-helper/run_appmode_test.sh` on the iPad
 
 ## Not yet verified, do not treat as done
 
+- **Network following and Tailscale detection**: the decisions are unit-tested (`NetworkConditionsTests`: Tailscale address and
+  name recognition, prechecks, host order, recovery after link changes and outages; `SessionLogicTests` for the new overlays).
+  The live parts (`NWPathMonitor`, the `utun` address read on the device, switching Wi-Fi/mobile data, Tailscale connecting and
+  disconnecting) have not been tried on a real iPhone or iPad.
+- **Safe-area and display-corner layout of the Mac screen**: the inset maths is unit-tested (`ViewportInsetTests`, `RoundedCornerInsetTests`)
+  but has not been looked at on a real iPhone or iPad. The display corner radius is an estimate (18 pt iPad, 47 pt iPhone): iOS has no public value.
+- **App Mode window corners**: the black letterbox assumes ScreenCaptureKit fills a window's transparent corners with its background colour
+  (now set to black explicitly). Not yet seen on a real Mac/iPad pair.
+- **App Mode dead-link detection and window-stream replacement**: the QUIC end-of-stream (ENODATA) fix and stream replacement are covered by
+  `LoopbackTests.replacingAWindowStreamKeepsTheLinkUp` on 127.0.0.1 (QUIC and TCP, 10/10 runs); the ping timeout has no automated test and has
+  not been tried with a real Wi-Fi drop.
 - **No real mouse/keys have been sent to a real Mac from this machine** (it is a working machine). Every input check on a real device used the fake server. It is also **unknown** whether the Apple server understands `Meta_L` (0xFFE7) as the Command key (see `KeysymMapper.commandLeft`). The app sends exactly `Meta_L`, measured with the fake server. A trial with a person sitting next to it is needed.
 - **Two-finger scroll and pinch to zoom** on a real device: Device Hub does not turn mouse scroll or pinch into touch gestures, so there are only `TouchMapper` unit tests.
 - **Typing Vietnamese / Unicode** (keysym `0x01000000 + code`): the computer-use typing tool cannot emit these characters (it sends keycode 0 = `a`). A person typing on the iPad is needed, and it must be learned whether the Apple server accepts this keysym form.

@@ -86,6 +86,11 @@ public enum TouchEvent: Sendable, Equatable {
     case twoFingerPan(location: CGPoint, translation: CGPoint, GesturePhase)
     /// A classified Apple Pencil stroke (`PencilGesture`). Always absolute, regardless of touch mode.
     case pencil(PencilAction)
+    /// The same stroke with what the pencil reported (App Mode): `tablet` intents carrying pressure and tilt instead of plain pointer events.
+    /// Screen Sharing never produces this case, so its output is unchanged.
+    case pencilStroke(PencilAction, PencilSample)
+    /// The Apple Pencil hovering over the screen (not touching): a `tablet` intent with no pressure, so the Mac sees the stylus in proximity.
+    case pencilHover(CGPoint, PencilSample)
     /// Pointer movement without a button press: iPad mouse or trackpad, hovering pencil. Always absolute.
     case hover(CGPoint)
     /// iPad mouse button (or trackpad click): press (`began`), drag (`changed`), release (`ended`) at an absolute position.
@@ -177,7 +182,13 @@ public struct TouchMapper: Sendable {
             }
 
         case .pencil(let action):
-            output.intents += pencil(action, in: space)
+            output.intents += pencil(action, sample: nil, in: space)
+
+        case .pencilStroke(let action, let sample):
+            output.intents += pencil(action, sample: sample, in: space)
+
+        case .pencilHover(let location, let sample):
+            if let target = absoluteTarget(location, in: space) { output.intents.append(tabletIntent(target, sample, down: false)) }
 
         case .hover(let location):
             if let target = absoluteTarget(location, in: space) { output.intents.append(pointerIntent(target)) }
@@ -286,25 +297,44 @@ public struct TouchMapper: Sendable {
         return messages
     }
 
-    private mutating func pencil(_ action: PencilAction, in space: some RemoteCoordinateSpace) -> [InputIntent] {
+    /// The least pressure a stroke in contact reports, so a light touch is still a press (the link reads pressure 0 as "not touching").
+    static let minimumContactPressure = 0.02
+
+    private func tabletIntent(_ target: (x: Int, y: Int), _ sample: PencilSample, down: Bool) -> InputIntent {
+        .tablet(
+            at: RemotePoint(x: Double(target.x), y: Double(target.y)),
+            pressure: down ? max(sample.pressure, Self.minimumContactPressure) : 0, tiltX: sample.tiltX, tiltY: sample.tiltY
+        )
+    }
+
+    private mutating func pencil(_ action: PencilAction, sample: PencilSample?, in space: some RemoteCoordinateSpace) -> [InputIntent] {
         switch action {
         case .press(let point):
             guard let target = absoluteTarget(point, in: space) else { return [] }
+            if let sample {
+                buttons.insert(Self.leftButton)
+                return [tabletIntent(target, sample, down: true)]
+            }
             let move = pointerIntent(target)
             buttons.insert(Self.leftButton)
             return [move, pointerIntent(target)]
         case .move(let point):
             guard let target = absoluteTarget(point, in: space) else { return [] }
+            if let sample { return [tabletIntent(target, sample, down: true)] }
             return [pointerIntent(target)]
         case .release(let point):
             buttons.remove(Self.leftButton)
             let target = absoluteTarget(point, in: space) ?? pointer
+            if let sample { return [tabletIntent(target, sample, down: false)] }
             return [pointerIntent(target)]
         case .click(let point), .rightClick(let point):
             // Pencil touching the black border outside the Mac screen: no click (like a finger).
             guard let pixel = space.remotePixel(forView: point, clamped: false) else { return [] }
             pointer = pixel
             if case .rightClick = action { return click(Self.rightButton, at: pixel) }
+            if let sample {
+                return [tabletIntent(pixel, sample, down: false), tabletIntent(pixel, sample, down: true), tabletIntent(pixel, sample, down: false)]
+            }
             return click(Self.leftButton, at: pixel)
         }
     }

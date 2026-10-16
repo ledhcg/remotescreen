@@ -116,6 +116,7 @@ import Testing
         try await h.start()
         let c = await h.connect(1)
         await h.subscribe(c, WindowID(9999))
+        #expect(await waitUntil { c.sent.contains(.windowSubscribeFailed(window: 9999, reason: .unknownWindow)) })
         try await Task.sleep(for: .milliseconds(50))
         #expect(h.capture.liveStreams == 0 && h.capture.startCount == 0)
         await h.service.stop()
@@ -130,6 +131,7 @@ import Testing
         #expect(await waitUntil { h.capture.liveStreams == 2 })
         try await Task.sleep(for: .milliseconds(50))
         #expect(h.capture.liveStreams == 2)
+        #expect(await waitUntil { a.sent.contains(.windowSubscribeFailed(window: ids[2], reason: .limit)) })
 
         // The iPad's own announced limit lowers it further.
         let b = await h.connect(2, sceneLimits: LinkSceneLimits(maxWindows: 1, maxStreams: 1, maxPixelWidth: 0, maxPixelHeight: 0, maxFramesPerSecond: 0))
@@ -452,6 +454,32 @@ import Testing
         h.secureInput.enabled = true
         #expect(await waitUntil { c.statuses.contains { if case .secureInput = $0 { true } else { false } } })
         #expect(await h.service.status.issues.contains(.secureInput))
+        #expect(c.statuses.contains { if case .secureInput(active: true, _) = $0 { true } else { false } })
+        h.secureInput.enabled = false
+        #expect(await waitUntil { c.statuses.contains(.secureInput(active: false, pid: nil)) })
+        #expect(await h.service.status.issues.contains(.secureInput) == false)
+        await h.service.stop()
+    }
+
+    @Test func endingOneSessionDoesNotReleaseInputHeldByAnother() async throws {
+        let h = try ServiceHarness(stage: false)
+        try await h.start()
+        let a = await h.connect(1), b = await h.connect(2)
+        let one = h.windowID("One", in: a), two = h.windowID("Two", in: a)
+        await h.subscribe(a, one)
+        await h.subscribe(b, two)
+        #expect(await waitUntil { h.capture.liveStreams == 2 })
+        await b.input(.inputKey(LinkKeyEvent(keycode: 9, down: true, modifiers: [])))
+        await a.input(.inputKey(LinkKeyEvent(keycode: 8, down: true, modifiers: [])))
+        #expect(await waitUntil { h.poster.events.count >= 2 })
+        h.poster.clear()
+        a.end()
+        #expect(await waitUntil { await h.service.status.sessions.count == 1 })
+        // A's key was released; B's key is still down.
+        #expect(await waitUntil { h.poster.events.contains(.key(keycode: 8, down: false, modifiers: [])) })
+        #expect(!h.poster.events.contains(.key(keycode: 9, down: false, modifiers: [])))
+        b.end()
+        #expect(await waitUntil { h.poster.events.contains(.key(keycode: 9, down: false, modifiers: [])) })
         await h.service.stop()
     }
 
@@ -581,7 +609,7 @@ import Testing
 
         let c = await on.connect(2)
         await on.subscribe(c, on.windowID("Other", in: c))
-        #expect(await waitUntil { c.count { if case .audioConfig(let cfg) = $0 { cfg.pid == 11 } else { false } } == 1 })
+        #expect(await waitUntil { c.count { if case .audioConfig(let cfg) = $0 { cfg.pid == 11 && cfg.codec == .pcm16 } else { false } } == 1 })
         on.audioCapture.continuation.get()?.yield(PCMChunk(ptsMicros: 0, samples: Data(count: 480 * 2 * 2 * 3)))
         #expect(await waitUntil { c.count { if case .audioPacket = $0 { true } else { false } } >= 2 })
         await c.control(.windowUnsubscribe(on.windowID("Other", in: c)))

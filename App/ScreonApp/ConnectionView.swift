@@ -22,6 +22,8 @@ struct ConnectionView: View {
     @Environment(\.openWindow) private var openWindow
     /// The computer whose App Mode pairing sheet is open.
     @State private var pairingFor: SavedConnection?
+    /// The computer whose App Mode streaming settings are open.
+    @State private var streamingFor: SavedConnection?
 
     private var sections: ComputerList.Sections {
         ComputerList.sections(saved: model.saved, discovered: browser.hosts)
@@ -57,6 +59,7 @@ struct ConnectionView: View {
             }
             .navigationTitle("Screon")
             .modifier(AppModePairingSheet(computer: $pairingFor, model: model))
+            .sheet(item: $streamingFor) { computer in AppModeSettingsView(computer: computer, model: model) }
             .onAppear { browser.start() }
             .onDisappear { browser.stop() }
             .overlay { if controller.state == .connecting && login == nil { connectingCard } }
@@ -161,6 +164,9 @@ struct ConnectionView: View {
                 }
                 Button(connection.helper == nil ? "Set up App Mode…" : "Pair App Mode again…", systemImage: "qrcode.viewfinder") {
                     pairingFor = connection
+                }
+                if connection.helper != nil {
+                    Button("Streaming settings…", systemImage: "slider.horizontal.3") { streamingFor = connection }
                 }
             }
             Button("Delete", systemImage: "trash", role: .destructive) { delete(connection) }

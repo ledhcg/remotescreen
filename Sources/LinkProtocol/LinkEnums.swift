@@ -14,7 +14,7 @@ public enum LinkMessageType: UInt16, Sendable, CaseIterable {
     case appsList = 0x0020, appsItems, appsIcon, appsIconData, appsLaunch, appsActivate, appsQuit, appsChanged
     // Windows
     case windowCreated = 0x0030, windowUpdated, windowDestroyed, windowOrder, windowSubscribe, windowUnsubscribe,
-         windowSetFrame, windowCommand, windowCapabilities, streamKeyframe
+         windowSetFrame, windowCommand, windowCapabilities, streamKeyframe, windowSubscribeFailed
     // Media
     case videoConfig = 0x0040, videoFrame, videoAck, videoLost, surfaceSnapshot, cursorShape, cursorRef, audioConfig, audioPacket
     // Input
@@ -40,7 +40,28 @@ public enum LinkPlacementHint: UInt8, Sendable { case keep = 0, center, cascade 
 public enum LinkWindowCommand: UInt8, Sendable { case raise = 0, close, minimise, zoom, exitFullScreen }
 public enum LinkVideoCodec: UInt8, Sendable { case h264 = 0, hevc }
 public enum LinkImageFormat: UInt8, Sendable { case png = 0, jpeg }
-public enum LinkAudioCodec: UInt8, Sendable { case opus = 0 }
+/// Audio payload format of `audio.config`/`audio.packet`.
+public enum LinkAudioCodec: UInt8, Sendable {
+    /// Reserved. Nothing in this repository produces Opus (no third-party codec is allowed), and the iPad ignores a stream that
+    /// announces it. Kept so raw value 0 is not reused with a different meaning.
+    case opus = 0
+    /// 16-bit signed integer samples, interleaved, little-endian, at the announced sample rate (48 kHz in practice). A packet
+    /// holds a whole number of frames (`channels * 2` bytes each). This is what the helper sends today.
+    case pcm16 = 1
+    /// AAC-ELD, one access unit per packet. Optional: the iPad decodes it with `AVAudioConverter` when it can.
+    case aacEld = 2
+}
+/// Why `window.subscribe` was not honoured (`window.subscribeFailed`).
+public enum LinkSubscribeFailure: UInt8, Sendable {
+    /// The window does not exist (any more) or is not authorized for this session.
+    case unknownWindow = 0
+    /// The session already streams as many windows as the helper allows.
+    case limit
+    /// Screen Recording permission is missing on the Mac.
+    case permission
+    /// Capture or encoding could not start right now; trying again later may work.
+    case transient
+}
 public enum LinkScrollPhase: UInt8, Sendable { case none = 0, began, changed, ended, cancelled }
 public enum LinkGestureKind: UInt8, Sendable { case magnify = 0, rotate, smartMagnify, swipe }
 public enum LinkGesturePhase: UInt8, Sendable { case began = 0, changed, ended, cancelled }

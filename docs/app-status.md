@@ -338,7 +338,43 @@ Not verified (needs a signed build, real permissions or a person at the Mac):
 - Keychain identity creation (`KeychainIdentityStore` with the file-based keychain; needs a signed app), the Local Network prompt,
   `SMAppService` registration, Accessibility / Screen Recording grants and whether they need a relaunch.
 - The update check against GitHub: the public key in `Helper/project.yml` is a placeholder, so the check reports "not set up".
-- The audio switch is stored and passed to the service, but audio stays off until HelperCore gets an Opus encoder.
+- The audio switch is stored and passed to the service; with it on and the capability negotiated, audio is sent as `pcm16`
+  (see the media section below). Not heard on a device yet.
+
+## App Mode media and data (M7 D1 to D5, protocol reconciliation)
+
+Verified (`swift test`, macOS, fakes; iOS build for the simulator):
+
+- Protocol: `pcm16`/`aacEld`, `secureInput(active:)`, `window.subscribeFailed` in the codec, round-trip, truncation, malicious-enum
+  and fuzz tests (every message type has a sample).
+- Helper: held input is per session (`InputInjectorTests`, `HelperServiceTests`: ending one session releases only its own keys and
+  buttons; a key two sessions hold stays down until the last lets go); keysym keys (`KeysymMappingTests`, US layout, Unicode
+  fallback, hostile keysyms dropped); `subscribeFailed` for unknown window and limit; `secureInput(active: false)` when it ends;
+  audio config is `pcm16`.
+- iPad pure logic (`WindowKitTests`): jitter estimate and 20 to 40 ms target, drift policy rate limit, ring buffer wrap and overflow,
+  playout (silence until the target is buffered, fade out on underrun and refill before restart, burst trim, mute, drift drop and
+  repeat), mute-by-scene rule; clipboard sync rules (offers carry types only, concealed content never sent, Mac offers requested
+  only after a copy shortcut or on focus, one answer per request, format and size checks, sensitive text local and expiring);
+  file sender (contiguous chunks, SHA-256, barrier every 2 MiB, busy retry, cancel, file that changes size, name sanitising);
+  Main 10 detection from the HEVC SPS.
+- `InputKitTests`: pencil strokes with a sample become `tablet` intents (pressure floor so a light touch still presses, tilt from
+  altitude and azimuth, non-finite inputs safe); the RFB golden corpus is unchanged.
+- `ConnectionKitTests`: per-computer settings decode from files without them and from unknown values.
+
+Not verified (needs a Mac helper and an iPad, nothing here has played a sound, dropped a file or drawn a stroke on a device):
+
+- Real playback through `AVAudioEngine` (`AppAudioPlayer`): glitch rate on Wi-Fi, route changes and interruptions, whether the
+  float conversion and the unfair lock in the render callback are good enough under load, the mixer with several apps. AAC-ELD is
+  not implemented (the iPad ignores such a stream). The glitch counters exist (`AppModeConnection.audioStats`) but no screen shows them.
+- Clipboard: the iOS "allow paste" prompt on the first read, the 150 ms hold before a pasted key (`AppWindowView`), Universal
+  Clipboard interaction, concealed-type detection on real password managers.
+- File drop: `UIDropInteraction` with Files, Photos and other apps; large files; the Mac side opening a file with the target app.
+  The iPad is not told whether the Mac accepted the file (no acknowledgement message).
+- Apple Pencil: force, altitude and azimuth values from `UITouch`, hover (`zOffset`, `altitudeAngle`) on an iPad with Pencil hover,
+  tablet events in drawing apps (spike S9 on the Mac).
+- Quality settings: only checked that they reach `window.subscribe`; the effect on bitrate needs the real helper. 10-bit video:
+  the iPad now decodes Main 10 and advertises the capability when allowed, but the helper encoder does not produce it yet.
+- The Streaming settings sheet and the file transfer list have no UI tests.
 
 ## Not yet verified, do not treat as done
 

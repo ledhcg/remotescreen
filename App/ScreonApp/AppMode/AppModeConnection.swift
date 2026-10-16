@@ -82,8 +82,6 @@ final class AppModeConnection: AppModeSession {
     static let statsInterval: Duration = .milliseconds(250)
     /// Well under QUIC's idle timeout (60 s).
     static let pingInterval: Duration = .seconds(15)
-    /// The protocol cannot say that secure input ended; the helper repeats the status while typing is blocked.
-    static let secureInputLifetime: Duration = .seconds(8)
     static let minResyncGap: TimeInterval = 2
 
     let computerID: UUID
@@ -116,7 +114,11 @@ final class AppModeConnection: AppModeSession {
     @ObservationIgnored private var keyframes: KeyframeRequester!
     @ObservationIgnored private var rttMicros: UInt32 = 0
     @ObservationIgnored private var lastResync: TimeInterval = 0
-    @ObservationIgnored private var secureInputTask: Task<Void, Never>?
+    /// Clipboard and file transfers, shared by this connection's windows (reached through `WindowStream.services`).
+    @ObservationIgnored let services = AppWindowServices()
+    @ObservationIgnored private var audio: AppAudioPlayer?
+    @ObservationIgnored private var barriers: [UInt64: CheckedContinuation<Bool, Never>] = [:]
+    @ObservationIgnored private var nextBarrier: UInt64 = 1 << 62
     @ObservationIgnored private var scenesWaitingForWindow: [SceneID: WindowID] = [:]
     @ObservationIgnored private var scenesReopening: Set<SceneID> = []
 
@@ -128,6 +130,10 @@ final class AppModeConnection: AppModeSession {
         self.policy = policy
         self.resolveComputer = resolveComputer
         keyframes = KeyframeRequester { [weak self] window in self?.sendNow(.streamKeyframe(window)) }
+        services.bundleID = { [weak self] window in self?.workspace.window(window)?.bundleID }
+        services.files.isConnected = { [weak self] in self?.isConnected ?? false }
+        services.files.transport = { [weak self] message in await self?.sendReliably(message) ?? .failed }
+        services.files.barrier = { [weak self] in await self?.barrier() ?? false }
         if autoStart { start() }
     }
 
@@ -148,11 +154,14 @@ final class AppModeConnection: AppModeSession {
         runTask?.cancel()
         runTask = nil
         backoffTask?.cancel()
-        secureInputTask?.cancel()
         let closing = link
         link = nil
         sender?.finish()
         sender = nil
+        services.sessionEnded()
+        audio?.shutdown()
+        audio = nil
+        failBarriers()
         for stream in streams.values { stream.shutdown() }
         streams.removeAll()
         keyframes.reset()
@@ -222,7 +231,7 @@ final class AppModeConnection: AppModeSession {
               let host = helperEndpoint.lastKnownHost, let port = helperEndpoint.lastKnownPort else {
             throw LinkSessionError.notAuthorized
         }
-        let configuration = try LinkPairing.reconnectConfiguration(computerID: computerID, resume: credentials)
+        let configuration = try LinkPairing.reconnectConfiguration(computerID: computerID, resume: credentials, settings: settings)
         return try await LinkConnection.connect(to: LinkEndpoint(host: host, port: port), configuration: configuration)
     }
 
@@ -233,6 +242,8 @@ final class AppModeConnection: AppModeSession {
         credentials = LinkResumeCredentials(token: connection.session.resumeToken, lastStateVersion: 0)
         macName = connection.session.macName
         helper.reset()
+        services.sessionStarted(capabilities: connection.session.capabilities) { [weak self] message in self?.send(message) }
+        if connection.session.capabilities.contains(.audio), settings.playAudio, audio == nil { audio = AppAudioPlayer() }
         hasConnectedOnce = true
         phase = .connected
         for command in subscriptions.connectionEstablished() { perform(command) }
@@ -266,6 +277,10 @@ final class AppModeConnection: AppModeSession {
         sender?.finish()
         sender = nil
         link = nil
+        services.sessionEnded()
+        audio?.shutdown()
+        audio = nil
+        failBarriers()
         subscriptions.connectionLost()
         keyframes.reset()
     }
@@ -300,6 +315,7 @@ final class AppModeConnection: AppModeSession {
     private func handle(_ message: LinkMessage) {
         switch message {
         case .pong(let sent):
+            if let waiting = barriers.removeValue(forKey: sent) { waiting.resume(returning: true); return }
             let now = Self.nowMicros
             if now >= sent {
                 rttMicros = UInt32(clamping: now - sent)
@@ -307,9 +323,14 @@ final class AppModeConnection: AppModeSession {
             }
         case .status(let status):
             helper.apply(status)
-            if case .secureInput = status { expireSecureInput() }
+        case .windowSubscribeFailed(let window, let reason):
+            // Only for a window a scene asked for: a helper cannot fill the table with windows nobody shows.
+            if subscriptions.wanted.contains(window) { helper.noteSubscribeFailure(window: window, reason: reason) }
+        case .clipboardOffer, .clipboardRequest, .clipboardData:
+            services.receive(clipboard: message)
         case .snapshot, .windowCreated, .windowUpdated, .windowDestroyed, .windowOrder, .windowCapabilities, .appsChanged:
             applyWorkspace(message)
+            refreshAudioMute()
         default:
             break
         }
@@ -333,17 +354,11 @@ final class AppModeConnection: AppModeSession {
             stream(for: id).attach(inbox)
         case .videoBackpressure(let window, _, let needsKeyframe):
             if needsKeyframe { keyframes.request(window) }
+        case .streamOpened(.audio, let inbox):
+            audio?.attach(inbox)
+            refreshAudioMute()
         case .streamOpened, .streamFinished, .closed:
             break
-        }
-    }
-
-    private func expireSecureInput() {
-        secureInputTask?.cancel()
-        secureInputTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.secureInputLifetime)
-            guard !Task.isCancelled else { return }
-            self?.helper.clearSecureInput()
         }
     }
 
@@ -361,6 +376,7 @@ final class AppModeConnection: AppModeSession {
         statsBook.withLock { $0.forget(window: id) }
         streams.removeValue(forKey: id)?.shutdown()
         framesShown.remove(id)
+        helper.clearSubscribeFailure(window: id)
         // Menus and popovers of other windows live in their parent's stream.
         for stream in streams.values { stream.removeSurface(SurfaceID(rawValue: id.rawValue)) }
     }
@@ -417,8 +433,14 @@ final class AppModeConnection: AppModeSession {
             window: window, statsBook: statsBook,
             send: { [weak self] message in self?.sendNow(message) },
             requestKeyframe: { id in requester.request(id) },
-            onFirstFrame: { [weak self] id in Task { @MainActor in self?.framesShown.insert(id) } }
+            onFirstFrame: { [weak self] id in
+                Task { @MainActor in
+                    self?.framesShown.insert(id)
+                    self?.helper.clearSubscribeFailure(window: id)
+                }
+            }
         )
+        created.services = services
         streams[window] = created
         return created
     }
@@ -426,15 +448,19 @@ final class AppModeConnection: AppModeSession {
     /// Asks the Mac to stream `window` at about `pixelSize` device pixels. Safe to call again when the size changes.
     func subscribe(window: WindowID, pixelSize: CGSize, maxFramesPerSecond: Int) {
         _ = stream(for: window)
+        let settings = self.settings
         let subscription = LinkSubscribe(
             window: window, pixelWidth: Self.dimension(pixelSize.width), pixelHeight: Self.dimension(pixelSize.height),
-            maxFramesPerSecond: UInt16(clamping: min(max(maxFramesPerSecond, 1), 120)), quality: .balanced
+            maxFramesPerSecond: UInt16(clamping: settings.effectiveFramesPerSecond(displayMaximum: maxFramesPerSecond)),
+            quality: Self.tier(for: settings.qualityCap)
         )
         for command in subscriptions.subscribe(subscription) { perform(command) }
+        refreshAudioMute()
     }
 
     func unsubscribe(_ window: WindowID) {
         for command in subscriptions.unsubscribe(window) { perform(command) }
+        defer { refreshAudioMute() }
         keyframes.forget(window)
         statsBook.withLock { $0.forget(window: window) }
         streams.removeValue(forKey: window)?.shutdown()
@@ -445,12 +471,14 @@ final class AppModeConnection: AppModeSession {
     func pause(window: WindowID) {
         for command in subscriptions.pause(window) { perform(command) }
         streams[window]?.suspend()
+        refreshAudioMute()
     }
 
     /// The scene is active again: subscribe, then ask for a key frame (the decoder requests it through the rate limiter).
     func resume(window: WindowID) {
         for command in subscriptions.resume(window) { perform(command) }
         streams[window]?.resume()
+        refreshAudioMute()
     }
 
     private func perform(_ command: SubscriptionCommand) {
@@ -464,6 +492,73 @@ final class AppModeConnection: AppModeSession {
     private static func dimension(_ value: CGFloat) -> UInt32 {
         guard value.isFinite, value >= 1 else { return 1 }
         return UInt32(min(Double(value.rounded()), 4096))
+    }
+
+    // MARK: Settings, audio and flow control
+
+    /// The person's streaming choices for this computer, read when they are used (a change applies to the next subscription).
+    private var settings: AppModeSettings { resolveComputer()?.appModeSettings ?? .standard }
+
+    private static func tier(for cap: AppModeSettings.QualityCap) -> LinkQualityTier {
+        switch cap {
+        case .low: .low
+        case .balanced: .balanced
+        case .high: .high
+        }
+    }
+
+    /// An app's sound plays only while one of its windows is on screen in a foreground scene.
+    private func refreshAudioMute() {
+        guard let audio else { return }
+        let pids = audio.pids
+        let muted = AudioMutePolicy.mutedPIDs(pids: pids, workspace: workspace, subscriptions: subscriptions)
+        for pid in pids { audio.setMuted(muted.contains(pid), pid: pid) }
+    }
+
+    /// What the playback glitch counters say, for diagnostics.
+    var audioStats: AudioPlayoutStats { audio?.stats ?? AudioPlayoutStats() }
+
+    /// Sends on the control stream and says whether the queue took it, for file transfers (they must not drop a chunk).
+    nonisolated func sendReliably(_ message: LinkMessage) async -> FileSendResult {
+        guard let link = await MainActor.run(body: { self.link }) else { return .failed }
+        do {
+            try await link.send(message)
+            return .sent
+        } catch LinkQueueError.queueFull {
+            return .busy
+        } catch {
+            return .failed
+        }
+    }
+
+    /// Returns when the Mac has read everything sent on the control stream before this call (a ping answered in order), `false` after
+    /// 10 seconds or when the connection ends.
+    nonisolated func barrier() async -> Bool {
+        let (id, link) = await MainActor.run { () -> (UInt64, LinkConnection?) in
+            self.nextBarrier &+= 1
+            return (self.nextBarrier, self.link)
+        }
+        guard let link else { return false }
+        let answered: Bool = await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                self.barriers[id] = continuation
+                do {
+                    try await link.send(.ping(timestampMicros: id))
+                } catch {
+                    if let waiting = self.barriers.removeValue(forKey: id) { waiting.resume(returning: false) }
+                    return
+                }
+                try? await Task.sleep(for: .seconds(10))
+                if let waiting = self.barriers.removeValue(forKey: id) { waiting.resume(returning: false) }
+            }
+        }
+        return answered
+    }
+
+    private func failBarriers() {
+        let waiting = barriers
+        barriers = [:]
+        for continuation in waiting.values { continuation.resume(returning: false) }
     }
 
     // MARK: Input and commands

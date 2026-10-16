@@ -83,24 +83,36 @@ enum LinkPairing {
     /// What this iPad can do, so the helper picks codecs and surfaces it can show.
     static var capabilities: LinkCapabilities { [.hevc, .h264, .ltr, .surfaces, .cursorShapes, .tablet] }
 
+    /// `capabilities` plus what depends on the person's choices for this computer and on what this build can do: sound, files, rich
+    /// clipboard types, and 10-bit video only when allowed.
+    static func capabilities(for settings: AppModeSettings) -> LinkCapabilities {
+        var result = capabilities.union([.clipboardRich, .files])
+        if settings.playAudio { result.insert(.audio) }
+        if settings.allowMain10 { result.insert(.main10) }
+        return result
+    }
+
     static var sceneLimits: LinkSceneLimits {
         LinkSceneLimits(maxWindows: 16, maxStreams: 32, maxPixelWidth: 4096, maxPixelHeight: 4096, maxFramesPerSecond: 120)
     }
 
     private static func configuration(
-        mode: LinkClientMode, computerID: UUID, pin: Data?, sas: (@Sendable (String) async -> Bool)? = nil
+        mode: LinkClientMode, computerID: UUID, pin: Data?, sas: (@Sendable (String) async -> Bool)? = nil,
+        settings: AppModeSettings = .standard
     ) throws -> LinkClientConfiguration {
         LinkClientConfiguration(
-            identity: try identity(), deviceName: UIDevice.current.name, capabilities: capabilities, sceneLimits: sceneLimits,
+            identity: try identity(), deviceName: UIDevice.current.name, capabilities: capabilities(for: settings), sceneLimits: sceneLimits,
             mode: mode, pinnedMacSPKIHash: pin, sasConfirmation: sas, pairedMacStore: pairedMacs, computerID: computerID.uuidString
         )
     }
 
     /// Configuration for connecting to an already paired Mac. Throws `LinkSessionError.notAuthorized` when this iPad holds no pin for
     /// the computer: it has to be paired (again) first.
-    static func reconnectConfiguration(computerID: UUID, resume: LinkResumeCredentials?) throws -> LinkClientConfiguration {
+    static func reconnectConfiguration(
+        computerID: UUID, resume: LinkResumeCredentials?, settings: AppModeSettings = .standard
+    ) throws -> LinkClientConfiguration {
         guard let pinned = pairedMacs.mac(forComputer: computerID.uuidString) else { throw LinkSessionError.notAuthorized }
-        return try configuration(mode: .reconnect(resume), computerID: computerID, pin: pinned.spkiHash)
+        return try configuration(mode: .reconnect(resume), computerID: computerID, pin: pinned.spkiHash, settings: settings)
     }
 
     static func isPaired(computerID: UUID) -> Bool { pairedMacs.mac(forComputer: computerID.uuidString) != nil }

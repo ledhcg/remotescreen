@@ -21,6 +21,49 @@ public struct HelperEndpoint: Codable, Equatable, Sendable {
     }
 }
 
+/// How an App Mode session with one computer streams its windows. Stored with the computer (JSON, no secrets); files written
+/// before this existed decode to `.standard`, and a value out of range is clamped when used, never trusted.
+public struct AppModeSettings: Codable, Equatable, Sendable {
+    /// The most quality the stream may ask the Mac for (the Mac may deliver less when the link is slow). It is the bitrate cap:
+    /// `low` is the smallest bitrate, `high` leaves the choice to the Mac.
+    public enum QualityCap: String, Codable, CaseIterable, Sendable {
+        case low, balanced, high
+    }
+
+    public static let frameRateRange = 15...120
+    public static let standard = AppModeSettings()
+
+    public var qualityCap: QualityCap
+    /// Highest frame rate to ask for, or `nil` for the display's own rate. Clamped to `frameRateRange` when used.
+    public var maxFramesPerSecond: Int?
+    /// Allow 10-bit HEVC (Main 10) when the Mac offers it. Off by default: it needs more bandwidth and a capable decoder.
+    public var allowMain10: Bool
+    /// Play the sound of the Mac apps whose windows are open.
+    public var playAudio: Bool
+
+    public init(qualityCap: QualityCap = .balanced, maxFramesPerSecond: Int? = nil, allowMain10: Bool = false, playAudio: Bool = true) {
+        self.qualityCap = qualityCap; self.maxFramesPerSecond = maxFramesPerSecond
+        self.allowMain10 = allowMain10; self.playAudio = playAudio
+    }
+
+    // Every key is optional so a file from an older or newer build still decodes.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        qualityCap = (try? c.decodeIfPresent(QualityCap.self, forKey: .qualityCap)) ?? .balanced
+        maxFramesPerSecond = (try? c.decodeIfPresent(Int.self, forKey: .maxFramesPerSecond)) ?? nil
+        allowMain10 = (try? c.decodeIfPresent(Bool.self, forKey: .allowMain10)) ?? false
+        playAudio = (try? c.decodeIfPresent(Bool.self, forKey: .playAudio)) ?? true
+    }
+
+    /// The frame rate to ask for given what the display can do.
+    public func effectiveFramesPerSecond(displayMaximum: Int) -> Int {
+        let range = Self.frameRateRange
+        let display = min(max(displayMaximum, range.lowerBound), range.upperBound)
+        guard let cap = maxFramesPerSecond else { return display }
+        return min(display, min(max(cap, range.lowerBound), range.upperBound))
+    }
+}
+
 /// A saved computer. The password is **not** stored here but in `SecretStore` (Keychain), keyed by `id`.
 public struct SavedConnection: Codable, Identifiable, Equatable, Sendable {
     /// How to find the computer: by address, or by Bonjour service (independent of an IP that changes with DHCP).
@@ -37,16 +80,22 @@ public struct SavedConnection: Codable, Identifiable, Equatable, Sendable {
     public var lastUsed: Date?
     /// Set once the Mac helper is paired. Absent in files written before App Mode: they decode with `nil`.
     public var helper: HelperEndpoint?
+    /// Streaming preferences for App Mode. Absent in older files: they decode with `nil`, which means `.standard`.
+    public var appMode: AppModeSettings?
 
     public init(id: UUID = UUID(), name: String, target: Target, username: String, lastUsed: Date? = nil,
-                helper: HelperEndpoint? = nil) {
+                helper: HelperEndpoint? = nil, appMode: AppModeSettings? = nil) {
         self.helper = helper
+        self.appMode = appMode
         self.id = id
         self.name = name
         self.target = target
         self.username = username
         self.lastUsed = lastUsed
     }
+
+    /// The App Mode settings in effect.
+    public var appModeSettings: AppModeSettings { appMode ?? .standard }
 
     /// Secondary line in the list: the address or the service name.
     public var detail: String {

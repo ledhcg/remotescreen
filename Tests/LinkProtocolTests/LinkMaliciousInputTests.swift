@@ -184,6 +184,13 @@ struct LinkMaliciousInputTests {
         #expect(isMalformed(payloadError(.status, [9])))
         #expect(isMalformed(payloadError(.status, [0, 2])))
         #expect(isMalformed(payloadError(.windowCommand, wireBytes(4) + [77])))
+        #expect(isMalformed(payloadError(.status, [3, 2])))                       // secure input: active is not a bool
+        #expect(isMalformed(payloadError(.status, [3])))                          // secure input: truncated
+        #expect(isMalformed(payloadError(.windowSubscribeFailed, wireBytes(4) + [4])))  // unknown failure reason
+        #expect(payloadError(.windowSubscribeFailed, wireBytes(4) + [3]) == nil)
+        var audio = LinkWriter()
+        audio.i32(1); audio.u8(3); audio.u32(48_000); audio.u8(2); audio.u32(20_000)
+        #expect(isMalformed(payloadError(.audioConfig, audio.bytes)))             // unknown codec
         var key = LinkWriter()
         key.u16(1); key.u8(0); key.u8(5); key.u16(0)
         #expect(isMalformed(payloadError(.inputKey, key.bytes)))

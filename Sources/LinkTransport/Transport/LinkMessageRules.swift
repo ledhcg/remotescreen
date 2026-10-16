@@ -12,7 +12,7 @@ public enum LinkMessageRules {
             return .both
         case .welcome, .snapshot, .status, .approvalRequired, .pairChallenge, .pairOK, .pairDenied,
              .appsItems, .appsIconData, .appsChanged,
-             .windowCreated, .windowUpdated, .windowDestroyed, .windowOrder, .windowCapabilities,
+             .windowCreated, .windowUpdated, .windowDestroyed, .windowOrder, .windowCapabilities, .windowSubscribeFailed,
              .videoConfig, .videoFrame, .surfaceSnapshot, .cursorShape, .cursorRef, .audioConfig, .audioPacket, .menuTree:
             return .helperToClient
         case .resume, .stats, .pairProve, .sasConfirm, .appsList, .appsIcon, .appsLaunch, .appsActivate, .appsQuit,

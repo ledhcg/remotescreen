@@ -128,7 +128,8 @@ public struct LinkSnapshot: Sendable, Equatable {
     }
 }
 
-/// Per-window receive statistics (iPad → helper, every 250 ms).
+/// Per-window receive statistics (iPad → helper, every 250 ms). `receivedBytes`, `decodedFrames` and `droppedFrames` are
+/// DELTAS since the previous report for that window (not running totals); `decodeP95Micros` covers the same interval.
 public struct LinkWindowStats: Sendable, Equatable {
     public var window: WindowID
     public var receivedBytes: UInt64
@@ -152,8 +153,10 @@ public enum LinkStatus: Sendable, Equatable {
     case macLocked(Bool)
     case permissionMissing(LinkPermissionKind)
     case stageUnavailable
-    /// Secure text input is active (in this process, or `nil` when unknown), so synthetic keys may be blocked.
-    case secureInput(pid: Int32?)
+    /// Secure text input became active (`active`) or ended (`!active`). `pid` is the process that holds it, or `nil` when
+    /// unknown. While active, synthetic keys may be blocked. The helper sends the inactive form when it ends, so the iPad can
+    /// clear its banner.
+    case secureInput(active: Bool, pid: Int32?)
     case permission(LinkPermissionKind, LinkPermissionState)
     case stage(LinkStageState)
 }
@@ -309,12 +312,15 @@ public struct LinkGestureEvent: Sendable, Equatable {
 }
 
 public struct LinkKeyEvent: Sendable, Equatable {
-    /// Hardware virtual key code.
+    /// Hardware virtual key code, or `LinkKeyEvent.noKeycode` (0xFFFF) meaning "no Mac keycode: use `keysym`".
     public var keycode: UInt16
-    /// X11-style keysym when known, for layouts the helper cannot derive from the keycode.
+    /// X11-style keysym when known, for layouts the helper cannot derive from the keycode. With `noKeycode` the helper maps it
+    /// to a Mac key (US layout) or types the character; an unknown non-printable keysym is dropped.
     public var keysym: UInt32?
     public var down: Bool
     public var modifiers: LinkModifiers
+    /// Sentinel `keycode`: the sender has no Mac virtual key code, only a keysym.
+    public static let noKeycode: UInt16 = 0xFFFF
     public init(keycode: UInt16, keysym: UInt32? = nil, down: Bool, modifiers: LinkModifiers) {
         self.keycode = keycode; self.keysym = keysym; self.down = down; self.modifiers = modifiers
     }

@@ -34,3 +34,7 @@
 "Connection lost" = "Mất kết nối";
 "Screon could not reach the Mac." = "Screon không thể kết nối tới máy Mac.";
 "Typing is blocked by a password field on the Mac" = "Việc gõ phím bị chặn bởi một ô mật khẩu trên máy Mac";
+"The Mac can no longer find this window." = "Máy Mac không còn tìm thấy cửa sổ này.";
+"The Mac is already streaming as many windows as it allows." = "Máy Mac đang truyền số cửa sổ tối đa cho phép.";
+"Screon Helper needs permission to record the screen." = "Screon Helper cần quyền ghi màn hình.";
+"The Mac could not start streaming this window. Trying again may help." = "Máy Mac không thể bắt đầu truyền cửa sổ này. Thử lại có thể giúp ích.";

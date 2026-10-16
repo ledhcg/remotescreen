@@ -43,7 +43,7 @@ final class FakeAudioCapture: AudioCapturing, @unchecked Sendable {
 
     @Test func configIsValidForTheWire() throws {
         let p = try AudioPacketizer(pid: 1, frameMilliseconds: 20)
-        let cfg = p.makeConfig(codec: .opus)
+        let cfg = p.makeConfig(codec: .pcm16)
         #expect(cfg.sampleRate == 48_000 && cfg.channels == 2 && cfg.frameDurationMicros == 20_000)
         #expect(Int(cfg.frameDurationMicros) * Int(cfg.sampleRate) / 1_000_000 * 4 <= LinkLimits.maxAudioPacketBytes)
     }

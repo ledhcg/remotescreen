@@ -36,7 +36,7 @@ protocol HelperSessionHost: Sendable {
     func requestStageSize(window: WindowID, size: LinkSize) async
     func reportPermissionDenied(_ kind: LinkPermissionKind) async
     /// Posts `message` as input. Key and text events go to `keyboardWindow` (the session's focused window).
-    func inject(_ message: LinkMessage, keyboardWindow: WindowID?) async
+    func inject(_ message: LinkMessage, keyboardWindow: WindowID?, session: UInt64) async
     func claimAudio(pid: Int32, session: UInt64) async -> Bool
     func releaseAudio(pid: Int32, session: UInt64) async
     /// A file transfer id that is unique across sessions (iPads choose theirs independently).

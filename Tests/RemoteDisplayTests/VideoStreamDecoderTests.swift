@@ -107,6 +107,7 @@ struct VideoStreamDecoderTests {
         #expect(decoder.decode(truncated) == .ignoredWaitingForKeyframe) // not a key frame: ignored before anything else
         #expect(decoder.decode(stream.units[2]) == .ignoredWaitingForKeyframe)
         #expect(decoder.takeLatestFrame() == nil)
+        #expect(requests.count == 3) // every ignored delta asks again, in case the first request or its answer was lost
 
         // The next key frame recovers (a fresh session is created for it).
         #expect(decoder.decode(stream.units[0]) == .decoded)

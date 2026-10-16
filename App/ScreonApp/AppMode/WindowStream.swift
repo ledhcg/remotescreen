@@ -126,7 +126,9 @@ final class WindowStream: @unchecked Sendable {
     func attach(_ inbox: LinkInbox<LinkMessage>) {
         let reader = Task.detached(priority: .userInitiated) { [weak self] in
             for await message in inbox {
-                guard let self, !Task.isCancelled else { return }
+                // A replaced or shut-down reader keeps draining to the stream's end without decoding: an inbox nobody reads
+                // fills up, and on the TCP fallback that stalls the one reader every stream of the link shares.
+                guard let self, !Task.isCancelled else { continue }
                 await self.queue.run { self.process(message) }
             }
         }

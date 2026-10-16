@@ -149,7 +149,9 @@ actor LinkChannel {
         guard let s = streams[kind], s.writable, !s.closing else { return }
         s.closing = true
         s.wake.yield()
-        _ = await withTimeout(.seconds(2)) { _ = try? await s.drained.wait() }
+        let drained: Void? = await withTimeout(.seconds(2)) { _ = try? await s.drained.wait() }
+        // Not drained in time: reset the stream so the peer's end of it ends too, instead of leaving it open forever.
+        if drained == nil { s.wire.abort() }
         if !s.readable { remove(s) }
     }
 
@@ -211,11 +213,24 @@ actor LinkChannel {
     private func accept(_ ws: any LinkWireStream) {
         guard !closed else { ws.abort(); return }
         let kind = ws.kind
-        // The peer may only open the kinds that are its to open, once each.
-        guard kind.openedByClient == (role == .helper), streams[kind] == nil else {
+        // The peer may only open the kinds that are its to open, once each...
+        guard kind.openedByClient == (role == .helper) else {
             ws.abort()
             fail(.protocolViolation("unexpected stream \(kind)"))
             return
+        }
+        if let old = streams[kind] {
+            // ...except a window stream, which the helper replaces when the iPad re-subscribes (the view was resized). The new
+            // stream can arrive before the old one's end is read, which used to fail the whole link. The old one is dropped: the
+            // count of window streams does not grow, so `maxIncomingWindowStreams` still bounds a peer that keeps reopening.
+            guard case .window = kind else { // (the kind check above already means the peer opened `old`)
+                ws.abort()
+                fail(.protocolViolation("unexpected stream \(kind)"))
+                return
+            }
+            old.wire.abort()
+            remove(old)
+            eventsCont.yield(.streamFinished(kind))
         }
         if case .window = kind {
             let windows = streams.keys.filter { if case .window = $0 { true } else { false } }.count
@@ -241,9 +256,12 @@ actor LinkChannel {
             fail(error.asSessionError)
             return
         } catch {
-            if !closed { fail(.transport("read failed"), notify: false) }
+            // A replaced window stream was aborted on purpose: its failing read is not the link's.
+            if !closed, streams[s.kind] === s { fail(.transport("read failed"), notify: false) }
             return
         }
+        // A replaced stream has already been reported finished, and its kind now names the new stream.
+        guard streams[s.kind] === s else { return }
         // Clean end of the peer's writing side.
         if s.kind == .control {
             if !closed { fail(.transport("peer closed the control stream"), notify: false) }
@@ -256,7 +274,7 @@ actor LinkChannel {
 
     /// Returns false when the channel failed and the reader must stop.
     private func received(_ message: LinkMessage, on s: Stream) async -> Bool {
-        guard !closed, !terminating else { return false }
+        guard !closed, !terminating, streams[s.kind] === s else { return false } // a replaced stream stops reading
         guard LinkMessageRules.isAllowed(message, on: s.kind, peerIsClient: role == .helper) else {
             fail(.protocolViolation("\(message.type) not allowed on \(s.kind)"))
             return false

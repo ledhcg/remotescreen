@@ -38,6 +38,14 @@ final class QUICStream: LinkWireStream, @unchecked Sendable {
     func receiveOnce() async throws -> Chunk {
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Chunk, Error>) in
             connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [self] data, _, isComplete, error in
+                // A stream the peer has finished can report ENODATA ("No message available on STREAM") instead of, or along with,
+                // `isComplete`, measured on loopback when the helper ends a window stream. It is the end of the stream, not a failure:
+                // treating it as one dropped the whole link each time the iPad re-subscribed to a window.
+                if case .posix(.ENODATA)? = error as NWError? {
+                    lock.withLock { sawFin = true }
+                    if let data, !data.isEmpty { cont.resume(returning: .data(data)) } else { cont.resume(returning: .fin) }
+                    return
+                }
                 if let error { cont.resume(throwing: LinkWireError.network("\(error)")); return }
                 if isComplete { lock.withLock { sawFin = true } }
                 if let data, !data.isEmpty { cont.resume(returning: .data(data)) }

@@ -232,6 +232,42 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
         await rig.tearDown()
     }
 
+    /// The helper replaces a window's stream each time the iPad re-subscribes (the view was resized). However the old stream's end and
+    /// the new stream's opening are ordered on the iPad, the link must survive and the newest stream must carry the frames.
+    @Test(arguments: transports)
+    func replacingAWindowStreamKeepsTheLinkUp(transport: LinkTransportKind) async throws {
+        let rig = try LoopbackRig.make()
+        let (server, ep) = try await rig.makeServer()
+        let client = try await LinkConnection.connect(
+            to: rig.endpoint(ep, transport: transport),
+            configuration: rig.clientConfiguration(mode: try await qrMode(server), transport: transport.preference))
+        var it = server.connections.makeAsyncIterator()
+        let helper = try #require(await it.next())
+        let clientEvents = EventLog(client.events)
+
+        let replacements = 8
+        for i in 0..<replacements {
+            try await helper.send(.videoFrame(LinkVideoFrame(window: 10, sequence: UInt32(i), ptsMicros: 0, flags: [.key], data: Data([1]))))
+            await helper.finishWindowStream(10)
+        }
+        try await helper.send(.videoFrame(LinkVideoFrame(window: 10, sequence: 99, ptsMicros: 0, flags: [.key], data: Data([2]))))
+
+        var newest: LinkInbox<LinkMessage>?
+        for _ in 0..<100 {
+            let opened = await clientEvents.events.compactMap { event -> LinkInbox<LinkMessage>? in
+                if case .streamOpened(.window(10), let inbox) = event { inbox } else { nil }
+            }
+            if opened.count == replacements + 1 { newest = opened.last; break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        let inbox = try #require(newest, "every replacement stream reaches the iPad")
+        guard case .videoFrame(let frame)? = await nextElement(inbox) else { Issue.record("no frame on the newest stream"); return }
+        #expect(frame.sequence == 99)
+        #expect(await client.failure == nil, "the link is still up")
+        await client.close()
+        await rig.tearDown()
+    }
+
     @Test(arguments: transports)
     func inputIsCoalescedButEdgesAreKept(transport: LinkTransportKind) async throws {
         let rig = try LoopbackRig.make()

@@ -264,7 +264,10 @@ public final class VideoStreamDecoder: @unchecked Sendable { // @unchecked: sess
         guard let config, let format else { return (.notConfigured, false, false) }
         if needsKey, !unit.isKey {
             shared.lock.withLock { $0.ignored += 1 }
-            return (.ignoredWaitingForKeyframe, false, false)
+            // Keep asking while deltas arrive: a single request can be lost (the key frame dropped by the Mac before its stream
+            // config went out, a request sent while the stream was being replaced), and a window whose content does not change
+            // would then stay frozen until the encoder's periodic key frame. The owner rate-limits (`KeyframeRequester`).
+            return (.ignoredWaitingForKeyframe, true, false)
         }
 
         // Validate before anything is allocated or handed to VideoToolbox, which trusts the lengths.

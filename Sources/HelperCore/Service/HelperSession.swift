@@ -303,7 +303,9 @@ actor HelperSession: HelperConnectionHandler {
             await send(.windowSubscribeFailed(window: request.window, reason: .unknownWindow))
             return
         }
-        if streams[request.window] != nil { await unsubscribe(request.window, tellDevice: false) }
+        // A new subscription to the same window (the iPad view was resized) replaces the old one. Wait for the old stream to finish:
+        // a new stream of the same kind reaching the iPad before the old one's end was a protocol violation that dropped the link.
+        if streams[request.window] != nil { await unsubscribe(request.window, tellDevice: false, waitForStreamEnd: true) }
         guard streams.count < maxSubscriptions else {
             log.notice("subscription refused: limit of \(self.maxSubscriptions, privacy: .public) windows reached")
             await send(.windowSubscribeFailed(window: request.window, reason: .limit))
@@ -399,7 +401,7 @@ actor HelperSession: HelperConnectionHandler {
         return caps
     }
 
-    private func unsubscribe(_ window: WindowID, tellDevice: Bool) async {
+    private func unsubscribe(_ window: WindowID, tellDevice: Bool, waitForStreamEnd: Bool = false) async {
         guard let stream = streams.removeValue(forKey: window) else { return }
         stream.stop()
         await capture.unsubscribe(window: window)
@@ -409,7 +411,11 @@ actor HelperSession: HelperConnectionHandler {
         await updateRate()
         if !closed, !transportGone {
             let connection = connection
-            Task { await connection.finishWindowStream(window) }
+            if waitForStreamEnd {
+                await connection.finishWindowStream(window)
+            } else {
+                Task { await connection.finishWindowStream(window) }
+            }
         }
     }
 
@@ -546,7 +552,8 @@ actor HelperSession: HelperConnectionHandler {
             await sendConfig(stream)
         case .frame(let frame):
             if !stream.configSent { await sendConfig(stream) }
-            guard stream.configSent else { return }
+            // Without its config the iPad cannot decode this frame; if it was the key frame, the deltas after it are useless too.
+            guard stream.configSent else { stream.pending.forceKeyFrame = true; return }
             await send(.videoFrame(frame))
         case .oversizedDropped:
             stream.pending.forceKeyFrame = true

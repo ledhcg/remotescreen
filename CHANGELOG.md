@@ -2,48 +2,42 @@
 
 ## Unreleased
 
-- Security (App Mode helper): macro-enabled Office documents and SVG files sent from the iPad are stored but never opened on the Mac.
-- Security (App Mode helper): one host on the network can no longer hold every pending handshake slot; each remote address may have at most three handshakes in progress.
-- Security (App Mode): a device that is revoked or disconnected can no longer act on input, clipboard or file messages it had queued before the session ended, nor during the short moment the link spends closing.
-- Screon Helper (macOS menu bar app for App Mode): shows who is connected, pairs iPads with a QR code or six digits (approved on the
-  Mac with Touch ID or your password), lists, renames and revokes paired iPads, guides you through the macOS permissions, can open at
-  login, and tells you when a newer helper is released (checked against a signed manifest; nothing is installed automatically).
-- App Mode (iPadOS 26, beta, needs Screon Helper on the Mac): set up from a saved computer by scanning the pairing code, pasting its
-  link or comparing six digits; each Mac window can open in its own iPad window with video, child menus and popovers, a local
-  cursor, touch, Apple Pencil, mouse, trackpad and keyboard input, input methods such as Vietnamese Telex, and clear messages when
-  the Mac is locked, a permission is missing, the device was removed or the apps need updating.
-- App Mode: sound from the Mac apps (48 kHz 16-bit PCM through a 20 to 40 ms adaptive jitter buffer with drift correction; muted
-  while the app's windows are in the background), clipboard sync on the link (text, RTF, HTML, PNG; password-manager content is
-  never sent and sensitive content from the Mac stays on the iPad and expires; synced when a window comes forward and before
-  paste), dropping files on a window to send them to the app that owns it (progress and cancel on screen; the Mac opens only plain
-  documents), Apple Pencil pressure, tilt and hover for drawing apps, and per-computer streaming settings (quality cap, frame-rate
-  cap, 10-bit video, sound).
-- App Mode link protocol (unreleased, so changed in place): audio codecs `pcm16` and `aacEld` (Opus stays reserved), `status`
-  `secureInput` now says when it ends, new `window.subscribeFailed` so the iPad can say why a window did not stream, and keys with
-  keycode 0xFFFF are mapped from their keysym on the Mac.
-- Helper (App Mode): when the Mac already serves as many iPads as it allows, an extra iPad is now refused before it is welcomed
-  (close code 9, "too many sessions"; a new pairing is told the Mac is busy and is not stored) instead of being welcomed and then
-  dropped.
-- Helper (App Mode): ending one iPad's session no longer releases keys or buttons another iPad is holding; Pencil tilt is now
-  converted to the range the system's tablet events expect.
-- App Mode launcher and multi-window experience (iPadOS 26): a launcher scene with running apps (and their window counts), recent
-  and all installed apps, search and cached icons; opening an app shows its windows as separate iPad windows or as tabs in one
-  window (setting); an already open window comes forward instead of opening twice; iPad windows follow the Mac window (title,
-  size limits) and resize it once you stop dragging; the Mac app's menus appear in the iPad menu bar and in a "Menus" button,
-  Mac key equivalents work as shortcuts, and ⌘W either closes the iPad window or goes to the Mac (setting); window actions (close,
-  minimise, zoom, exit full screen, show on full desktop); new Mac windows open by themselves or show a badge; windows are found
-  again after a reconnect, a helper restart or a relaunch; on iPhone one window at a time with a window switcher.
-- Helper (App Mode): input is injected only when the target window is verifiably the topmost window under the pointer (or the
-  same app's own popup); otherwise the window is raised first. Unknown window numbers and foreign overlays fail closed.
+- **App Mode (beta, iPadOS 26, needs the Screon Helper on the Mac):** individual Mac windows as iPad windows over a pinned,
+  mutually authenticated link (QUIC, TCP+TLS fallback). Set up from a saved computer by scanning the pairing code, pasting its
+  link or comparing six digits; pairing is approved on the Mac and can be revoked there. RFB mode is unchanged.
+  - Windows: each Mac window in its own iPad window (or as tabs) with video, child menus and popovers, a local cursor, touch,
+    Apple Pencil (pressure, tilt, hover), mouse, trackpad and keyboard input, and input methods such as Vietnamese Telex.
+  - Launcher: running apps with window counts, recent and installed apps, search, cached icons; an open window comes forward
+    instead of opening twice; iPad windows follow the Mac window and resize it once you stop dragging; windows are found again
+    after a reconnect, a helper restart or a relaunch; on iPhone one window at a time with a switcher.
+  - Menus and shortcuts: the Mac app's menus in the iPad menu bar and a "Menus" button, Mac key equivalents as shortcuts, ⌘W
+    setting, window actions (close, minimise, zoom, exit full screen, show on full desktop), new windows open or show a badge.
+  - Sound (48 kHz PCM, 20–40 ms adaptive jitter buffer), clipboard sync (text, RTF, HTML, PNG; password-manager content never
+    sent), file drop onto a window (the Mac opens only plain documents), per-computer streaming settings.
+  - Clear messages when the Mac is locked, a permission is missing, a window cannot stream, the device was removed or the apps
+    need updating.
+- **Screon Helper** (macOS menu bar app): shows who is connected, pairs iPads with a QR code or six digits (approved with Touch ID
+  or the account password), renames and revokes paired iPads, guides through the macOS permissions, can open at login, and tells
+  you when a newer helper is released (signed manifest; nothing is installed automatically).
+- Security (App Mode):
+  - Pairing secrets are single use, bound to the TLS transcript, scoped to the pairing method the Mac user opened, one pairing at
+    a time, rate-limited per address; six-digit pairing is a human comparison, never derived on the wire.
+  - A revoked or disconnected device can no longer act on messages it had queued; one host cannot hold every handshake slot;
+    an extra iPad beyond the session limit is refused before it is welcomed (close code 9).
+  - The helper injects input only into the session's own windows when they are verifiably topmost (unknown windows and other
+    apps' overlays fail closed); keys go only to a window of the session; ending one iPad's session releases only its input.
+  - Received files open only as allow-listed documents, with an app that declares it opens them, never with apps that run code,
+    never macro-enabled Office or SVG files, and never without the quarantine mark.
+  - Images and video from the helper are bounded before decoding; only PNG/JPEG are accepted for surfaces and cursors.
+- New packages `LinkProtocol`, `LinkTransport`, `WindowKit`, `HelperCore`, the `mock-link-helper` test tool, and a manual
+  helper release workflow (Developer ID, notarization, signed update manifest).
+- Fix: a pairing offer and a resume token issued in the same instant are evicted oldest first; file names in transfers are
+  validated on Unicode scalars (combining marks can no longer hide a leading dot).
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation
   in `vi.lproj` tables and `README.vi.md`. New `Localization` target; the iOS permission prompt is localized too.
 - The app is now called **Screon** (Screen + On: a screen that stays connected), with a new app icon. Bundle identifier is `com.ledinhcuong.screon`.
 - Project documentation and automation: `CLAUDE.md`, `AGENTS.md`, `.claude/` rules and skills, CI, issue and pull request templates,
   Dependabot, `CODEOWNERS`, `.editorconfig`.
-- App Mode (beta, in progress): individual Mac windows as iPad windows through the Screon Helper menu-bar app, over a pinned,
-  mutually authenticated link (pairing approved on the Mac, revocable). Needs iPadOS 26 and the helper; RFB mode is unchanged.
-  New packages `LinkProtocol`, `LinkTransport`, `WindowKit`, `HelperCore`, tool `mock-link-helper`, and a manual
-  helper release workflow (Developer ID, notarization).
 
 ## 0.1.0
 

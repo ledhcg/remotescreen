@@ -90,7 +90,7 @@ public actor LinkServer {
     private var live: [UInt64: LinkServerConnection] = [:]
     /// Handshakes in progress. Each is cancelled by `revoke`, `disconnectAll` or `stop`, and admission is decided against this
     /// table in `commitHandshake` and `register`, which run to completion without suspending.
-    private struct Handshake { let channel: LinkChannel; let spki: Data; var cancelled = false; var pairingApproval = false }
+    private struct Handshake { let channel: LinkChannel; let spki: Data; var cancelled = false; var pairingApproval = false; var admitted = false }
     private var handshakes: [UInt64: Handshake] = [:]
     private var nextHandshakeID: UInt64 = 0
     private var running = false
@@ -236,9 +236,18 @@ public actor LinkServer {
     /// longer) paired.
     func commitHandshake(_ id: UInt64, _ commit: HandshakeCommit) -> CommitResult {
         guard running, let h = handshakes[id], !h.cancelled else { return .notAuthorized }
-        return commit.apply(
+        // The session limit is checked here, before `welcome` and before anything is stored or issued, in the same step as the
+        // admission. Devices that are live or already admitted (committed, not yet registered) hold a slot; a new session from
+        // the same device replaces its old one, so that device does not count against itself.
+        var holders = Set(live.values.map(\.deviceSPKIHash))
+        for (otherID, other) in handshakes where otherID != id && other.admitted { holders.insert(other.spki) }
+        holders.remove(h.spki)
+        guard holders.count < configuration.maxSessions else { return .serverBusy }
+        let result = commit.apply(
             peerSPKIHash: h.spki, devices: configuration.pairedDevices, admission: pairingAdmission, ledger: pairingLedger,
             resumeTokens: resumeTokens)
+        if case .admitted = result { handshakes[id]?.admitted = true }
+        return result
     }
 
     // MARK: Listeners
@@ -363,6 +372,7 @@ public actor LinkServer {
             live[key] = nil
             replaced.append(old)
         }
+        // Safety net only: `commitHandshake` already reserved this slot before `welcome`.
         let full = live.count >= configuration.maxSessions
         if !full {
             live[id] = connection
@@ -370,7 +380,7 @@ public actor LinkServer {
         }
         for old in replaced { await old.close(code: .sessionReplaced, reason: "replaced") }
         guard !full else {
-            await connection.close(code: .internalError, reason: "too many sessions")
+            await connection.close(code: .tooManySessions, reason: "too many sessions")
             return
         }
         Task { [weak self] in

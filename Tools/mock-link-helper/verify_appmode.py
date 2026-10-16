@@ -8,6 +8,7 @@ Every key press must also have been released.
 Usage:  verify_appmode.py events.jsonl
 Exits 0 if every expectation matches.
 """
+import os
 import json
 import sys
 
@@ -42,6 +43,10 @@ def main():
 
     print("Event types:", ", ".join(f"{k}={len(v)}" for k, v in sorted(by_type.items())))
     check("paired (or session opened)", bool(by_type.get("paired")) or bool(by_type.get("session")))
+    expected = os.environ.get("SCREON_EXPECT_TRANSPORT")
+    if expected:
+        used = {e.get("transport") for e in by_type.get("session", [])}
+        check(f"all sessions used {expected}", used == {expected}, f"saw {sorted(map(str, used))}")
     check("subscribed to a window", bool(by_type.get("subscribe")))
     check("pointer events received", bool(pointers))
     check("key or text events received", bool(keys) or bool(by_type.get("text")))

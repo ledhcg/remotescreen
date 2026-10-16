@@ -18,8 +18,8 @@ final class AppModeUITests: XCTestCase {
             throw XCTSkip("SCREON_MOCK_HOST / SCREON_MOCK_PORT not set: start Tools/mock-link-helper (run_appmode_test.sh does)")
         }
         app = XCUIApplication()
-        // TCP+TLS: client-initiated one-way QUIC streams do not open in the simulator (see LinkPairing.transportPreference).
-        var launch = ["LINK_HOST": host, "LINK_PORT": port, "LINK_OPEN": "launcher", "LINK_TRANSPORT": "tcp"]
+        // Default transport (QUIC); the runner script checks the helper log to prove QUIC was used.
+        var launch = ["LINK_HOST": host, "LINK_PORT": port, "LINK_OPEN": "launcher"]
         if !Self.didPair, let qr = environment["SCREON_MOCK_QR"], !qr.isEmpty {
             launch["LINK_PAIRING"] = qr
             Self.didPair = true

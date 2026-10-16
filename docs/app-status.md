@@ -70,6 +70,7 @@ The first attempt on the iPad reported `NWError 50` (`ENETDOWN`, "Network is dow
 | A real Mac screen is displayed, with continuous updates | App in the simulator connected to a real `screensharingd`, content seen changing between captures |
 | GPU drawing matches the CPU coordinate transform | Real Metal test reading pixels back (`FramebufferRendererTests`), including when zooming and panning |
 | One-finger tap, double tap, two-finger tap (right click), press-and-hold then drag | XCUITest + fake server: 13 checks match |
+| The same runners on an iPad Pro 11-inch (M5) simulator, iOS 26 | `run_input_test.sh` 13 checks match; `run_gesture_test.sh`, `run_keyboard_test.sh`, `run_cursor_test.sh` ALL MATCH. The right-click check used to fail on iPad only because of the test: XCUITest's `twoFingerTap()` puts one finger at the top centre of the view, where the iPad's centred toolbar is, so the view saw one touch (measured: `touchesBegan` had 1 touch while the event had 2). The test now launches with DEBUG `SCREON_TOOLBAR_ALIGN=trailing`. Not a product bug: InputKit/ScreonView were not changed. |
 | Virtual keyboard (`A`, `b`, Return), no stuck keys | As above |
 | The send queue keeps the right order (press before release) | 4 tests, 200 event pairs |
 | **Real iPad**: one-finger tap at the right coordinates | The fake server received (201,220), (599,449), (300,399) for targets (200,220), (600,450), (300,400): off by ≤ 1 Mac pixel |
@@ -285,6 +286,11 @@ Verified by `swift test` on 127.0.0.1 with identities generated per run (tests `
 
 - QR pairing, SAS pairing, reconnect by pinned SPKI, session resume with a single-use token, revoke while connected,
   "ask before each session", close codes, session replacement, automatic QUIC to TCP fallback.
+- The session limit (`maxSessions`) is checked when the handshake commits, before `welcome` and atomically with admission (slots are
+  held by live sessions and by committed handshakes that are not registered yet; the same device replacing its own session does
+  not count against itself). `SessionLimitTests`: a paired device over the limit gets close code 9 `tooManySessions` and is never
+  welcomed, a new pairing over the limit is denied `busy` and not stored, the same device can still replace its own session.
+  `HelperService`'s own `maxSessions` check (HelperCore) is unchanged.
 - Three window streams carrying 150 KB frames concurrently, in order; input moves coalesced while presses/releases survive;
   video queue drops to the next key frame when the receiver stalls and reports it.
 - Hostile peer: garbage, oversized/unknown frames, bad preambles, wrong stream or direction, wrong stream ids, silent
@@ -392,8 +398,10 @@ Verified (`swift test`; `Tools/mock-link-helper/run_appmode_test.sh` on the iPad
   with a hardware keyboard, resizing by dragging a Stage Manager window (the debounce is unit tested, the system resize signal is
   not exercised), tabs-in-one-window, opening several scenes at once, external displays, the iPhone window switcher (built, not run
   on an iPhone simulator), restoration after a relaunch. The mock helper only answers `apps.list` with the running apps.
-- In the iOS simulator a client-initiated one-way QUIC stream (the input stream) fails with "Network is down", so the UI test
-  forces TCP+TLS with the DEBUG variable `LINK_TRANSPORT=tcp`. Whether QUIC input works on a real iPad is not verified.
+- The App Mode UI test runs over **QUIC** in the iPad simulator (iOS 26+, loopback), including the client-opened one-way input
+  stream: `run_appmode_test.sh` asserts that every session in the helper log has `transport: quic` and that pointer and text
+  events arrived. An earlier note that this failed with "Network is down" could not be reproduced on the current code (see
+  plan §13, S6); real iPad QUIC input is still not verified. `LINK_TRANSPORT=tcp` remains as a DEBUG hook to test the fallback.
 
 ## Not yet verified, do not treat as done
 

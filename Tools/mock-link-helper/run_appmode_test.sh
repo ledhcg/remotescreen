@@ -82,4 +82,5 @@ fi
 # Let the helper flush, then verify what it received.
 sleep 0.5
 [[ -z "${SCREON_KEEP_LOG:-}" ]] || cp "$LOG" "$SCREON_KEEP_LOG"
-python3 -I Tools/mock-link-helper/verify_appmode.py "$LOG"
+# The UI test must run over QUIC (the default transport); set SCREON_EXPECT_TRANSPORT=tcp when forcing TCP.
+SCREON_EXPECT_TRANSPORT="${SCREON_EXPECT_TRANSPORT:-quic}" python3 -I Tools/mock-link-helper/verify_appmode.py "$LOG"

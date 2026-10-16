@@ -540,6 +540,10 @@ struct HelperSessionMachine {
             switch result {
             case .windowClosed: return deny(.expired)
             case .storeFull: return deny(.busy)
+            case .serverBusy:
+                // Nothing was stored or issued. A device being paired is told so in the pairing answer; a paired one gets a close code.
+                if case .pairing = committing { return deny(.busy) }
+                return fail(.peerClosed(.tooManySessions))
             default: return fail(.notAuthorized)
             }
         }
@@ -592,6 +596,8 @@ enum CommitResult: Equatable {
     /// The pairing window closed or another pairing succeeded first.
     case windowClosed
     case storeFull
+    /// The helper already serves `maxSessions` devices; nothing was changed.
+    case serverBusy
 }
 
 extension HandshakeCommit {

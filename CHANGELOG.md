@@ -21,6 +21,9 @@
 - App Mode link protocol (unreleased, so changed in place): audio codecs `pcm16` and `aacEld` (Opus stays reserved), `status`
   `secureInput` now says when it ends, new `window.subscribeFailed` so the iPad can say why a window did not stream, and keys with
   keycode 0xFFFF are mapped from their keysym on the Mac.
+- Helper (App Mode): when the Mac already serves as many iPads as it allows, an extra iPad is now refused before it is welcomed
+  (close code 9, "too many sessions"; a new pairing is told the Mac is busy and is not stored) instead of being welcomed and then
+  dropped.
 - Helper (App Mode): ending one iPad's session no longer releases keys or buttons another iPad is holding; Pencil tilt is now
   converted to the range the system's tablet events expect.
 - App Mode launcher and multi-window experience (iPadOS 26): a launcher scene with running apps (and their window counts), recent

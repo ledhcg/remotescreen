@@ -8,6 +8,11 @@
 - Project documentation and automation: `CLAUDE.md`, `AGENTS.md`, `.claude/` rules and skills, CI, issue and pull request templates,
   Dependabot, `CODEOWNERS`, `.editorconfig`.
 
+- App Mode (beta, in progress): individual Mac windows as iPad windows through the Screon Helper menu-bar app, over a pinned,
+  mutually authenticated link (pairing approved on the Mac, revocable). Needs iPadOS 26 and the helper; RFB mode is unchanged.
+  New packages `LinkProtocol`, `LinkTransport`, `WindowKit`, `HelperCore`, tool `mock-link-helper`, and a manual
+  helper release workflow (Developer ID, notarization).
+
 ## 0.1.0
 
 First public release.

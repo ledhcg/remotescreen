@@ -22,6 +22,21 @@ Screen Sharing (RFB / VNC, gồm cả đăng nhập type 30 của Apple), thiế
 - Tìm máy bằng Bonjour, lưu máy; mật khẩu nằm trong Keychain (`WhenUnlockedThisDeviceOnly`), không nằm trong danh sách.
 - Chế độ chất lượng hình, tự kết nối lại, đồng bộ clipboard.
 
+## Chế độ ứng dụng (App Mode, beta)
+
+Ngoài chế độ RFB toàn màn hình, Screon đang có thêm **App Mode**: từng cửa sổ của Mac hiện trên iPad như các cửa sổ riêng, đổi
+kích thước được. Cần ứng dụng thanh menu **Screon Helper** (miễn phí) trên Mac, cấp quyền Trợ năng (Accessibility) và Ghi màn
+hình (Screen Recording), và **iPadOS 26**. Chế độ RFB không đổi và vẫn chạy trên iOS 18.
+
+- Đường truyền giữa iPad và helper luôn được mã hoá và xác thực hai chiều bằng khoá đã ghim; không có chế độ không mã hoá.
+- Chỉ ghép nối được khi bạn mở cửa sổ ghép nối trên Mac và duyệt thiết bị mới ngay tại Mac. Các phiên sau từ thiết bị đã ghép
+  kết nối không cần hỏi (có tuỳ chọn "hỏi trước mỗi phiên").
+- Bạn có thể thu hồi bất kỳ thiết bị nào từ menu của helper; các phiên đang chạy của nó đóng ngay.
+- Helper không chạy lệnh và không mở tệp tuỳ ý: chỉ hiện, di chuyển, đổi kích thước các cửa sổ bạn cho phép, chuyển phím/chuột
+  vào đó, và trao đổi clipboard cùng tài liệu thuộc danh sách cho phép.
+
+App Mode đang phát triển: xem [docs/app-status.md](docs/app-status.md) để biết phần nào đã kiểm chứng.
+
 ## Lưu ý bảo mật
 
 - Chỉ đăng nhập type 30 của Apple bảo vệ thông tin đăng nhập. **Màn hình, phím gõ và clipboard đi không mã hoá qua RFB.**

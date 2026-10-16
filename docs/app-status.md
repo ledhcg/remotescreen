@@ -256,6 +256,28 @@ A vertical bar beside the Mac screen (iPad: on the left, on by default; iPhone: 
   - `rfbprobe --apple-raw FILE --apple-gesture-test X,Y` sends arbitrary hex payloads (each line `delay_ms hex`), used to try variants.
 - Still unknown: the x, y coordinates while scaled down on the server side (same question as for `PointerEvent`); type 4 (smart zoom) and 6 (swipe) not tried.
 
+## App Mode (beta) overview
+
+App Mode shows individual Mac windows as iPad windows through the Screon Helper (see `docs/app-mode-implementation-plan.md`).
+It requires iPadOS/iOS 26; RFB mode is unchanged.
+
+Implemented and covered by `swift test` with fakes or on `127.0.0.1` (no permissions, no real Mac, no iPad):
+
+- `LinkProtocol`: framing, message codecs with bounds, malicious-input tests (`LinkProtocolTests`).
+- `LinkTransport`: QUIC and TCP+TLS wires, pinned mutual TLS, pairing, resume, revoke, backpressure (details in the next section).
+- `WindowKit`: iPad-side window model and input glue (`WindowKitTests`).
+- `HelperCore`: helper logic behind protocols with fakes: input injector, stage, pasteboard bridge, file inbox
+  (`HelperCoreTests`). The `Helper/` app target and `Tools/mock-link-helper` are exercised only by build and loopback runs.
+
+Not yet verified (nothing below has run on a real Mac or iPad; spike ids refer to the plan, section 4):
+
+- S1 Remote Desktop privacy category on macOS 27, S2 monthly Screen Recording re-approval and the persistent-capture entitlement.
+- S3 per-window `SCStream` scaling, S4 HEVC encode latency, S5 iPad decode with concurrent sessions.
+- S6 QUIC over real Wi-Fi and the Local Network prompt, S7 mutual TLS with identities on real iOS/macOS (partly done on macOS loopback).
+- S8 `CGVirtualDisplay` stage stability, S9 input into non-front windows, tablet events, Unicode and secure input, S10 AX coverage
+  on real apps, S11 child windows, menus, full screen, other Spaces.
+- Signed, notarized helper builds and the update manifest: skeleton only (`.github/workflows/helper-release.yml`, `scripts/`).
+
 ## App Mode transport (`LinkTransport`, macOS loopback tests only)
 
 Verified by `swift test` on 127.0.0.1 with identities generated per run (tests `LoopbackTests`, `MaliciousPeerTests`,

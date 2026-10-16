@@ -4,3 +4,10 @@
 /Sources/RFBCrypto/        @ledhcg
 /Sources/RFBKit/Security/  @ledhcg
 /SECURITY.md               @ledhcg
+/Sources/LinkProtocol/     @ledhcg
+/Sources/LinkTransport/    @ledhcg
+/Sources/HelperCore/       @ledhcg
+/Sources/WindowKit/        @ledhcg
+/Helper/                   @ledhcg
+/scripts/                  @ledhcg
+/.github/workflows/        @ledhcg

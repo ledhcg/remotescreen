@@ -368,9 +368,9 @@ struct SessionView: View {
                 Button("Disconnect", systemImage: "xmark.circle", role: .destructive) { controller.disconnect() }
             }
         } label: {
-            Image(systemName: "ellipsis.circle")
+            // White on the label only: a `.tint` on the Menu also reaches the items inside, painting their icons white beside dark text.
+            Image(systemName: "ellipsis.circle").foregroundStyle(.white)
         }
-        .tint(.white)
         .accessibilityLabel("Options")
     }
 }

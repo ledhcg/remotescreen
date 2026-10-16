@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix: in the session's options menu the item icons were tinted white (the toolbar button's colour) while their text was
+  dark, so the icons were almost invisible in Light Mode. Icons now follow the text colour.
+
 - Screon Helper has the Screon app icon, and is distributed as a Developer ID-signed, notarized download (0.2.0, build 3).
 
 - Fix (App Mode): on iPhone, a window opened and was immediately shown as "closed on the Mac". A tooltip of the Mac app (a

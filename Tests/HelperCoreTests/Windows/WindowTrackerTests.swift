@@ -22,6 +22,45 @@ import Testing
         return system
     }
 
+    // MARK: Identity
+
+    /// A window moved to another display (the stage) can come back from Accessibility as a different element. Its
+    /// window-server number is the same, so it is the same window: no destroyed/created pair (the iPad would close it), and
+    /// commands use the new element.
+    @Test func aWindowKeepsItsIdentityWhenItsAXElementChanges() async throws {
+        let system = oneWindow()
+        let (tracker, recorder) = await makeTracker(system)
+        await tracker.reconcile()
+        let id = try #require(await tracker.snapshot().windows.first?.id)
+        _ = recorder.take()
+
+        system.cg = [cgRecord(10, 100, bounds: rect(3000, 0, 800, 600))]
+        system.setAX(100, [axWindow(100, 99, cg: 10, frame: rect(3000, 0, 800, 600), focused: true)])
+        await tracker.reconcile()
+
+        let events = recorder.take()
+        #expect(!events.contains { if case .destroyed = $0 { true } else { false } }, "\(events)")
+        #expect(!events.contains { if case .created = $0 { true } else { false } }, "\(events)")
+        #expect(await tracker.snapshot().windows.map(\.id) == [id])
+        #expect(await tracker.stageKey(of: id) == StageWindowKey(pid: 100, windowNumber: 10))
+    }
+
+    /// Without a window-server number the AX element is the identity: a new element is a new window.
+    @Test func withoutANumberTheAXElementIsTheIdentity() async throws {
+        let system = FakeWindowSystem()
+        system.pids = [100]; system.frontmost = 100
+        system.cg = []
+        system.setAX(100, [axWindow(100, 1, cg: nil, focused: true)])
+        let (tracker, recorder) = await makeTracker(system)
+        await tracker.reconcile()
+        _ = recorder.take()
+        system.setAX(100, [axWindow(100, 2, cg: nil, focused: true)])
+        await tracker.reconcile()
+        let events = recorder.take()
+        #expect(events.contains { if case .destroyed = $0 { true } else { false } })
+        #expect(events.contains { if case .created = $0 { true } else { false } })
+    }
+
     // MARK: Lifecycle of a window
 
     @Test func createMoveResizeDestroy() async {

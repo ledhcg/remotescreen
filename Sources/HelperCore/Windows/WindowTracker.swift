@@ -56,7 +56,12 @@ public actor WindowTracker {
         (1...200).contains(layer) && ![20, 24, 25].contains(layer)
     }
 
+    /// A window's identity across refreshes. Managed windows with a known window-server number use it (`server`): it stays
+    /// the same when the window moves to another display, while the AX element can come back different, which made a window
+    /// look destroyed and re-created (and the iPad close it). `ax` is the fallback without a number; `cg` is for transient
+    /// surfaces known only from the window list.
     private enum Key: Hashable {
+        case server(UInt32)
         case ax(AXWindowToken)
         case cg(UInt32)
     }
@@ -75,6 +80,8 @@ public actor WindowTracker {
         var isMainAX = false
         /// The window-server number, when it is known (from the AX call or from matching a CGWindowList record).
         var cgNumber: UInt32?
+        /// The AX element of a managed window, for commands (raise, move, resize), whatever its identity key is.
+        var axToken: AXWindowToken?
     }
 
     private let system: any WindowSystem
@@ -395,9 +402,12 @@ public actor WindowTracker {
                     id: WindowID(0), pid: pid, bundleID: bundleID, parentID: nil, kind: .managed,
                     level: Int16(clamping: record?.layer ?? 0), frame: state.frame, scale: system.backingScale(for: state.frame),
                     title: HelperText.bounded(state.title, maxBytes: LinkLimits.maxTitleBytes), flags: flags)
+                let number = record?.id ?? state.cgWindowID
                 var desired = Desired(
-                    key: .ax(state.token), info: info, zIndex: record.flatMap { zIndexByCG[$0.id] } ?? Int.max)
-                desired.cgNumber = record?.id ?? state.cgWindowID
+                    key: number.map(Key.server) ?? .ax(state.token), info: info,
+                    zIndex: record.flatMap { zIndexByCG[$0.id] } ?? Int.max)
+                desired.cgNumber = number
+                desired.axToken = state.token
                 desired.isFocusedAX = state.isFocused
                 desired.isMainAX = state.isMain
                 ofThisApp.append(desired)
@@ -443,6 +453,9 @@ public actor WindowTracker {
 
     private static func stableLess(_ a: Key, _ b: Key) -> Bool {
         switch (a, b) {
+        case (.server(let x), .server(let y)): x < y
+        case (.server, _): true
+        case (_, .server): false
         case (.ax(let x), .ax(let y)): (x.pid, x.id) < (y.pid, y.id)
         case (.cg(let x), .cg(let y)): x < y
         case (.ax, .cg): true
@@ -495,7 +508,11 @@ public actor WindowTracker {
             info.id = id
             if let parentKey = wanted.parentKey { info.parentID = assigned[parentKey] ?? kept[parentKey]?.id }
             next[wanted.key] = Entry(id: id, info: info)
-            if case .ax(let token) = wanted.key { tokens[id] = token }
+        }
+        // The AX element of a window can change between refreshes (for example after it moved to another display): keep
+        // the current one for every managed window, new or kept.
+        for wanted in desired {
+            if let token = wanted.axToken, let entry = next[wanted.key] { tokens[entry.id] = token }
         }
         let newActive = activeKey.flatMap { next[$0]?.id }
 

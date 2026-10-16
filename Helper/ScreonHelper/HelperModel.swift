@@ -116,7 +116,9 @@ final class HelperModel {
         let defaults = UserDefaults.standard
         defaults.register(defaults: [
             SettingsKey.askBeforeEachSession: false,  // decision 5: approval only at first pairing
-            SettingsKey.useVirtualStage: true,
+            // Off until moving windows onto a virtual display is proven on real Macs (plan spike S8): windows stream where
+            // they are, which ScreenCaptureKit supports for covered windows too.
+            SettingsKey.useVirtualStage: false,
             SettingsKey.audioEnabled: false,
             SettingsKey.checkUpdatesAutomatically: true,
         ])

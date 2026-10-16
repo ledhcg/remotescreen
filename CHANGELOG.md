@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fix (Screon Helper): a window opened on the iPhone or iPad loaded and was then shown as "closed on the Mac" at once. Moving it
+  onto the virtual display gave it a new Accessibility element, which the helper took for a new window. Windows are now
+  identified by their window-server number, and the virtual display is off by default until it is proven on more Macs.
+
 - Fix (Screon Helper): every Mac app showed "0 windows" and no window could be opened with the release build of the helper:
   an optimizer-only bug attached every window to pid 0. Windows now list and stream correctly.
 - Fix (Screon Helper): opening a window that is minimised on the Mac showed "Waiting for the first frame" forever; the helper

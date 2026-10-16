@@ -42,6 +42,15 @@ enum Probe {
                         if case .videoFrame(let f) = m { frames += 1; bytes += f.data.count; if f.flags.contains(.key) { keys += 1 } }
                     }
                     let failures = await control.messages.filter { if case .windowSubscribeFailed = $0 { true } else { false } }
+                    for m in await control.messages {
+                        switch m {
+                        case .windowDestroyed(let id): print("probe: event window.destroyed \(id.rawValue)\(id == target.id ? " (the subscribed window)" : "")")
+                        case .windowCreated(let w): print("probe: event window.created \(w.id.rawValue) \(w.bundleID) \(w.kind)")
+                        case .windowUpdated(let u): if u.id == target.id { print("probe: event window.updated (subscribed) flags=\(String(describing: u.flags))") }
+                        default: break
+                        }
+                    }
+                    print("probe: subscribed window id \(target.id.rawValue)")
                     print("probe: subscribed to a \(bundle) window: configs=\(configs) frames=\(frames) key=\(keys) bytes=\(bytes) subscribeFailed=\(failures.count)")
                 } else {
                     print("probe: no managed window of \(bundle) to subscribe to")

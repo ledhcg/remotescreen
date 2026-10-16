@@ -107,8 +107,7 @@ enum LinkPairing {
         )
     }
 
-    /// QUIC with TCP+TLS as the fallback. DEBUG builds can force TCP with `LINK_TRANSPORT=tcp`: in the iOS simulator, opening a
-    /// client-initiated one-way QUIC stream (the input stream) fails with "Network is down", so the UI tests use TCP+TLS.
+    /// QUIC with TCP+TLS as the fallback. DEBUG builds can force TCP with `LINK_TRANSPORT=tcp` (to test the fallback path).
     private static var transportPreference: LinkTransportPreference {
         #if DEBUG
         if ProcessInfo.processInfo.environment["LINK_TRANSPORT"] == "tcp" { return .tcp }

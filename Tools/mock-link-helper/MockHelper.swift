@@ -157,7 +157,8 @@ actor MockHelper {
         log.write(
             "session",
             ["device": connection.session.deviceName, "paired": true, "newly_paired": connection.session.newlyPaired,
-             "resumed": connection.session.resumed])
+             "resumed": connection.session.resumed,
+             "transport": connection.transport == .quic ? "quic" : "tcp"])
         if connection.session.newlyPaired { log.write("paired", ["device": connection.session.deviceName]) }
         Task { [weak self] in await self?.runSession(connection, id: id) }
     }

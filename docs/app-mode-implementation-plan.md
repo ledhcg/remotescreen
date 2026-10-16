@@ -433,6 +433,12 @@ _To be filled during M0. Partial, from the `LinkTransport` loopback tests (macOS
   notice within milliseconds (`group.cancel()` alone is not noticed). Unidirectional streams (`direction = .unidirectional`)
   and helper-opened streams work. Still open: Wi-Fi throughput/HOL over 30 min, Local Network prompt timing on iOS, iOS client
   against a macOS listener.
+- **S6 follow-up (iOS simulator, 2026-10-16).** The reported "Network is down" on a client-opened one-way QUIC stream did not
+  reproduce: `AppModeUITests` over the default (QUIC) transport on an iPad simulator (iOS 26+) paired, streamed, and delivered
+  pointer and text input; the helper log records `transport: quic` for every session. The input stream is opened after the group
+  is `ready`, with a separate `NWProtocolQUIC.Options` (`direction = .unidirectional`), and the server advertises
+  `initialMaxStreamsUnidirectional = 128`, so no code change was needed. No speculative fallback was added; if it recurs, carry
+  input on a client-opened bidirectional stream.
 
 ---
 

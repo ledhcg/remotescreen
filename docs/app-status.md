@@ -392,8 +392,10 @@ Verified (`swift test`; `Tools/mock-link-helper/run_appmode_test.sh` on the iPad
   with a hardware keyboard, resizing by dragging a Stage Manager window (the debounce is unit tested, the system resize signal is
   not exercised), tabs-in-one-window, opening several scenes at once, external displays, the iPhone window switcher (built, not run
   on an iPhone simulator), restoration after a relaunch. The mock helper only answers `apps.list` with the running apps.
-- In the iOS simulator a client-initiated one-way QUIC stream (the input stream) fails with "Network is down", so the UI test
-  forces TCP+TLS with the DEBUG variable `LINK_TRANSPORT=tcp`. Whether QUIC input works on a real iPad is not verified.
+- The App Mode UI test runs over **QUIC** in the iPad simulator (iOS 26+, loopback), including the client-opened one-way input
+  stream: `run_appmode_test.sh` asserts that every session in the helper log has `transport: quic` and that pointer and text
+  events arrived. An earlier note that this failed with "Network is down" could not be reproduced on the current code (see
+  plan §13, S6); real iPad QUIC input is still not verified. `LINK_TRANSPORT=tcp` remains as a DEBUG hook to test the fallback.
 
 ## Not yet verified, do not treat as done
 

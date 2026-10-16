@@ -219,6 +219,46 @@ import Testing
         await rig.tearDown()
     }
 
+    @Test func oneHostCannotHoldEveryHandshakeSlot() async throws {
+        let rig = try LoopbackRig.make()
+        let config = LinkServerConfiguration(
+            identity: rig.helperSec, macName: "Test Mac", capabilities: [], pairedDevices: rig.devices,
+            approvalHandler: { _ in true }, handshakeTimeout: .seconds(30), loopbackOnly: true, maxPendingConnections: 8,
+            maxPendingPerSource: 2)
+        let server = try LinkServer(configuration: config)
+        let ep = try await server.start()
+        let target = LinkEndpoint(host: "127.0.0.1", port: ep.tcpPort ?? 0)
+        var silent: [TCPMuxWire] = []
+        for _ in 0..<2 {
+            let w = TCPMuxWire(endpoint: target.tcp, identity: rig.ipadSec, policy: .pairing)
+            try await w.start(timeout: .seconds(5))
+            silent.append(w)
+        }
+        // The same address asks again: refused at once, long before the silent ones time out, although 6 of 8 slots are free.
+        let extra = TCPMuxWire(endpoint: target.tcp, identity: rig.ipadSec, policy: .pairing)
+        try? await extra.start(timeout: .seconds(5))
+        #expect(await within(.seconds(5)) { await extra.waitUntilClosed() }, "a third handshake from one address must be refused")
+        for w in silent { #expect(await within(.milliseconds(100)) { await w.waitUntilClosed() } == false, "the earlier ones are still waiting") }
+        for w in silent { w.close() }
+        extra.close()
+        await server.stop()
+        await rig.tearDown()
+    }
+
+    @Test func anUnknownRemoteAddressIsLimitedNotSkipped() async throws {
+        let rig = try LoopbackRig.make()
+        let config = LinkServerConfiguration(
+            identity: rig.helperSec, macName: "Test Mac", capabilities: [], pairedDevices: rig.devices,
+            approvalHandler: { _ in true }, loopbackOnly: true, maxPendingConnections: 8, maxPendingPerSource: 2)
+        let server = try LinkServer(configuration: config)
+        var admitted = 0
+        for _ in 0..<20 where await server.claimSourceSlot(LinkRemoteAddress.unknown) { admitted += 1 }
+        #expect(admitted == 4, "handshakes from an address that cannot be determined share one smaller bucket")
+        await server.releaseSourceSlot(LinkRemoteAddress.unknown)
+        #expect(await server.claimSourceSlot(LinkRemoteAddress.unknown), "a released slot can be used again")
+        await rig.tearDown()
+    }
+
     @Test func clientMachineRejectsUnexpectedHelperMessages() {
         let hello = LinkHello(
             protocolMin: 1, protocolMax: 1, capabilities: [], deviceName: "x",

@@ -288,6 +288,8 @@ public actor FileInbox {
         "applescript", "workflow", "action", "jar", "py", "pl", "rb", "php", "js", "jse", "ps1", "bat", "cmd", "exe", "msi", "vbs",
         "wsf", "dylib", "so", "plugin", "kext", "xpc", "bundle", "service", "prefpane", "saver", "webloc", "inetloc", "fileloc",
         "url", "mobileconfig", "configprofile", "definition", "osax", "lpx", "qlgenerator", "mdimporter", "appex", "framework",
+        // Documents that carry code: macro-enabled Office files, and SVG (scriptable when a browser opens it).
+        "docm", "dotm", "xlsm", "xltm", "xlam", "pptm", "potm", "ppsm", "ppam", "sldm", "svg", "svgz",
     ]
 
     /// Applications that run code, scripts or installers, or change system settings, whatever file they are given.

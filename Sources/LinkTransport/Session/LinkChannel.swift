@@ -71,6 +71,8 @@ actor LinkChannel {
     private var streams: [LinkStreamKind: Stream] = [:]
     private var opening: [LinkStreamKind: Task<Stream, Error>] = [:]
     private var closed = false
+    /// `terminate` is draining the control queue: the peer is being shut out and nothing it sends is acted on any more.
+    private var terminating = false
     private var established = false
     private(set) var failure: LinkSessionError?
     private let controlReady = OneShot<LinkInbox<LinkMessage>>()
@@ -254,7 +256,7 @@ actor LinkChannel {
 
     /// Returns false when the channel failed and the reader must stop.
     private func received(_ message: LinkMessage, on s: Stream) async -> Bool {
-        guard !closed else { return false }
+        guard !closed, !terminating else { return false }
         guard LinkMessageRules.isAllowed(message, on: s.kind, peerIsClient: role == .helper) else {
             fail(.protocolViolation("\(message.type) not allowed on \(s.kind)"))
             return false
@@ -312,6 +314,7 @@ actor LinkChannel {
         _ error: LinkSessionError, closeCode: LinkCloseCode? = nil, reason: String = "", notify: Bool, clean: Bool = false
     ) async {
         guard !closed else { return }
+        terminating = true
         if let control = streams[.control], control.writable, !control.closing {
             var queued = true
             if notify {
@@ -346,7 +349,9 @@ actor LinkChannel {
         let all = Array(streams.values)
         streams = [:]
         for s in all {
-            s.inbox.finish()
+            // The Mac never acts on what an iPad queued before the session ended (revoke, close, error). The iPad still drains
+            // its inboxes: its last messages (`pair.denied`, `close`) explain why the connection ended.
+            if role == .helper && established { s.inbox.discardBufferedAndFinish() } else { s.inbox.finish() }
             s.wake.finish()
             s.drained.complete(.success(()))
             for t in s.tasks { t.cancel() }

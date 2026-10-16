@@ -32,6 +32,8 @@ public struct LinkServerConfiguration: Sendable {
     /// Advertise `_screon-link._udp` over Bonjour.
     public var advertiseBonjour: Bool
     public var maxPendingConnections: Int
+    /// Handshakes in progress that one remote address may hold at once, so a single host on the network cannot fill every slot.
+    public var maxPendingPerSource: Int
     public var maxSessions: Int
 
     public init(
@@ -42,7 +44,7 @@ public struct LinkServerConfiguration: Sendable {
         snapshotProvider: (@Sendable (HelperSessionReady) async -> LinkSnapshot?)? = nil,
         askBeforeEachSession: @escaping @Sendable () -> Bool = { false },
         port: UInt16 = 0, enableQUIC: Bool = true, enableTCP: Bool = true, loopbackOnly: Bool = false,
-        advertiseBonjour: Bool = false, maxPendingConnections: Int = 8, maxSessions: Int = 4
+        advertiseBonjour: Bool = false, maxPendingConnections: Int = 8, maxPendingPerSource: Int = 3, maxSessions: Int = 4
     ) {
         self.identity = identity; self.macName = macName; self.capabilities = capabilities; self.pairedDevices = pairedDevices
         self.approvalHandler = approvalHandler; self.displays = displays; self.approvalTimeout = approvalTimeout
@@ -50,7 +52,8 @@ public struct LinkServerConfiguration: Sendable {
         self.snapshotProvider = snapshotProvider; self.askBeforeEachSession = askBeforeEachSession
         self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
         self.loopbackOnly = loopbackOnly; self.advertiseBonjour = advertiseBonjour
-        self.maxPendingConnections = maxPendingConnections; self.maxSessions = maxSessions
+        self.maxPendingConnections = maxPendingConnections; self.maxPendingPerSource = maxPendingPerSource
+        self.maxSessions = maxSessions
     }
 }
 
@@ -82,6 +85,8 @@ public actor LinkServer {
     private var quicListener: NWListener?
     private var tcpListener: NWListener?
     private var pending = 0
+    /// Handshakes in progress per remote address (addresses that are not yet known are not counted).
+    private var pendingBySource: [String: Int] = [:]
     private var live: [UInt64: LinkServerConnection] = [:]
     /// Handshakes in progress. Each is cancelled by `revoke`, `disconnectAll` or `stop`, and admission is decided against this
     /// table in `commitHandshake` and `register`, which run to completion without suspending.
@@ -288,10 +293,20 @@ public actor LinkServer {
 
     private func accept(_ wire: any LinkWire) async {
         guard running, pending < configuration.maxPendingConnections else { wire.close(); return }
+        let firstSource = wire.remoteAddress
+        var slotSource: String? = firstSource
+        guard claimSourceSlot(firstSource) else { wire.close(); return }
         pending += 1
-        defer { pending -= 1 }
+        defer { pending -= 1; if let slotSource { releaseSourceSlot(slotSource) } }
         do {
             try await wire.start(timeout: .seconds(10))
+            // QUIC learns the remote address only once the connection is up: count it against that address from now on.
+            let known = wire.remoteAddress
+            if let held = slotSource, known != held {
+                releaseSourceSlot(held)
+                guard claimSourceSlot(known) else { slotSource = nil; wire.close(); return }
+                slotSource = known
+            }
             let channel = LinkChannel(wire: wire, role: .helper)
             await channel.start()
             guard running else { await channel.fail(.helperShuttingDown, notify: false); return }
@@ -313,6 +328,22 @@ public actor LinkServer {
         } catch {
             wire.close()
         }
+    }
+
+    /// Counts a handshake against its address. An address that is not known yet shares one bucket with a smaller cap: it is
+    /// limited, never skipped (fail closed).
+    func claimSourceSlot(_ source: String) -> Bool {
+        let count = pendingBySource[source, default: 0]
+        let cap = source == LinkRemoteAddress.unknown
+            ? max(1, configuration.maxPendingConnections / 2) : configuration.maxPendingPerSource
+        guard count < cap else { return false }
+        pendingBySource[source] = count + 1
+        return true
+    }
+
+    func releaseSourceSlot(_ source: String) {
+        guard let count = pendingBySource[source] else { return }
+        pendingBySource[source] = count > 1 ? count - 1 : nil
     }
 
     private func register(_ connection: LinkServerConnection, handshake: UInt64) async {

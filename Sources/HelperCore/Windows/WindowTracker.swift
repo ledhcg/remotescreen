@@ -177,6 +177,13 @@ public actor WindowTracker {
     /// The window-server number of a managed window, when known.
     public func cgWindowNumber(of window: WindowID) -> UInt32? { cgNumbers[window] }
 
+    /// The tracked window (managed or transient) with this window-server number, if any.
+    public func trackedWindow(forCGNumber number: UInt32) -> LinkWindowInfo? {
+        if let entry = entries[.cg(number)] { return entry.info }
+        guard let id = cgNumbers.first(where: { $0.value == number })?.key else { return nil }
+        return info(of: id)
+    }
+
     /// The key the stage journal stores for `window`. Without a window-server number the key is derived from the AX handle
     /// (high bit set, so it cannot collide with a real number): it works for restoring within this run, but not after a crash.
     public func stageKey(of window: WindowID) -> StageWindowKey? {

@@ -29,9 +29,18 @@ public struct TrackerWindowFocuser: WindowFocuser {
     /// injector raises the target first. No layer is skipped: there is no click-through system layer the helper may assume.
     public func isFrontmost(_ window: WindowID, at point: LinkPoint) async -> Bool {
         guard let number = await tracker.cgWindowNumber(of: window), let info = await tracker.info(of: window) else { return false }
-        // CGWindowList is ordered front to back.
+        // CGWindowList is ordered front to back: decide on the first on-screen window under the point.
         for record in system.cgWindows() where record.isOnScreen && Self.contains(record.bounds, point) {
-            return record.id == number || record.pid == info.pid
+            if record.id == number { return true }
+            guard record.pid == info.pid else { return false }
+            // Same app: only the target's own transient surfaces count, never another of the app's windows (a document the
+            // session was not given).
+            if let other = await tracker.trackedWindow(forCGNumber: record.id) {
+                return other.kind == .transient && other.parentID == window
+            }
+            // Not tracked yet: accept popup-level surfaces (menus, popovers, tooltips sit above layer 0), refuse a layer-0
+            // window that may be a new document the tracker has not seen.
+            return record.layer > 0
         }
         return false
     }

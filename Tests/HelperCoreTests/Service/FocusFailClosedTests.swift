@@ -61,6 +61,31 @@ import Testing
         #expect(await f.isFrontmost(id, at: point))
     }
 
+    /// Another document of the same app is not a surface of the target: a click there would reach a window the session was
+    /// not given.
+    @Test func anotherWindowOfTheSameAppFailsClosed() async {
+        let system = FakeWindowSystem()
+        system.pids = [10]; system.frontmost = 10
+        system.cg = [cgRecord(502, 10), cgRecord(501, 10)]
+        system.setAX(10, [axWindow(10, 2, cg: 502, focused: true), axWindow(10, 1, cg: 501)])
+        let tracker = WindowTracker(system: system)
+        await tracker.reconcile()
+        let windows = await tracker.snapshot().windows
+        #expect(windows.count == 2)
+        guard let target = windows.last?.id, let targetNumber = await tracker.cgWindowNumber(of: target) else {
+            Issue.record("setup"); return
+        }
+        let f = TrackerWindowFocuser(tracker: tracker, system: system, workspace: FakeWorkspace())
+        let coveringNumber: UInt32 = targetNumber == 501 ? 502 : 501
+        system.cg = [cgRecord(coveringNumber, 10), cgRecord(targetNumber, 10)]
+        #expect(await f.isFrontmost(target, at: point) == false)
+    }
+
+    @Test func untrackedLayerZeroWindowOfTheSameAppFailsClosed() async {
+        let (f, id, _, _) = await setup(cg: [cgRecord(888, 10, bounds: rect(0, 0, 1000, 1000), layer: 0), cgRecord(501, 10)])
+        #expect(await f.isFrontmost(id, at: point) == false)
+    }
+
     @Test func foreignWindowElsewhereDoesNotMatter() async {
         let (f, id, _, _) = await setup(cg: [cgRecord(900, 77, bounds: rect(2000, 2000, 50, 50), layer: 25), cgRecord(501, 10)])
         #expect(await f.isFrontmost(id, at: point))

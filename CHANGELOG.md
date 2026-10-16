@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Fix (App Mode): on iPhone, a window opened and was immediately shown as "closed on the Mac". A tooltip of the Mac app (a
+  tiny window Accessibility reports as a window) counted as a new window, and the iPhone switched its only screen to it just
+  before it vanished. The helper no longer treats popup-sized or popup-layer windows as windows, and on iPhone new Mac
+  windows only get a badge instead of replacing the window being used.
+
 - Fix (Screon Helper): a window opened on the iPhone or iPad loaded and was then shown as "closed on the Mac" at once. Moving it
   onto the virtual display gave it a new Accessibility element, which the helper took for a new window. Windows are now
   identified by their window-server number, and the virtual display is off by default until it is proven on more Macs.

@@ -346,6 +346,15 @@ public actor WindowTracker {
         return ["", "AXStandardWindow", "AXDialog", "AXFloatingWindow", "AXUnknown"].contains(state.subrole)
     }
 
+    /// Smallest size of a managed window in points. Real document windows and dialogs are larger; popups are not.
+    static let minimumManagedSize = LinkSize(width: 100, height: 60)
+
+    static func isPopupLike(_ state: AXWindowState, record: CGWindowRecord?) -> Bool {
+        if let layer = record?.layer, layer >= 101 { return true }  // menus, pop-up windows
+        if state.isMinimised { return false }  // a minimised window keeps its real frame
+        return state.frame.size.width < minimumManagedSize.width || state.frame.size.height < minimumManagedSize.height
+    }
+
     private static func frameMatches(_ a: LinkRect, _ b: LinkRect) -> Bool {
         abs(a.origin.x - b.origin.x) <= 2 && abs(a.origin.y - b.origin.y) <= 2
             && abs(a.size.width - b.size.width) <= 2 && abs(a.size.height - b.size.height) <= 2
@@ -392,6 +401,13 @@ public actor WindowTracker {
             var ofThisApp: [Desired] = []
             for state in candidates where state.frame.isValid {
                 let record = matched[state.token]
+                // Tooltips, hover cards and status bubbles report themselves as AX windows too (Chromium: a 66x20 window).
+                // Treated as windows, they made a new-window scene open and close at once. Not managed: too small, or on a
+                // popup/menu layer. They can still appear as transient surfaces of their parent below.
+                if Self.isPopupLike(state, record: record) {
+                    if let record { taken.remove(record.id) }
+                    continue
+                }
                 var flags: LinkWindowFlags = []
                 if state.isMinimised { flags.insert(.minimised) }
                 if state.isFullScreen { flags.insert(.fullScreen) }

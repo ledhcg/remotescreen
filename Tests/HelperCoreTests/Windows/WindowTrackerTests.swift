@@ -45,6 +45,27 @@ import Testing
         #expect(await tracker.stageKey(of: id) == StageWindowKey(pid: 100, windowNumber: 10))
     }
 
+    /// A tooltip or hover card that Accessibility reports as a window must not become a managed window: the iPhone would
+    /// switch to it and show "closed" a moment later.
+    @Test func tooltipSizedAXWindowsAreNotManaged() async {
+        let system = oneWindow()
+        system.cg = [cgRecord(11, 100, bounds: rect(10, 40, 66, 20)), cgRecord(10, 100)]
+        system.setAX(100, [axWindow(100, 1, cg: 10, focused: true), axWindow(100, 2, cg: 11, frame: rect(10, 40, 66, 20))])
+        let (tracker, _) = await makeTracker(system)
+        await tracker.reconcile()
+        let managed = await tracker.snapshot().windows.filter { $0.kind == .managed }
+        #expect(managed.count == 1)
+        #expect(managed.first?.frame == rect(100, 100, 800, 600))
+    }
+
+    @Test func aMinimisedWindowStaysManagedWhateverItsSize() async {
+        let system = oneWindow()
+        system.setAX(100, [axWindow(100, 1, cg: 10, frame: rect(0, 0, 80, 40), minimised: true)])
+        let (tracker, _) = await makeTracker(system)
+        await tracker.reconcile()
+        #expect(await tracker.snapshot().windows.filter { $0.kind == .managed }.count == 1)
+    }
+
     /// Without a window-server number the AX element is the identity: a new element is a new window.
     @Test func withoutANumberTheAXElementIsTheIdentity() async throws {
         let system = FakeWindowSystem()

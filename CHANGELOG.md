@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-16 (TestFlight beta)
+
+- Fixes from testing App Mode on a real iPad and Mac: the helper starts on a real Mac (its identity lives in the login
+  keychain), windows actually stream (capture uses the window-server number), the helper keeps a well-known port so a paired
+  iPad reconnects after a restart, pairing waits while iOS asks for Local Network access, the launcher says when the helper
+  lacks permissions, and the helper's pairing window offers Copy Link and shows the Mac's address and port.
 - **App Mode (beta, iPadOS 26, needs the Screon Helper on the Mac):** individual Mac windows as iPad windows over a pinned,
   mutually authenticated link (QUIC, TCP+TLS fallback). Set up from a saved computer by scanning the pairing code, pasting its
   link or comparing six digits; pairing is approved on the Mac and can be revoked there. RFB mode is unchanged.

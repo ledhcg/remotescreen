@@ -35,12 +35,15 @@ public struct TrackerWindowFocuser: WindowFocuser {
             guard record.pid == info.pid else { return false }
             // Same app: only the target's own transient surfaces count, never another of the app's windows (a document the
             // session was not given).
-            if let other = await tracker.trackedWindow(forCGNumber: record.id) {
-                return other.kind == .transient && other.parentID == window
+            // A surface that just appeared (a menu opened a moment ago) may not be tracked yet: re-read that app once, then
+            // decide. Still unknown means unverified, and unverified is refused.
+            var other = await tracker.trackedWindow(forCGNumber: record.id)
+            if other == nil {
+                await tracker.reconcile(only: [info.pid])
+                other = await tracker.trackedWindow(forCGNumber: record.id)
             }
-            // Not tracked yet: accept popup-level surfaces (menus, popovers, tooltips sit above layer 0), refuse a layer-0
-            // window that may be a new document the tracker has not seen.
-            return record.layer > 0
+            guard let other else { return false }
+            return other.kind == .transient && other.parentID == window
         }
         return false
     }

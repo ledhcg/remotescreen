@@ -188,11 +188,11 @@ private func hex(_ s: String) -> Data {
         let store = KeychainIdentityStore(tagPrefix: "app.screon.link.test", useDataProtectionKeychain: false)
         let label = "test-\(UUID().uuidString)"
         defer { try? store.remove(label: label) }
-        let id = try LinkIdentity.generate(role: .helper)
-        try store.save(id, label: label)
-        #expect(try store.certificate(label: label) == id.certificate)
+        let created = try store.loadOrCreate(role: .helper, label: label)
+        #expect(try store.certificate(label: label) == created)
+        #expect(try store.loadOrCreate(role: .helper, label: label) == created)
         _ = try store.secIdentity(label: label)
         let renewed = try store.renewCertificate(label: label, role: .helper, now: Date(), validityDays: 100)
-        #expect(renewed.spkiHash == id.spkiHash)
+        #expect(renewed.spkiHash == created.spkiHash)
     }
 }

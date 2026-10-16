@@ -13,6 +13,9 @@ public protocol IdentityStore: Sendable {
     /// The `SecIdentity` Network.framework needs for TLS.
     func secIdentity(label: String) throws -> SecIdentity
     func remove(label: String) throws
+    /// Creates a new identity whose private key is generated inside the store and never leaves it. Returns nil when the
+    /// store cannot do that, in which case `loadOrCreate` generates the key in memory and calls `save`.
+    func createInPlace(role: LinkRole, label: String, now: Date) throws -> LinkCertificate?
 }
 
 public extension IdentityStore {
@@ -22,10 +25,13 @@ public extension IdentityStore {
             if !existing.needsRotation(now: now) { return existing }
             return try renewCertificate(label: label, role: role, now: now, validityDays: LinkCertificateBuilder.defaultValidityDays)
         }
+        if let created = try createInPlace(role: role, label: label, now: now) { return created }
         let identity = try LinkIdentity.generate(role: role, now: now)
         try save(identity, label: label)
         return identity.certificate
     }
+
+    func createInPlace(role: LinkRole, label: String, now: Date) throws -> LinkCertificate? { nil }
 }
 
 /// Test double. Holds keys in memory; cannot produce a `SecIdentity` (that needs a keychain).
@@ -71,6 +77,10 @@ public final class InMemoryIdentityStore: IdentityStore, @unchecked Sendable {
 public struct KeychainIdentityStore: IdentityStore {
     /// Application-specific prefix for key tags, e.g. `app.screon.link.identity`.
     public let tagPrefix: String
+    /// iOS and signed apps with a keychain access group: the data-protection keychain, items `AfterFirstUnlockThisDeviceOnly`.
+    /// `false` (the Mac helper, Developer ID without a provisioning profile): the file-based login keychain. There
+    /// `kSecAttrAccessible` must not be set: macOS treats it as a request for the data-protection keychain and fails with
+    /// errSecMissingEntitlement (-34018). File-keychain items never sync, so they stay on this Mac.
     public let useDataProtectionKeychain: Bool
 
     public init(tagPrefix: String = "app.screon.link.identity", useDataProtectionKeychain: Bool = true) {
@@ -92,7 +102,24 @@ public struct KeychainIdentityStore: IdentityStore {
     }
 
     public func certificate(label: String) throws -> LinkCertificate? {
-        var q = base(kSecClassCertificate, label)
+        guard let cert = try certificateRef(label: label) else { return nil }
+        return try LinkCertificate(der: SecCertificateCopyData(cert) as Data)
+    }
+
+    /// The file-based keychain ignores `kSecAttrLabel` on certificates, so there the certificate is found through the
+    /// public-key hash of the key stored under `label` (keys keep their application tag in both keychains).
+    private func certificateQuery(label: String) throws -> [String: Any]? {
+        guard !useDataProtectionKeychain else { return base(kSecClassCertificate, label) }
+        guard let key = try? privateKey(label: label), let publicKey = SecKeyCopyPublicKey(key),
+              let raw = SecKeyCopyExternalRepresentation(publicKey, nil) as Data? else { return nil }
+        return [
+            kSecClass as String: kSecClassCertificate,
+            kSecAttrPublicKeyHash as String: Data(Insecure.SHA1.hash(data: raw)),
+        ]
+    }
+
+    private func certificateRef(label: String) throws -> SecCertificate? {
+        guard var q = try certificateQuery(label: label) else { return nil }
         q[kSecReturnRef as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
@@ -100,8 +127,7 @@ public struct KeychainIdentityStore: IdentityStore {
         if status == errSecItemNotFound { return nil }
         try check(status)
         guard let ref = out, CFGetTypeID(ref) == SecCertificateGetTypeID() else { return nil }
-        let cert = unsafeBitCast(ref, to: SecCertificate.self)
-        return try LinkCertificate(der: SecCertificateCopyData(cert) as Data)
+        return unsafeBitCast(ref, to: SecCertificate.self)
     }
 
     public func save(_ identity: LinkIdentity, label: String) throws {
@@ -118,7 +144,7 @@ public struct KeychainIdentityStore: IdentityStore {
         var keyItem = base(kSecClassKey, label)
         keyItem[kSecValueRef as String] = key
         keyItem[kSecAttrLabel as String] = "\(tagPrefix).\(label)"
-        keyItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        if useDataProtectionKeychain { keyItem[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
         keyItem[kSecAttrIsPermanent as String] = true
         try check(SecItemAdd(keyItem as CFDictionary, nil))
         try addCertificate(identity.certificate, label: label)
@@ -130,7 +156,7 @@ public struct KeychainIdentityStore: IdentityStore {
         }
         var item = base(kSecClassCertificate, label)
         item[kSecValueRef as String] = sec
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        if useDataProtectionKeychain { item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
         try check(SecItemAdd(item as CFDictionary, nil))
     }
 
@@ -160,13 +186,25 @@ public struct KeychainIdentityStore: IdentityStore {
         }
         let renewed = try LinkCertificate(der: der)
         // Replace the certificate item only; the key (and thus the pin) stays.
-        let status = SecItemDelete(base(kSecClassCertificate, label) as CFDictionary)
-        if status != errSecSuccess && status != errSecItemNotFound { throw LinkIdentityError.keychain(status) }
+        try removeCertificate(label: label)
         try addCertificate(renewed, label: label)
         return renewed
     }
 
     public func secIdentity(label: String) throws -> SecIdentity {
+        if !useDataProtectionKeychain {
+#if os(macOS)
+            guard let cert = try certificateRef(label: label) else { throw LinkIdentityError.notFound }
+            var identity: SecIdentity?
+            let status = SecIdentityCreateWithCertificate(nil, cert, &identity)
+            if status == errSecItemNotFound { throw LinkIdentityError.notFound }
+            try check(status)
+            guard let identity else { throw LinkIdentityError.notFound }
+            return identity
+#else
+            throw LinkIdentityError.unsupported("the file-based keychain exists only on macOS")
+#endif
+        }
         var q = base(kSecClassIdentity, label)
         q[kSecReturnRef as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -178,10 +216,59 @@ public struct KeychainIdentityStore: IdentityStore {
         return unsafeBitCast(ref, to: SecIdentity.self)
     }
 
-    public func remove(label: String) throws {
-        for cls in [kSecClassCertificate, kSecClassKey] {
-            let status = SecItemDelete(base(cls, label) as CFDictionary)
-            if status != errSecSuccess && status != errSecItemNotFound { throw LinkIdentityError.keychain(status) }
+    /// The file-based keychain (macOS, `useDataProtectionKeychain == false`) refuses a key imported with
+    /// `SecKeyCreateWithData` (errSecMissingEntitlement, -34018), so there the key is generated by the keychain itself
+    /// and the certificate is signed through it. The data-protection keychain keeps the import path (`save`).
+    public func createInPlace(role: LinkRole, label: String, now: Date) throws -> LinkCertificate? {
+        guard !useDataProtectionKeychain else { return nil }
+        try remove(label: label)
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+            kSecPrivateKeyAttrs as String: [
+                kSecAttrIsPermanent as String: true,
+                kSecAttrApplicationTag as String: tag(label),
+                kSecAttrLabel as String: "\(tagPrefix).\(label)",
+            ] as [String: Any],
+        ]
+        var error: Unmanaged<CFError>?
+        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
+            throw LinkIdentityError.keychain(Int32(CFErrorGetCode(error?.takeRetainedValue())))
         }
+        guard let publicKey = SecKeyCopyPublicKey(key),
+              let raw = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
+            try? remove(label: label)
+            throw LinkIdentityError.keychain(Int32(CFErrorGetCode(error?.takeRetainedValue())))
+        }
+        do {
+            let der = try LinkCertificateBuilder.build(
+                publicKey: try P256.Signing.PublicKey(x963Representation: raw), role: role, now: now,
+                validityDays: LinkCertificateBuilder.defaultValidityDays
+            ) { tbs in
+                var signError: Unmanaged<CFError>?
+                guard let sig = SecKeyCreateSignature(key, .ecdsaSignatureMessageX962SHA256, tbs as CFData, &signError) else {
+                    throw LinkIdentityError.keychain(Int32(CFErrorGetCode(signError?.takeRetainedValue())))
+                }
+                return sig as Data
+            }
+            let certificate = try LinkCertificate(der: der)
+            try addCertificate(certificate, label: label)
+            return certificate
+        } catch {
+            try? remove(label: label)
+            throw error
+        }
+    }
+
+    public func remove(label: String) throws {
+        try removeCertificate(label: label)  // before the key: the file keychain finds the certificate through the key
+        let status = SecItemDelete(base(kSecClassKey, label) as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound { throw LinkIdentityError.keychain(status) }
+    }
+
+    private func removeCertificate(label: String) throws {
+        guard let q = try certificateQuery(label: label) else { return }
+        let status = SecItemDelete(q as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound { throw LinkIdentityError.keychain(status) }
     }
 }

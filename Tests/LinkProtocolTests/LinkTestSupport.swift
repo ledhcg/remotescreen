@@ -92,6 +92,7 @@ enum Samples {
         .pairDenied(.tooManyAttempts),
         .sasCommit(LinkBytes32(repeating: 7)),
         .sasReveal(LinkBytes32(repeating: 8)),
+        .sasConfirm,
         .appsList(filter: .recent),
         .appsItems([app, app]),
         .appsIcon(key: 3, pixelSize: 128),

@@ -61,12 +61,6 @@ final class LoopbackRig: @unchecked Sendable {
     let macs = InMemoryPairedMacStore()
     private let lock = NSLock()
     private var servers: [LinkServer] = []
-    private var sasOpen = false
-
-    var sasPairingOpen: Bool {
-        get { lock.withLock { sasOpen } }
-        set { lock.withLock { sasOpen = newValue } }
-    }
 
     /// Skips the test (does not fail it) when a temporary keychain cannot be created on this machine.
     static func make() throws -> LoopbackRig {
@@ -110,7 +104,6 @@ final class LoopbackRig: @unchecked Sendable {
             approvalTimeout: .seconds(5),
             snapshotProvider: snapshot.map { snap in { @Sendable _ in snap } },
             askBeforeEachSession: { askBeforeEachSession },
-            sasPairingEnabled: { [weak self] in self?.sasPairingOpen ?? false },
             enableQUIC: enableQUIC, enableTCP: enableTCP, loopbackOnly: loopbackOnly, maxSessions: maxSessions)
         let server = try LinkServer(configuration: config)
         let endpoint = try await server.start()

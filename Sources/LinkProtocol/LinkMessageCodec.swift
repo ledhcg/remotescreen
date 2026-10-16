@@ -48,7 +48,7 @@ extension LinkMessage {
             case .permission(let kind, let state): w.u8(4); w.enumeration(kind); w.enumeration(state)
             case .stage(let state): w.u8(5); w.enumeration(state)
             }
-        case .approvalRequired:
+        case .approvalRequired, .sasConfirm:
             break
         case .close(let code, let reason):
             w.u16(code.rawValue)
@@ -257,6 +257,7 @@ extension LinkMessage {
             default: throw LinkError.malformed("unknown status tag")
             }
         case .approvalRequired: return .approvalRequired
+        case .sasConfirm: return .sasConfirm
         case .close:
             return .close(code: LinkCloseCode(rawValue: try r.u16("code")), reason: try r.string(maxBytes: Limits.maxReasonBytes, "reason"))
         case .pairProve:

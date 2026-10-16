@@ -100,6 +100,7 @@ final class QUICWire: LinkWire, @unchecked Sendable {
     private let closedGate = OneShot<Void>()
     private let lock = NSLock()
     private var peerInfo: LinkPeerInfo?
+    private var remoteKey: String?
     private var pendingPreambles = 0
     /// Live stream connections, so `close` can cancel them (resetting each stream) before the group goes.
     private var liveStreams: [ObjectIdentifier: NWConnection] = [:]
@@ -107,6 +108,7 @@ final class QUICWire: LinkWire, @unchecked Sendable {
     private let incomingCont: AsyncStream<any LinkWireStream>.Continuation
 
     var peer: LinkPeerInfo { lock.withLock { peerInfo } ?? LinkPeerInfo(spkiHash: Data(), exporter: nil) }
+    var remoteAddress: String { lock.withLock { remoteKey } ?? LinkRemoteAddress.unknown }
 
     /// QUIC parameters shared by client, server and listener.
     static func parameters(
@@ -203,6 +205,9 @@ final class QUICWire: LinkWire, @unchecked Sendable {
     /// `preambleTimeout`. The QUIC stream limits (`initialMaxStreams*`) bound how many such streams a peer can open.
     private func accept(_ connection: NWConnection) {
         track(connection)
+        // The connection the listener hands over names the remote end; remember it for rate limiting.
+        let key = LinkRemoteAddress.key(for: connection.currentPath?.remoteEndpoint ?? connection.endpoint)
+        lock.withLock { if remoteKey == nil || remoteKey == LinkRemoteAddress.unknown { remoteKey = key } }
         connection.start(queue: queue)
         let slot = lock.withLock { () -> Bool in
             guard pendingPreambles < Self.maxPendingPreambles else { return false }

@@ -25,6 +25,8 @@ protocol LinkWire: AnyObject, Sendable {
     var transport: LinkTransportKind { get }
     /// Valid after `start` returned.
     var peer: LinkPeerInfo { get }
+    /// Where the peer connects from, normalised for rate limiting (see `LinkRemoteAddress`); `"unknown"` when not known.
+    var remoteAddress: String { get }
     /// Streams the peer opened, once their preamble is read. Finishes when the connection ends.
     var incomingStreams: AsyncStream<any LinkWireStream> { get }
     func start(timeout: Duration) async throws

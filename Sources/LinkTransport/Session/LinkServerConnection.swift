@@ -47,6 +47,9 @@ public actor LinkServerConnection {
         var ledger: PairingSecretLedger
         var resumeTokens: ResumeTokenStore
         var helperSPKIHash: Data
+        var admission: PairingAdmission
+        /// Normalised remote address, for rate limiting only.
+        var source: String
     }
 
     /// Runs the helper side of the handshake on a channel whose wire is up. Throws `LinkSessionError`.
@@ -56,10 +59,9 @@ public actor LinkServerConnection {
         var machine = HelperSessionMachine(
             configuration: HelperSessionMachine.Configuration(
                 macName: config.macName, helperSPKIHash: d.helperSPKIHash, capabilities: config.capabilities,
-                displays: config.displays(), askBeforeEachSession: config.askBeforeEachSession(),
-                sasPairingEnabled: config.sasPairingEnabled()),
+                displays: config.displays(), askBeforeEachSession: config.askBeforeEachSession()),
             peerSPKIHash: peer.spkiHash, exporter: peer.exporter, devices: config.pairedDevices, ledger: d.ledger,
-            resumeTokens: d.resumeTokens)
+            resumeTokens: d.resumeTokens, admission: d.admission, source: d.source)
         var ready: HelperSessionReady?
         let deadline = DeadlineTimer { await channel.fail(.timeout, notify: true) }
         defer { deadline.cancel() }

@@ -13,6 +13,9 @@ public struct LinkServerConfiguration: Sendable {
     /// Local approval (LocalAuthentication on the Mac) for a new pairing, and for each session when
     /// `askBeforeEachSession` is on. Injected: this package has no UI. Return `true` to approve. Not called at all for a
     /// paired device when `askBeforeEachSession` is off.
+    ///
+    /// For SAS pairing the request carries `sasCode`: show those six digits and the device name, let the person compare them
+    /// with the iPad, and return their local yes/no. Matching and approving both happen here, on the Mac.
     public var approvalHandler: @Sendable (PairingApprovalRequest) async -> Bool
     public var approvalTimeout: Duration
     /// How long each handshake step may take before the connection is dropped (not counting the person at the Mac).
@@ -20,8 +23,6 @@ public struct LinkServerConfiguration: Sendable {
     /// Sent right after `welcome` (and after a resume) so the iPad starts from a complete state.
     public var snapshotProvider: (@Sendable (HelperSessionReady) async -> LinkSnapshot?)?
     public var askBeforeEachSession: @Sendable () -> Bool
-    /// SAS pairing is only accepted while this returns true (the pairing window is open on the Mac).
-    public var sasPairingEnabled: @Sendable () -> Bool
     /// 0 picks a free port (QUIC and TCP share the number when possible).
     public var port: UInt16
     public var enableQUIC: Bool
@@ -40,7 +41,6 @@ public struct LinkServerConfiguration: Sendable {
         approvalTimeout: Duration = .seconds(120), handshakeTimeout: Duration = .seconds(10),
         snapshotProvider: (@Sendable (HelperSessionReady) async -> LinkSnapshot?)? = nil,
         askBeforeEachSession: @escaping @Sendable () -> Bool = { false },
-        sasPairingEnabled: @escaping @Sendable () -> Bool = { false },
         port: UInt16 = 0, enableQUIC: Bool = true, enableTCP: Bool = true, loopbackOnly: Bool = false,
         advertiseBonjour: Bool = false, maxPendingConnections: Int = 8, maxSessions: Int = 4
     ) {
@@ -48,7 +48,7 @@ public struct LinkServerConfiguration: Sendable {
         self.approvalHandler = approvalHandler; self.displays = displays; self.approvalTimeout = approvalTimeout
         self.handshakeTimeout = handshakeTimeout
         self.snapshotProvider = snapshotProvider; self.askBeforeEachSession = askBeforeEachSession
-        self.sasPairingEnabled = sasPairingEnabled; self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
+        self.port = port; self.enableQUIC = enableQUIC; self.enableTCP = enableTCP
         self.loopbackOnly = loopbackOnly; self.advertiseBonjour = advertiseBonjour
         self.maxPendingConnections = maxPendingConnections; self.maxSessions = maxSessions
     }
@@ -69,6 +69,8 @@ public struct LinkServerEndpoint: Sendable, Equatable {
 public actor LinkServer {
     public nonisolated let pairingLedger: PairingSecretLedger
     public nonisolated let resumeTokens: ResumeTokenStore
+    /// The pairing window and the SAS rate limits (see `openPairingWindow`).
+    public nonisolated let pairingAdmission: PairingAdmission
     /// Established sessions, after the handshake.
     public nonisolated let connections: AsyncStream<LinkServerConnection>
     public nonisolated let helperSPKIHash: Data
@@ -86,10 +88,11 @@ public actor LinkServer {
 
     public init(
         configuration: LinkServerConfiguration, ledger: PairingSecretLedger = PairingSecretLedger(),
-        resumeTokens: ResumeTokenStore = ResumeTokenStore()
+        resumeTokens: ResumeTokenStore = ResumeTokenStore(), admission: PairingAdmission = PairingAdmission()
     ) throws {
         self.configuration = configuration
         pairingLedger = ledger
+        pairingAdmission = admission
         self.resumeTokens = resumeTokens
         helperSPKIHash = try configuration.identity.certificate().spkiHash
         (connections, connectionsCont) = AsyncStream<LinkServerConnection>.makeStream(bufferingPolicy: .bufferingOldest(16))
@@ -144,9 +147,22 @@ public actor LinkServer {
         connectionsCont.finish()
     }
 
+    /// Lets an unknown iPad start pairing (QR or SAS) for `duration` seconds. Call it when the person at the Mac asks to pair
+    /// a device ("Pair new iPad", "Pair without camera"). It closes by itself, and right after one device paired. While it is
+    /// closed, unknown devices are refused before any proof is looked at.
+    public func openPairingWindow(duration: TimeInterval = PairingAdmission.defaultWindow) {
+        pairingAdmission.open(duration: duration)
+    }
+
+    public func closePairingWindow() { pairingAdmission.close() }
+
+    public var isPairingWindowOpen: Bool { pairingAdmission.isOpen }
+
     /// Issues a pairing secret and returns the QR payload for it (`hostHints`: addresses or names the iPad may try).
+    /// Showing the QR code opens the pairing window for as long as the code is valid.
     public func makePairingQRPayload(hostHints: [String]) throws -> PairingQRPayload {
         let offer = try pairingLedger.issue()
+        pairingAdmission.open(duration: PairingSecretLedger.lifetime)
         return PairingQRPayload(
             hostHints: hostHints, port: endpoint.port, macSPKIHash: helperSPKIHash, secret: offer.secret, nonce: offer.nonce,
             expiry: offer.expiry)
@@ -223,7 +239,8 @@ public actor LinkServer {
             let channel = LinkChannel(wire: wire, role: .helper)
             await channel.start()
             let dependencies = LinkServerConnection.Dependencies(
-                configuration: configuration, ledger: pairingLedger, resumeTokens: resumeTokens, helperSPKIHash: helperSPKIHash)
+                configuration: configuration, ledger: pairingLedger, resumeTokens: resumeTokens, helperSPKIHash: helperSPKIHash,
+                admission: pairingAdmission, source: wire.remoteAddress)
             let connection: LinkServerConnection
             do {
                 connection = try await LinkServerConnection.establish(channel: channel, wire: wire, dependencies: dependencies)

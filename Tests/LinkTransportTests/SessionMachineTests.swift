@@ -11,6 +11,7 @@ struct MachineRig {
     let devices: InMemoryPairedDeviceStore
     let ledger: PairingSecretLedger
     let resumeTokens: ResumeTokenStore
+    let admission: PairingAdmission
     let clock: TestClock
     let clientSPKI: Data
     let helperSPKI: Data
@@ -24,20 +25,24 @@ struct MachineRig {
         var sasCodes: [String] = []
         var approvals: [PairingApprovalRequest] = []
         var clientSent: [LinkMessageType] = []
+        var clientMessages: [LinkMessage] = []
         var helperSent: [LinkMessageType] = []
         var helperDenied: LinkPairDenyReason?
     }
 
     static func make(
         mode: LinkClientMode, paired: Bool = false, exporterClient: Data? = Data(repeating: 7, count: 32),
-        exporterHelper: Data? = Data(repeating: 7, count: 32), askBeforeEachSession: Bool = false, sasEnabled: Bool = true,
+        exporterHelper: Data? = Data(repeating: 7, count: 32), askBeforeEachSession: Bool = false, windowOpen: Bool = true,
         helperSeenByClient: Data? = nil, clientSeenByHelper: Data? = nil, clientRange: ClosedRange<UInt16> = 1...1,
         devices: InMemoryPairedDeviceStore = InMemoryPairedDeviceStore(), ledger: PairingSecretLedger? = nil,
-        resumeTokens: ResumeTokenStore? = nil, clock: TestClock = TestClock(), deviceName: String = "alice's iPad"
+        resumeTokens: ResumeTokenStore? = nil, clock: TestClock = TestClock(), deviceName: String = "alice's iPad",
+        source: String = "v4:10.0.0.2", admission sharedAdmission: PairingAdmission? = nil
     ) throws -> MachineRig {
         let clientSPKI = try LinkRandom.bytes(32), helperSPKI = try LinkRandom.bytes(32)
         if paired { try devices.add(PairedDevice(spkiHash: clientSPKI, name: "alice's iPad", pairedAt: clock.now)) }
         let ledger = ledger ?? PairingSecretLedger(clock: clock.clock)
+        let admission = sharedAdmission ?? PairingAdmission(clock: clock.clock)
+        if windowOpen { admission.open() }
         let tokens = resumeTokens ?? ResumeTokenStore(clock: clock.clock)
         let hello = LinkHello(
             protocolMin: clientRange.lowerBound, protocolMax: clientRange.upperBound, capabilities: [.hevc, .gestures, .tablet],
@@ -47,12 +52,12 @@ struct MachineRig {
         let h = HelperSessionMachine(
             configuration: .init(
                 macName: "Test Mac", helperSPKIHash: helperSPKI, capabilities: [.hevc, .menus], displays: [],
-                askBeforeEachSession: askBeforeEachSession, sasPairingEnabled: sasEnabled),
+                askBeforeEachSession: askBeforeEachSession),
             peerSPKIHash: clientSeenByHelper ?? clientSPKI, exporter: exporterHelper, devices: devices, ledger: ledger,
-            resumeTokens: tokens, clock: clock.clock)
+            resumeTokens: tokens, admission: admission, source: source, clock: clock.clock)
         return MachineRig(
-            client: c, helper: h, devices: devices, ledger: ledger, resumeTokens: tokens, clock: clock, clientSPKI: clientSPKI,
-            helperSPKI: helperSPKI)
+            client: c, helper: h, devices: devices, ledger: ledger, resumeTokens: tokens, admission: admission, clock: clock,
+            clientSPKI: clientSPKI, helperSPKI: helperSPKI)
     }
 
     /// `approve`: the Mac user's answer. `sasConfirm`: the iPad user's answer to the six digits.
@@ -65,7 +70,7 @@ struct MachineRig {
         func perform(client actions: [ClientSessionMachine.Action], rig: inout MachineRig, out: inout Outcome, toHelper: inout [LinkMessage], clientDone: inout Bool) {
             for a in actions {
                 switch a {
-                case .send(let m): toHelper.append(m); out.clientSent.append(m.type)
+                case .send(let m): toHelper.append(m); out.clientSent.append(m.type); out.clientMessages.append(m)
                 case .terminate(let e, _): out.clientError = e; clientDone = true
                 case .event(.ready(let info)): out.clientInfo = info; clientDone = true
                 case .event(.paired(let name, _)): out.clientPairedAs = name
@@ -303,7 +308,37 @@ private func qrRig(
         #expect(out.approvals.map(\.reason) == [.newPairing(.qr)])
         #expect(rig.devices.device(spkiHash: rig.clientSPKI)?.name == "alice's iPad")
         #expect(out.clientSent == [.hello, .pairProve])
-        #expect(out.helperSent == [.pairOK, .welcome])
+        #expect(out.helperSent == [.approvalRequired, .pairOK, .welcome])
+    }
+
+    @Test func pairingNeedsAnOpenWindowAndUsesItUp() throws {
+        // Window closed: refused before the ledger is touched.
+        var closed = try qrRig()
+        closed.admission.close()
+        let out = closed.run()
+        #expect(out.helperDenied == .expired)
+        #expect(out.approvals.isEmpty && closed.devices.all().isEmpty)
+
+        // Window expired by the clock.
+        var late = try qrRig()
+        late.clock.advance(PairingAdmission.defaultWindow + 1)
+        #expect(late.run().helperDenied == .expired)
+
+        // One success closes the window: a second device cannot pair on the same window.
+        var first = try qrRig()
+        #expect(first.run().helperReady?.newlyPaired == true)
+        #expect(!first.admission.isOpen)
+        var second = try MachineRig.make(
+            mode: .reconnect(nil), windowOpen: false, devices: first.devices, ledger: first.ledger, resumeTokens: first.resumeTokens,
+            clock: first.clock, admission: first.admission)
+        let offer = try first.ledger.issue()
+        second.client = ClientSessionMachine(
+            hello: second.client.hello,
+            mode: .pairWithQR(PairingQRPayload(
+                hostHints: ["h"], port: 1, macSPKIHash: second.helperSPKI, secret: offer.secret, nonce: offer.nonce, expiry: offer.expiry)),
+            ownSPKIHash: second.clientSPKI, peerSPKIHash: second.helperSPKI, exporter: Data(repeating: 7, count: 32))
+        #expect(second.run().helperDenied == .expired)
+        #expect(first.devices.all().count == 1)
     }
 
     @Test func userDeniesOnTheMac() throws {
@@ -337,7 +372,7 @@ private func qrRig(
         var rig = try qrRig()
         rig.helper = HelperSessionMachine(
             configuration: rig.helper.configuration, peerSPKIHash: try LinkRandom.bytes(32), exporter: Data(repeating: 7, count: 32),
-            devices: rig.devices, ledger: rig.ledger, resumeTokens: rig.resumeTokens, clock: rig.clock.clock)
+            devices: rig.devices, ledger: rig.ledger, resumeTokens: rig.resumeTokens, admission: rig.admission, clock: rig.clock.clock)
         #expect(rig.run().helperDenied == .badProof)
     }
 
@@ -351,10 +386,9 @@ private func qrRig(
         var replay = try MachineRig.make(mode: .pairWithQR(payload), devices: rig.devices, ledger: rig.ledger, resumeTokens: rig.resumeTokens, clock: rig.clock)
         replay.helper = HelperSessionMachine(
             configuration: .init(
-                macName: "Test Mac", helperSPKIHash: rig.helperSPKI, capabilities: [], displays: [], askBeforeEachSession: false,
-                sasPairingEnabled: false),
+                macName: "Test Mac", helperSPKIHash: rig.helperSPKI, capabilities: [], displays: [], askBeforeEachSession: false),
             peerSPKIHash: replay.clientSPKI, exporter: Data(repeating: 7, count: 32), devices: rig.devices, ledger: rig.ledger,
-            resumeTokens: rig.resumeTokens, clock: rig.clock.clock)
+            resumeTokens: rig.resumeTokens, admission: rig.admission, clock: rig.clock.clock)
         replay.client = ClientSessionMachine(
             hello: replay.client.hello, mode: .pairWithQR(payload), ownSPKIHash: replay.clientSPKI, peerSPKIHash: rig.helperSPKI,
             exporter: Data(repeating: 7, count: 32))
@@ -458,11 +492,29 @@ private func qrRig(
         #expect(out.clientError == nil && out.helperError == nil)
         #expect(out.sasCodes.count == 1 && out.sasCodes[0].count == 6)
         #expect(out.approvals.first?.sasCode == out.sasCodes.first, "the Mac shows the same digits")
+        #expect(out.approvals.first?.deviceName == "alice's iPad")
         #expect(out.approvals.map(\.reason) == [.newPairing(.sas)])
         #expect(out.helperReady?.newlyPaired == true)
         #expect(rig.devices.all().count == 1)
-        #expect(out.clientSent == [.hello, .sasCommit, .sasReveal, .pairProve])
-        #expect(out.helperSent == [.sasCommit, .sasReveal, .pairOK, .welcome])
+        #expect(out.clientSent == [.hello, .sasCommit, .sasReveal, .sasConfirm])
+        #expect(out.helperSent == [.sasCommit, .sasReveal, .approvalRequired, .pairOK, .welcome])
+        #expect(!rig.admission.isOpen, "one success closes the pairing window")
+    }
+
+    @Test func nothingOnTheWireIsDerivedFromTheDigits() throws {
+        // The confirmation must not be a proof keyed by the digits: a peer that sees every message could otherwise try all
+        // 10^6 codes offline. It is an empty message.
+        var rig = try MachineRig.make(mode: .pairWithSAS)
+        let out = rig.run()
+        let confirm = try #require(out.clientMessages.last)
+        #expect(confirm == .sasConfirm)
+        #expect(try confirm.encodePayload().isEmpty)
+        for m in out.clientMessages {
+            switch m {
+            case .hello, .sasCommit, .sasReveal, .sasConfirm: break
+            default: Issue.record("unexpected client message \(m.type) in SAS pairing")
+            }
+        }
     }
 
     @Test func userSaysTheCodesDiffer() throws {
@@ -477,20 +529,26 @@ private func qrRig(
     @Test func aManInTheMiddleCausesDifferentCodes() throws {
         // The iPad believes the Mac's certificate is X, the Mac believes the iPad's certificate is Y: what a TLS relay produces.
         var rig = try MachineRig.make(mode: .pairWithSAS, helperSeenByClient: try LinkRandom.bytes(32), clientSeenByHelper: try LinkRandom.bytes(32))
-        let out = rig.run()
+        let out = rig.run(approve: false)
         let shownOnIPad = try #require(out.sasCodes.first)
-        let shownOnMac = out.approvals.first?.sasCode
-        // The helper never reaches approval: the iPad's confirmation does not verify, which is the second line of defence.
-        #expect(out.helperDenied == .badProof)
-        #expect(shownOnMac == nil)
-        #expect(shownOnIPad.count == 6)
+        let shownOnMac = try #require(out.approvals.first?.sasCode)
+        #expect(shownOnIPad.count == 6 && shownOnMac.count == 6)
+        // The people see two different codes and say no; nothing but their eyes decides.
+        #expect(shownOnIPad != shownOnMac)
+        #expect(rig.devices.all().isEmpty)
     }
 
     @Test func sasIsRefusedWhenThePairingWindowIsClosed() throws {
-        var rig = try MachineRig.make(mode: .pairWithSAS, sasEnabled: false)
+        var rig = try MachineRig.make(mode: .pairWithSAS, windowOpen: false)
         let out = rig.run()
         #expect(out.helperDenied == .unsupported)
         #expect(out.clientError == .pairingDenied(.unsupported))
+    }
+
+    @Test func sasIsRefusedAfterTheWindowExpires() throws {
+        var rig = try MachineRig.make(mode: .pairWithSAS)
+        rig.clock.advance(PairingAdmission.defaultWindow + 1)
+        #expect(rig.run().helperDenied == .unsupported)
     }
 
     @Test func userDeniesOnTheMacAfterSAS() throws {
@@ -498,6 +556,7 @@ private func qrRig(
         let out = rig.run(approve: false)
         #expect(out.helperDenied == .userDenied)
         #expect(rig.devices.all().isEmpty)
+        #expect(rig.admission.isOpen, "a denial does not use up the window")
     }
 
     @Test func revealThatDoesNotMatchItsCommitIsRejected() throws {
@@ -509,13 +568,47 @@ private func qrRig(
         guard case .terminate(.pairingFailed, _)? = actions.first else { Issue.record("expected failure"); return }
     }
 
-    @Test func confirmationCannotBeReplayedAcrossSessions() throws {
-        // Two independent SAS runs produce different codes/values; the first confirmation does not verify in the second.
-        var a = try MachineRig.make(mode: .pairWithSAS)
-        var b = try MachineRig.make(mode: .pairWithSAS)
-        _ = a.run()
-        let outB = b.run()
-        #expect(outB.helperReady != nil)
-        #expect(a.devices.all().count == 1 && b.devices.all().count == 1)
+    @Test func confirmBeforeTheExchangeIsAProtocolViolation() throws {
+        let rig = try MachineRig.make(mode: .pairWithSAS)
+        var early = rig.helper
+        _ = early.receive(.hello(rig.client.hello))
+        guard case .terminate(.protocolViolation, _)? = early.receive(.sasConfirm).first else { Issue.record("expected violation"); return }
+        var mid = rig.helper
+        _ = mid.receive(.hello(rig.client.hello))
+        _ = mid.receive(.sasCommit(LinkBytes32(repeating: 1)))
+        guard case .terminate(.protocolViolation, _)? = mid.receive(.sasConfirm).first else { Issue.record("expected violation"); return }
+    }
+
+    @Test func attemptsPerAddressAreLimited() throws {
+        let clock = TestClock()
+        let admission = PairingAdmission(clock: clock.clock)
+        var last: LinkPairDenyReason?
+        for i in 0...PairingAdmission.maxSASAttemptsPerSource {
+            var rig = try MachineRig.make(mode: .pairWithSAS, clock: clock, source: "v4:10.0.0.9", admission: admission)
+            let out = rig.run(approve: false)
+            last = out.helperDenied
+            if i < PairingAdmission.maxSASAttemptsPerSource { #expect(out.helperDenied == .userDenied) }
+        }
+        #expect(last == .tooManyAttempts, "the fourth session from one address is refused")
+        // Another address is not affected by the first one's attempts.
+        var other = try MachineRig.make(mode: .pairWithSAS, clock: clock, source: "v4:10.0.0.10", admission: admission)
+        #expect(other.run(approve: false).helperDenied == .userDenied)
+        // After the period the address may try again.
+        clock.advance(PairingAdmission.sasPeriod + 1)
+        admission.open()
+        var again = try MachineRig.make(mode: .pairWithSAS, clock: clock, source: "v4:10.0.0.9", admission: admission)
+        #expect(again.run(approve: false).helperDenied == .userDenied)
+    }
+
+    @Test func globalSASCeilingHoldsAcrossAddresses() throws {
+        let clock = TestClock()
+        let admission = PairingAdmission(clock: clock.clock)
+        var results: [LinkPairDenyReason?] = []
+        for i in 0..<(PairingAdmission.maxSASAttemptsGlobal + 1) {
+            var rig = try MachineRig.make(mode: .pairWithSAS, clock: clock, source: "v4:10.0.1.\(i)", admission: admission)
+            results.append(rig.run(approve: false).helperDenied)
+        }
+        #expect(results.dropLast().allSatisfy { $0 == .userDenied })
+        #expect(results.last! == .tooManyAttempts)
     }
 }

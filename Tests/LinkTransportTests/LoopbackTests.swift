@@ -70,7 +70,7 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
     @Test(arguments: transports)
     func pairBySASWhenThePairingWindowIsOpen(transport: LinkTransportKind) async throws {
         let rig = try LoopbackRig.make()
-        let (_, ep) = try await rig.makeServer()
+        let (server, ep) = try await rig.makeServer()
         let target = rig.endpoint(ep, transport: transport)
 
         // Window closed: refused, permanently.
@@ -82,7 +82,7 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
             #expect(e == .pairingDenied(.unsupported) && e.isPermanent)
         }
 
-        rig.sasPairingOpen = true
+        await server.openPairingWindow()
         let shown = Shown()
         let conn = try await LinkConnection.connect(
             to: target,
@@ -110,7 +110,7 @@ private func qrMode(_ server: LinkServer) async throws -> LinkClientMode {
         }
         #expect(rig.devices.all().isEmpty)
 
-        rig.sasPairingOpen = true
+        await server.openPairingWindow()
         do {
             _ = try await LinkConnection.connect(
                 to: target, configuration: rig.clientConfiguration(mode: .pairWithSAS, transport: transport.preference, sas: { _ in false }))

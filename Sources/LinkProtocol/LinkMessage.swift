@@ -41,6 +41,8 @@ public enum LinkMessage: Sendable, Equatable {
     case sasCommit(LinkBytes32)
     /// C↔H: the ephemeral X25519 public key itself.
     case sasReveal(LinkBytes32)
+    /// C→H: the iPad user saw the same six digits as on the Mac. Carries nothing derived from the digits.
+    case sasConfirm
 
     // MARK: Apps
 
@@ -143,6 +145,7 @@ public enum LinkMessage: Sendable, Equatable {
         case .pairDenied: .pairDenied
         case .sasCommit: .sasCommit
         case .sasReveal: .sasReveal
+        case .sasConfirm: .sasConfirm
         case .appsList: .appsList
         case .appsItems: .appsItems
         case .appsIcon: .appsIcon

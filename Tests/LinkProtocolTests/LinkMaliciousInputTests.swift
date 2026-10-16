@@ -73,12 +73,13 @@ struct LinkMaliciousInputTests {
 
     @Test func messageWithTrailingBytesIsMalformed() {
         #expect(isMalformed(payloadError(.approvalRequired, [0])))
+        #expect(isMalformed(payloadError(.sasConfirm, [0])))
         #expect(isMalformed(payloadError(.ping, wireBytes(9))))
         #expect(isMalformed(payloadError(.windowDestroyed, wireBytes(5))))
     }
 
     @Test func zeroLengthPayloadsAreTruncated() {
-        for type in LinkMessageType.allCases where type != .approvalRequired {
+        for type in LinkMessageType.allCases where type != .approvalRequired && type != .sasConfirm {
             let error = payloadError(type, [])
             #expect(isMalformed(error) || type == .menuTree, "\(type): \(String(describing: error))")
         }

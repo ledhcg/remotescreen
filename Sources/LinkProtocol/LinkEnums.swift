@@ -9,7 +9,7 @@ public enum LinkMessageType: UInt16, Sendable, CaseIterable {
     // Session
     case hello = 0x0001, welcome, resume, snapshot, ping, pong, stats, status, approvalRequired, close
     // Pairing
-    case pairProve = 0x0010, pairChallenge, pairOK, pairDenied, sasCommit, sasReveal
+    case pairProve = 0x0010, pairChallenge, pairOK, pairDenied, sasCommit, sasReveal, sasConfirm
     // Apps
     case appsList = 0x0020, appsItems, appsIcon, appsIconData, appsLaunch, appsActivate, appsQuit, appsChanged
     // Windows

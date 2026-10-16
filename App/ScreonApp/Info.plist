@@ -33,6 +33,10 @@
 	<string>Screon uses the camera only to scan the pairing code shown by Screon Helper on your Mac.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Screon needs local network access to find and connect to your Mac.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.ledinhcuong.screon.window</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

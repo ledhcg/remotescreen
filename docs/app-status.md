@@ -375,6 +375,25 @@ Not verified (needs a Mac helper and an iPad, nothing here has played a sound, d
 - Quality settings: only checked that they reach `window.subscribe`; the effect on bitrate needs the real helper. 10-bit video:
   the iPad now decodes Main 10 and advertises the capability when allowed, but the helper encoder does not produce it yet.
 - The Streaming settings sheet and the file transfer list have no UI tests.
+## App Mode launcher and multi-window experience (M6 W1-W7)
+
+Verified (`swift test`; `Tools/mock-link-helper/run_appmode_test.sh` on the iPad simulator, iOS 26.5 and iOS 27.0, mock helper only):
+
+- Pure logic in `WindowKit` (`SceneLogicTests`): icon cache bounds and least-recently-used eviction, resize debounce with warm-up,
+  size limits from the Mac window, the window reference (live id plus hint, hostile text refused) and re-binding after a helper
+  restart (`SceneBindings.revalidate`), launcher listing and search, app open plans, new-window policy and badges, window
+  switcher, menu paths and key equivalents (reserved shortcuts, duplicate and disabled items, ⌘W policy), menu tree cache.
+- End to end against the mock helper (`AppModeUITests`, then `verify_appmode.py` on the helper's log): QR pairing, the launcher
+  lists the three apps with icons fetched through `apps.icon`, tapping an app activates it and opens its window in a new scene,
+  video appears, a tap reaches the helper as pointer events, typed text arrives, Menus > File > New arrives as
+  `menu.press([0, 0])`, "Resize Mac window to fit" arrives as `window.setFrame`, "Close Mac window" as `window.command(close)`, the
+  placeholder appears and Close destroys the iPad scene; the launcher search filters the list.
+- Not verified: the iPadOS menu bar (`UIMainMenuSystem`, only that the app launches with it), key equivalents as `UIKeyCommand`
+  with a hardware keyboard, resizing by dragging a Stage Manager window (the debounce is unit tested, the system resize signal is
+  not exercised), tabs-in-one-window, opening several scenes at once, external displays, the iPhone window switcher (built, not run
+  on an iPhone simulator), restoration after a relaunch. The mock helper only answers `apps.list` with the running apps.
+- In the iOS simulator a client-initiated one-way QUIC stream (the input stream) fails with "Network is down", so the UI test
+  forces TCP+TLS with the DEBUG variable `LINK_TRANSPORT=tcp`. Whether QUIC input works on a real iPad is not verified.
 
 ## Not yet verified, do not treat as done
 

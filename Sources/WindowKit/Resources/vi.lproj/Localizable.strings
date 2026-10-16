@@ -38,3 +38,9 @@
 "The Mac is already streaming as many windows as it allows." = "Máy Mac đang truyền số cửa sổ tối đa cho phép.";
 "Screon Helper needs permission to record the screen." = "Screon Helper cần quyền ghi màn hình.";
 "The Mac could not start streaming this window. Trying again may help." = "Máy Mac không thể bắt đầu truyền cửa sổ này. Thử lại có thể giúp ích.";
+
+/* Launcher sections */
+"Running" = "Đang chạy";
+"Recent" = "Gần đây";
+"All apps" = "Tất cả ứng dụng";
+"Results" = "Kết quả";

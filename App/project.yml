@@ -56,6 +56,9 @@ targets:
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
+        # App Mode: each remote-window scene publishes an activity with the window reference as its target content identifier.
+        NSUserActivityTypes:
+          - com.ledinhcuong.screon.window
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

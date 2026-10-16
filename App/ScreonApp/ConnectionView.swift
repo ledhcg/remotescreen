@@ -24,6 +24,8 @@ struct ConnectionView: View {
     @State private var pairingFor: SavedConnection?
     /// The computer whose App Mode streaming settings are open.
     @State private var streamingFor: SavedConnection?
+    /// iPhone: the computer whose App Mode is open in this scene (iPhone has one scene, so windows cannot open beside it).
+    @State private var phoneAppMode: SavedConnection?
 
     private var sections: ComputerList.Sections {
         ComputerList.sections(saved: model.saved, discovered: browser.hosts)
@@ -60,6 +62,7 @@ struct ConnectionView: View {
             .navigationTitle("Screon")
             .modifier(AppModePairingSheet(computer: $pairingFor, model: model))
             .sheet(item: $streamingFor) { computer in AppModeSettingsView(computer: computer, model: model) }
+            .modifier(PhoneAppModeCover(computer: $phoneAppMode))
             .onAppear { browser.start() }
             .onDisappear { browser.stop() }
             .overlay { if controller.state == .connecting && login == nil { connectingCard } }
@@ -159,7 +162,11 @@ struct ConnectionView: View {
             if #available(iOS 26, *) {
                 if connection.helper != nil {
                     Button("Open App Mode windows", systemImage: "macwindow") {
-                        openWindow(id: AppModeScene.id, value: SceneRole.launcher(computerID: connection.id))
+                        if AppModeOpener.canOpenSeveralScenes {
+                            openWindow(id: AppModeScene.id, value: SceneRole.launcher(computerID: connection.id))
+                        } else {
+                            phoneAppMode = connection
+                        }
                     }
                 }
                 Button(connection.helper == nil ? "Set up App Mode…" : "Pair App Mode again…", systemImage: "qrcode.viewfinder") {

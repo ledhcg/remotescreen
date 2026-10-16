@@ -102,8 +102,18 @@ enum LinkPairing {
     ) throws -> LinkClientConfiguration {
         LinkClientConfiguration(
             identity: try identity(), deviceName: UIDevice.current.name, capabilities: capabilities(for: settings), sceneLimits: sceneLimits,
-            mode: mode, pinnedMacSPKIHash: pin, sasConfirmation: sas, pairedMacStore: pairedMacs, computerID: computerID.uuidString
+            mode: mode, pinnedMacSPKIHash: pin, transport: transportPreference, sasConfirmation: sas, pairedMacStore: pairedMacs,
+            computerID: computerID.uuidString
         )
+    }
+
+    /// QUIC with TCP+TLS as the fallback. DEBUG builds can force TCP with `LINK_TRANSPORT=tcp`: in the iOS simulator, opening a
+    /// client-initiated one-way QUIC stream (the input stream) fails with "Network is down", so the UI tests use TCP+TLS.
+    private static var transportPreference: LinkTransportPreference {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["LINK_TRANSPORT"] == "tcp" { return .tcp }
+        #endif
+        return .automatic
     }
 
     /// Configuration for connecting to an already paired Mac. Throws `LinkSessionError.notAuthorized` when this iPad holds no pin for

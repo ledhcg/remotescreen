@@ -122,6 +122,41 @@ public struct SceneBindings: Sendable, Equatable {
         return changed
     }
 
+    /// Call with the first snapshot of a new connection, before `reconcile`. Window ids belong to one helper run, so after the helper
+    /// restarted an id can name a different window (or none). Every scene is checked against its saved query: a scene whose window no
+    /// longer fits is searched anew, and a scene that was waiting for its window (closed) looks again. Returns the scenes that changed.
+    @discardableResult
+    public mutating func revalidate(with workspace: RemoteWorkspace) -> [SceneID] {
+        guard workspace.hasSnapshot else { return [] }
+        var changed: [SceneID] = []
+        for scene in scenes {
+            guard let entry = entries[scene] else { continue }
+            let others = boundWindows(except: scene)
+            switch entry.state {
+            case .bound(let id):
+                guard let query = entry.query, !query.bundleID.isEmpty else { continue }
+                if let window = workspace.window(id), window.isManaged, window.bundleID == query.bundleID,
+                   let index = workspace.matchQuery(for: id)?.indexHint,
+                   WindowMatchScoring.score(query, title: window.title, index: index) >= WindowMatchScoring.minimumAcceptable {
+                    continue
+                }
+                let state = resolve(query, workspace: workspace, excluding: others)
+                if state != entry.state {
+                    entries[scene] = Entry(state: state, query: state.windowID.flatMap { workspace.matchQuery(for: $0) } ?? query)
+                    changed.append(scene)
+                }
+            case .windowClosed(let hint):
+                if let match = workspace.bestMatch(for: hint, excluding: others) {
+                    entries[scene] = Entry(state: .bound(match.id), query: workspace.matchQuery(for: match.id) ?? hint)
+                    changed.append(scene)
+                }
+            case .restoring:
+                continue
+            }
+        }
+        return changed
+    }
+
     /// The scene was destroyed by the user.
     public mutating func remove(scene: SceneID) { entries[scene] = nil }
 

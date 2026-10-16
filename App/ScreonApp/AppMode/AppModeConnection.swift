@@ -97,6 +97,12 @@ final class AppModeConnection: AppModeSession {
     private(set) var framesShown: Set<WindowID> = []
     /// Round trip time of the last ping, in milliseconds.
     private(set) var roundTripMillis: Double?
+    /// Lists of apps for the launcher (`apps.list`).
+    private(set) var directory = AppsDirectory()
+    /// New Mac windows: badges per app, and windows waiting to get a scene.
+    private(set) var newWindows = NewWindowInbox()
+    /// Bumped whenever a menu tree changed, so menus can be rebuilt.
+    private(set) var menuRevision = 0
 
     // MARK: Internals
 
@@ -121,6 +127,11 @@ final class AppModeConnection: AppModeSession {
     @ObservationIgnored private var nextBarrier: UInt64 = 1 << 62
     @ObservationIgnored private var scenesWaitingForWindow: [SceneID: WindowID] = [:]
     @ObservationIgnored private var scenesReopening: Set<SceneID> = []
+    @ObservationIgnored private var scenesStarting: [SceneID: WindowRef] = [:]
+    @ObservationIgnored private var revalidateOnSnapshot = false
+    @ObservationIgnored private var expectingLaunch: Set<String> = []
+    @ObservationIgnored private(set) var menuTrees = MenuTreeCache()
+    @ObservationIgnored private(set) var icons: AppIconStore!
 
     init(
         computerID: UUID, policy: ReconnectPolicy = .standard, autoStart: Bool = true,
@@ -134,6 +145,7 @@ final class AppModeConnection: AppModeSession {
         services.files.isConnected = { [weak self] in self?.isConnected ?? false }
         services.files.transport = { [weak self] message in await self?.sendReliably(message) ?? .failed }
         services.files.barrier = { [weak self] in await self?.barrier() ?? false }
+        icons = AppIconStore(computerID: computerID) { [weak self] message in self?.send(message) }
         if autoStart { start() }
     }
 
@@ -244,6 +256,10 @@ final class AppModeConnection: AppModeSession {
         helper.reset()
         services.sessionStarted(capabilities: connection.session.capabilities) { [weak self] message in self?.send(message) }
         if connection.session.capabilities.contains(.audio), settings.playAudio, audio == nil { audio = AppAudioPlayer() }
+        directory.connectionLost()
+        icons.connectionLost()
+        menuTrees.reset()
+        revalidateOnSnapshot = true
         hasConnectedOnce = true
         phase = .connected
         for command in subscriptions.connectionEstablished() { perform(command) }
@@ -331,6 +347,12 @@ final class AppModeConnection: AppModeSession {
         case .snapshot, .windowCreated, .windowUpdated, .windowDestroyed, .windowOrder, .windowCapabilities, .appsChanged:
             applyWorkspace(message)
             refreshAudioMute()
+        case .appsItems(let items):
+            directory.receive(items)
+        case .appsIconData(let key, let png):
+            icons.receive(key: key, png: png)
+        case .menuTree(let bundleID, let items):
+            if menuTrees.receive(bundleID: bundleID, items: items, at: Self.now) { menuRevision += 1 }
         default:
             break
         }
@@ -342,9 +364,20 @@ final class AppModeConnection: AppModeSession {
         if case .snapshot = message {
             for id in streams.keys where workspace.window(id) == nil { forgetWindow(id) }
         }
-        if change.didChange { reconcileScenes() }
+        if case .snapshot = message, revalidateOnSnapshot, workspace.hasSnapshot {
+            // A new connection: window ids may belong to another helper run, and nothing on the Mac is "new".
+            revalidateOnSnapshot = false
+            bindings.revalidate(with: workspace)
+            newWindows.rebaseline(workspace)
+        }
+        if change.didChange {
+            reconcileScenes()
+            updateNewWindows()
+        }
         if change.resync != nil { requestResync() }
     }
+
+    private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     private func handle(_ event: LinkEvent) {
         switch event {
@@ -393,6 +426,7 @@ final class AppModeConnection: AppModeSession {
 
     /// The scene is gone: stop its stream.
     func detach(scene: SceneID) {
+        scenesStarting[scene] = nil
         if let window = bindings.state(of: scene)?.windowID ?? scenesWaitingForWindow[scene] { unsubscribe(window) }
         scenesWaitingForWindow[scene] = nil
         scenesReopening.remove(scene)
@@ -407,7 +441,37 @@ final class AppModeConnection: AppModeSession {
         reconcileScenes()
     }
 
+    /// A scene starts from a stored reference (a restored scene, or one opened from the launcher): the live id when it still fits,
+    /// otherwise the best window for the saved hint.
+    func attach(scene: SceneID, ref: WindowRef) {
+        scenesStarting[scene] = ref
+        reconcileScenes()
+    }
+
+    /// Shows `window` in `scene` instead of what it showed (tabs, and the iPhone's window switcher). A window that another scene
+    /// already shows is not taken over: the answer says which scene to bring forward.
+    @discardableResult
+    func switchScene(_ scene: SceneID, to window: WindowID) -> OpenWindowResult {
+        let result = bindings.open(window: window, in: scene, workspace: workspace)
+        scenesWaitingForWindow[scene] = nil
+        return result
+    }
+
     private func reconcileScenes() {
+        for (scene, ref) in scenesStarting where workspace.hasSnapshot {
+            scenesStarting[scene] = nil
+            let others = Set(bindings.scenes.filter { $0 != scene }.compactMap { bindings.state(of: $0)?.windowID })
+            switch ref.start(in: workspace, excluding: others) {
+            case .bind(let id):
+                if case .focusExisting = bindings.open(window: id, in: scene, workspace: workspace), let query = ref.query {
+                    bindings.restore(scene: scene, query: query, workspace: workspace)
+                }
+            case .search(let query):
+                bindings.restore(scene: scene, query: query, workspace: workspace)
+            case .nothing:
+                bindings.restore(scene: scene, query: WindowMatchQuery(bundleID: "", title: "", indexHint: 0), workspace: workspace)
+            }
+        }
         for (scene, window) in scenesWaitingForWindow {
             guard workspace.hasSnapshot else { continue }
             scenesWaitingForWindow[scene] = nil
@@ -572,4 +636,72 @@ final class AppModeConnection: AppModeSession {
     func send(_ message: LinkMessage) { sender?.send(message) }
 
     var isConnected: Bool { phase == .connected }
+
+    // MARK: Launcher, menus and window commands
+
+    /// Asks for a list of apps once; the answer arrives in `directory`.
+    func requestApps(_ filter: LinkAppFilter, force: Bool = false) {
+        if force || !directory.hasLoaded(filter), directory.willRequest(filter) { send(.appsList(filter: filter)) }
+    }
+
+    /// Bundle ids of the apps that have a scene open.
+    var sceneApps: Set<String> {
+        Set(bindings.scenes.compactMap { bindings.state(of: $0)?.windowID }.compactMap { workspace.window($0)?.bundleID })
+    }
+
+    /// What tapping an app should do. Launching or activating is done here; the caller opens the windows of the plan.
+    func openApp(bundleID: String, style: AppOpenStyle, canOpenSeveralScenes: Bool) -> AppOpenPlan {
+        let plan = AppOpenPlan.make(
+            bundleID: bundleID, workspace: workspace, bindings: bindings, style: style, canOpenSeveralScenes: canOpenSeveralScenes)
+        newWindows.clearBadge(bundleID: bundleID)
+        switch plan.start {
+        case .launch:
+            expect(bundleID)
+            send(.appsLaunch(bundleID: bundleID))
+        case .activateAndWait:
+            expect(bundleID)
+            send(.appsActivate(bundleID: bundleID))
+        case .showWindows:
+            send(.appsActivate(bundleID: bundleID))
+        }
+        return plan
+    }
+
+    func quitApp(bundleID: String) { send(.appsQuit(bundleID: bundleID)) }
+
+    /// The app's first new window gets a scene even though it had none (it was just launched). Forgotten after 20 seconds.
+    private func expect(_ bundleID: String) {
+        expectingLaunch.insert(bundleID)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            self?.expectingLaunch.remove(bundleID)
+        }
+        updateNewWindows()
+    }
+
+    private func updateNewWindows() {
+        let bound = Set(bindings.scenes.compactMap { bindings.state(of: $0)?.windowID })
+        // With tabs a new window joins the app's tab bar; only a launched app's first window needs a scene.
+        let policy: NewWindowPolicy = AppModePreferences.openStyle == .tabs ? .badge : AppModePreferences.newWindowPolicy
+        let fulfilled = newWindows.update(workspace: workspace, policy: policy, sceneApps: sceneApps, expecting: expectingLaunch, bound: bound)
+        expectingLaunch.subtract(fulfilled)
+    }
+
+    /// Windows that should get a scene now. Whoever takes them opens the scenes, so each is opened once.
+    func takeWindowsToOpen() -> [WindowID] { newWindows.takeToOpen() }
+
+    /// Fetches the menu of an app unless a recent tree is cached.
+    func requestMenu(bundleID: String, force: Bool = false) {
+        if menuTrees.shouldRequest(bundleID: bundleID, at: Self.now, force: force) { send(.menuGet(bundleID: bundleID)) }
+    }
+
+    func menuEntries(bundleID: String) -> [RemoteMenuEntry] { menuTrees.entry(for: bundleID)?.entries ?? [] }
+
+    func pressMenu(bundleID: String, path: [UInt16]) { send(.menuPress(bundleID: bundleID, path: path)) }
+
+    func command(_ command: LinkWindowCommand, on window: WindowID) { send(.windowCommand(window: window, command: command)) }
+
+    func setFrame(window: WindowID, size: LinkSize) {
+        send(.windowSetFrame(LinkSetFrame(window: window, size: size, placement: .keep)))
+    }
 }

@@ -2,13 +2,16 @@
 import ConnectionKit
 import Foundation
 import SessionKit
+import WindowKit
 
 /// Test hooks for App Mode UI tests, DEBUG builds only (like `RFB_HOST` for the Screen Sharing mode):
 ///
 /// - `LINK_HOST`, `LINK_PORT`: the helper to use (a mock on 127.0.0.1). Without `LINK_PAIRING` the iPad must already be paired with it.
 /// - `LINK_PAIRING`: the text of the pairing QR code. The app pairs with it, then connects.
 ///
-/// After connecting, the first managed window of the Mac opens in its own scene. Only the first scene of a launch runs this.
+/// - `LINK_OPEN`: `launcher` opens the launcher scene; `window` (the default) opens the first managed window in its own scene.
+///
+/// Only the first scene of a launch runs this.
 @available(iOS 26, *)
 @MainActor
 enum DebugLinkHooks {
@@ -31,6 +34,7 @@ enum DebugLinkHooks {
                 let outcome = try await LinkPairing.pair(qrText: text, computerID: computer.id, addressOverride: (host, port))
                 computer.helper = outcome.helperEndpoint
             } catch {
+                NSLog("DebugLinkHooks: pairing failed: %@", String(describing: error))
                 model.lastError = LinkPairing.message(for: error)
                 return
             }
@@ -44,11 +48,15 @@ enum DebugLinkHooks {
 
         // Hold a reference for the whole run so the session survives while the window scene comes up.
         guard let connection = registry.acquireConnection(computerID: computer.id) else { return }
+        if environment["LINK_OPEN"] == "launcher" {
+            open(.launcher(computerID: computer.id))
+            return
+        }
         for _ in 0..<200 where !connection.workspace.hasSnapshot {
             try? await Task.sleep(for: .milliseconds(100))
         }
         guard let window = connection.workspace.orderedWindows.first(where: { $0.isManaged }) else { return }
-        open(.remoteWindow(computerID: computer.id, windowRef: String(window.id.rawValue)))
+        open(.remoteWindow(computerID: computer.id, windowRef: WindowRef(window: window.id, in: connection.workspace)?.encoded ?? String(window.id.rawValue)))
     }
 }
 #endif

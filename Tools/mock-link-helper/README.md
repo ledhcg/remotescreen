@@ -58,6 +58,8 @@ them, then round-trips ping, icon, menu, clipboard and a file with a checksum.
 
 ## Simulator test
 
-`run_appmode_test.sh` starts the helper, runs the `AppModeUITests` class (skips with a message while it does not exist), then
-checks the log with `verify_appmode.py` (paired, subscribed, pointer and key events received, no stuck keys). The UI test reads
+`run_appmode_test.sh` starts the helper, picks an iPad simulator with iOS 26 or later (or takes a UDID), runs the `AppModeUITests`
+class with an ad hoc signed app (the Keychain needs it), then checks the log with `verify_appmode.py` (paired, icons fetched, app
+activated, subscribed, pointer and text events, menu press, set frame, close command, no stuck keys). `SCREON_KEEP_LOG=<file>`
+keeps a copy of the event log. The UI test reads
 `SCREON_MOCK_HOST`, `SCREON_MOCK_PORT` and `SCREON_MOCK_QR` from its environment (xcodebuild forwards `TEST_RUNNER_*`).

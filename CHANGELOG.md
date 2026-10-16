@@ -20,6 +20,13 @@
   keycode 0xFFFF are mapped from their keysym on the Mac.
 - Helper (App Mode): ending one iPad's session no longer releases keys or buttons another iPad is holding; Pencil tilt is now
   converted to the range the system's tablet events expect.
+- App Mode launcher and multi-window experience (iPadOS 26): a launcher scene with running apps (and their window counts), recent
+  and all installed apps, search and cached icons; opening an app shows its windows as separate iPad windows or as tabs in one
+  window (setting); an already open window comes forward instead of opening twice; iPad windows follow the Mac window (title,
+  size limits) and resize it once you stop dragging; the Mac app's menus appear in the iPad menu bar and in a "Menus" button,
+  Mac key equivalents work as shortcuts, and ⌘W either closes the iPad window or goes to the Mac (setting); window actions (close,
+  minimise, zoom, exit full screen, show on full desktop); new Mac windows open by themselves or show a badge; windows are found
+  again after a reconnect, a helper restart or a relaunch; on iPhone one window at a time with a window switcher.
 - Helper (App Mode): input is injected only when the target window is verifiably the topmost window under the pointer (or the
   same app's own popup); otherwise the window is raised first. Unknown window numbers and foreign overlays fail closed.
 - English is now the source language of the whole project (UI strings, code comments, docs, tools). Vietnamese is a translation

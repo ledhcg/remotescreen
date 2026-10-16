@@ -8,11 +8,16 @@ public enum PairingAdmissionError: Error, Equatable {
     case tooManySASAttempts
 }
 
+/// The pairing methods a Mac user can open a window for. QR has no window of its own: showing a QR code issues an offer
+/// (`LinkServer.makePairingQRPayload`) and the offer's nonce is the admission, so it can admit nothing but a proof for that
+/// offer. Only SAS needs an explicit window.
+public enum PairingWindowMethod: Sendable, Equatable { case sas }
+
 /// Helper-side gate for first-contact pairing, shared by every connection of one `LinkServer`.
 ///
-/// - A **pairing window** is opened by the person at the Mac (showing the QR code, or "Pair without camera") and is the only
-///   time an unknown device may start QR or SAS pairing. It lasts `defaultWindow` unless told otherwise and closes after one
-///   successful pairing.
+/// - The **SAS window** is opened by the person at the Mac ("Pair without camera") and is the only time an unknown device
+///   may start SAS pairing. Showing a QR code does not open it. It lasts `defaultWindow` unless told otherwise and closes
+///   after one successful pairing or one denial by the Mac user.
 /// - SAS sessions are limited: a six-digit code has only 10^6 values, so a man in the middle who relays one session gets one
 ///   guess per session. At most `maxSASAttemptsPerSource` per remote address and `maxSASAttemptsGlobal` in total per
 ///   `sasPeriod`. The counters live here and not in the connection, so reconnecting does not reset them.

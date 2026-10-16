@@ -109,6 +109,9 @@ public final class PairingSecretLedger: @unchecked Sendable {
         }
     }
 
+    /// Burns every outstanding offer (a pairing succeeded: the QR codes on screen are no longer good).
+    public func revokeAll() { lock.withLock { entries.removeAll() } }
+
     public func revoke(nonce: Data) { _ = lock.withLock { entries.removeValue(forKey: nonce) } }
 
     private func purgeExpired(now: Date) {

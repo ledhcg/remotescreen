@@ -408,8 +408,7 @@ struct HelperSessionMachine {
     // MARK: QR pairing
 
     private mutating func handleQRProve(_ p: LinkPairProve) -> [Action] {
-        // Only while the person at the Mac has a pairing window open.
-        guard admission.isOpen else { return deny(.expired) }
+        // The admission is the offer itself: only a proof naming an outstanding QR nonce gets past the ledger.
         let name = p.deviceName
         guard constantTimeEqual(p.ipadSPKIHash.data, peerSPKIHash),
               name.utf8.count <= PairingProof.maxDeviceNameBytes, !name.isEmpty
@@ -492,10 +491,18 @@ struct HelperSessionMachine {
         guard phase == .awaitingApproval, let pending else { return [] }
         self.pending = nil
         switch pending {
-        case .pairing(let name, _):
-            guard approved else { return deny(.userDenied) }
-            // One pairing per window: the window is used up here, atomically.
-            guard admission.consumeWindow() else { return deny(.expired) }
+        case .pairing(let name, let method):
+            guard approved else {
+                if case .sas = method { admission.close() }  // one denial closes the SAS window
+                return deny(.userDenied)
+            }
+            // One pairing per window: the SAS window is used up here, atomically; a QR pairing burns every offer on screen
+            // and closes the SAS window too.
+            switch method {
+            case .sas: guard admission.consumeWindow() else { return deny(.expired) }
+            case .qr: admission.close()
+            }
+            ledger.revokeAll()
             do { try devices.add(PairedDevice(spkiHash: peerSPKIHash, name: name, pairedAt: clock())) } catch { return deny(.busy) }
             guard let helperID = try? LinkBytes32(configuration.helperSPKIHash) else { return fail(.transport("helper id")) }
             return welcome(

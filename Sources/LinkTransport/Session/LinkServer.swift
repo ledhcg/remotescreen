@@ -147,22 +147,22 @@ public actor LinkServer {
         connectionsCont.finish()
     }
 
-    /// Lets an unknown iPad start pairing (QR or SAS) for `duration` seconds. Call it when the person at the Mac asks to pair
-    /// a device ("Pair new iPad", "Pair without camera"). It closes by itself, and right after one device paired. While it is
-    /// closed, unknown devices are refused before any proof is looked at.
-    public func openPairingWindow(duration: TimeInterval = PairingAdmission.defaultWindow) {
+    /// Lets an unknown iPad start SAS pairing ("Pair without camera") for `duration` seconds. It closes by itself, after one
+    /// device paired, and after one denial on the Mac. While it is closed SAS sessions are refused. QR pairing has no window:
+    /// see `makePairingQRPayload`. Showing a QR code never enables SAS.
+    public func openPairingWindow(method: PairingWindowMethod = .sas, duration: TimeInterval = PairingAdmission.defaultWindow) {
         pairingAdmission.open(duration: duration)
     }
 
-    public func closePairingWindow() { pairingAdmission.close() }
+    public func closePairingWindow(method: PairingWindowMethod = .sas) { pairingAdmission.close() }
 
-    public var isPairingWindowOpen: Bool { pairingAdmission.isOpen }
+    public func isPairingWindowOpen(method: PairingWindowMethod = .sas) -> Bool { pairingAdmission.isOpen }
 
     /// Issues a pairing secret and returns the QR payload for it (`hostHints`: addresses or names the iPad may try).
-    /// Showing the QR code opens the pairing window for as long as the code is valid.
+    /// The offer itself is the admission: only a `pair.prove` naming its nonce is considered, for `PairingSecretLedger.lifetime`
+    /// or until a pairing succeeds. It does not enable SAS pairing.
     public func makePairingQRPayload(hostHints: [String]) throws -> PairingQRPayload {
         let offer = try pairingLedger.issue()
-        pairingAdmission.open(duration: PairingSecretLedger.lifetime)
         return PairingQRPayload(
             hostHints: hostHints, port: endpoint.port, macSPKIHash: helperSPKIHash, secret: offer.secret, nonce: offer.nonce,
             expiry: offer.expiry)

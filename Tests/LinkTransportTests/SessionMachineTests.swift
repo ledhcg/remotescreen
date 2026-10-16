@@ -311,31 +311,45 @@ private func qrRig(
         #expect(out.helperSent == [.approvalRequired, .pairOK, .welcome])
     }
 
-    @Test func pairingNeedsAnOpenWindowAndUsesItUp() throws {
-        // Window closed: refused before the ledger is touched.
-        var closed = try qrRig()
-        closed.admission.close()
-        let out = closed.run()
+    @Test func qrAdmissionIsTheOfferNotAWindow() throws {
+        // No SAS window is open: a QR proof for an outstanding offer still pairs.
+        var rig = try MachineRig.make(mode: .reconnect(nil), windowOpen: false)
+        let offer = try rig.ledger.issue()
+        rig.client = ClientSessionMachine(
+            hello: rig.client.hello,
+            mode: .pairWithQR(PairingQRPayload(
+                hostHints: ["h"], port: 1, macSPKIHash: rig.helperSPKI, secret: offer.secret, nonce: offer.nonce, expiry: offer.expiry)),
+            ownSPKIHash: rig.clientSPKI, peerSPKIHash: rig.helperSPKI, exporter: Data(repeating: 7, count: 32))
+        #expect(rig.run().helperReady?.newlyPaired == true)
+
+        // An open SAS window does not admit a QR proof without an outstanding offer.
+        var noOffer = try rigWithUnknownNonce(ledger: PairingSecretLedger(), clock: TestClock(), source: "v4:10.0.0.66")
+        #expect(noOffer.admission.isOpen)
+        let out = noOffer.run()
         #expect(out.helperDenied == .expired)
-        #expect(out.approvals.isEmpty && closed.devices.all().isEmpty)
+        #expect(out.approvals.isEmpty && noOffer.devices.all().isEmpty)
+    }
 
-        // Window expired by the clock.
+    @Test func offerExpiresWithItsLifetime() throws {
         var late = try qrRig()
-        late.clock.advance(PairingAdmission.defaultWindow + 1)
+        late.clock.advance(PairingSecretLedger.lifetime + 1)
         #expect(late.run().helperDenied == .expired)
+    }
 
-        // One success closes the window: a second device cannot pair on the same window.
+    @Test func aQRPairingClosesEverythingElse() throws {
         var first = try qrRig()
+        let spare = try first.ledger.issue()  // a second QR still on screen
+        first.admission.open()  // and a SAS window
         #expect(first.run().helperReady?.newlyPaired == true)
-        #expect(!first.admission.isOpen)
+        #expect(!first.admission.isOpen, "one success closes the SAS window")
+        // The other offer is gone: a second device cannot use it.
         var second = try MachineRig.make(
             mode: .reconnect(nil), windowOpen: false, devices: first.devices, ledger: first.ledger, resumeTokens: first.resumeTokens,
             clock: first.clock, admission: first.admission)
-        let offer = try first.ledger.issue()
         second.client = ClientSessionMachine(
             hello: second.client.hello,
             mode: .pairWithQR(PairingQRPayload(
-                hostHints: ["h"], port: 1, macSPKIHash: second.helperSPKI, secret: offer.secret, nonce: offer.nonce, expiry: offer.expiry)),
+                hostHints: ["h"], port: 1, macSPKIHash: second.helperSPKI, secret: spare.secret, nonce: spare.nonce, expiry: spare.expiry)),
             ownSPKIHash: second.clientSPKI, peerSPKIHash: second.helperSPKI, exporter: Data(repeating: 7, count: 32))
         #expect(second.run().helperDenied == .expired)
         #expect(first.devices.all().count == 1)
@@ -600,6 +614,15 @@ private func qrRig(
         #expect(out.clientError == .pairingDenied(.unsupported))
     }
 
+    @Test func showingAQRCodeDoesNotEnableSAS() throws {
+        // An outstanding QR offer, no SAS window: SAS is refused.
+        var rig = try MachineRig.make(mode: .pairWithSAS, windowOpen: false)
+        _ = try rig.ledger.issue()
+        let out = rig.run()
+        #expect(out.helperDenied == .unsupported)
+        #expect(out.approvals.isEmpty && rig.devices.all().isEmpty)
+    }
+
     @Test func sasIsRefusedAfterTheWindowExpires() throws {
         var rig = try MachineRig.make(mode: .pairWithSAS)
         rig.clock.advance(PairingAdmission.defaultWindow + 1)
@@ -611,7 +634,7 @@ private func qrRig(
         let out = rig.run(approve: false)
         #expect(out.helperDenied == .userDenied)
         #expect(rig.devices.all().isEmpty)
-        #expect(rig.admission.isOpen, "a denial does not use up the window")
+        #expect(!rig.admission.isOpen, "one denial on the Mac closes the SAS window")
     }
 
     @Test func revealThatDoesNotMatchItsCommitIsRejected() throws {

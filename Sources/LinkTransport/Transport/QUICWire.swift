@@ -157,8 +157,10 @@ final class QUICWire: LinkWire, @unchecked Sendable {
         // Network.framework only starts a group that has a handler for incoming streams.
         group.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         group.setReceiveHandler { _, _, _ in }  // datagrams are not used in v1; the handler only exists so the group starts
+        let deadline = StartDeadline()
         group.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
+            if case .waiting(let error) = state, StartDeadline.isLocalNetworkPolicy(error) { deadline.waiting(true) } else { deadline.waiting(false) }
             switch state {
             case .ready:
                 self.captureHandshake()
@@ -172,7 +174,7 @@ final class QUICWire: LinkWire, @unchecked Sendable {
         }
         group.start(queue: queue)
         let timer = Task { [ready] in
-            if await sleepUnlessCancelled(timeout) { ready.complete(.failure(LinkWireError.timedOut)) }
+            if await deadline.expire(after: timeout) { ready.complete(.failure(LinkWireError.timedOut)) }
         }
         defer { timer.cancel() }
         do { try await ready.wait() } catch {

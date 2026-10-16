@@ -81,6 +81,40 @@ final class OneShot<T: Sendable>: @unchecked Sendable {
     }
 }
 
+/// The start timeout of a wire. Time spent in Network.framework's `.waiting` state does not count (up to `cap`): iOS keeps a
+/// connection waiting while the Local Network permission alert is on screen, and that must not fail pairing.
+final class StartDeadline: @unchecked Sendable {
+    /// The waiting state iOS uses while the Local Network permission is undecided or denied (TN3179): the DNS policy error.
+    /// Other waiting states (no route, refused) keep counting, so an unreachable Mac still times out quickly.
+    static func isLocalNetworkPolicy(_ error: NWError) -> Bool {
+        if case .dns(let code) = error { return code == -65570 }  // kDNSServiceErr_PolicyDenied
+        return false
+    }
+
+    private let lock = NSLock()
+    private var waitingSince: ContinuousClock.Instant?
+    private var waited: Duration = .zero
+
+    func waiting(_ isWaiting: Bool) {
+        lock.withLock {
+            let now = ContinuousClock.now
+            if isWaiting, waitingSince == nil { waitingSince = now }
+            if !isWaiting, let since = waitingSince { waited += now - since; waitingSince = nil }
+        }
+    }
+
+    /// Returns when `timeout` of non-waiting time (or `cap` in total) has passed; `false` if cancelled first.
+    func expire(after timeout: Duration, cap: Duration = .seconds(120)) async -> Bool {
+        let start = ContinuousClock.now
+        while true {
+            guard await sleepUnlessCancelled(.milliseconds(200)) else { return false }
+            let now = ContinuousClock.now
+            let paused = lock.withLock { waited + (waitingSince.map { now - $0 } ?? .zero) }
+            if now - start - paused >= timeout || now - start >= cap { return true }
+        }
+    }
+}
+
 /// Sleeps for `d`. Returns `false` when the task was cancelled first, so timers can tell expiry from cancellation.
 func sleepUnlessCancelled(_ d: Duration) async -> Bool {
     do { try await Task.sleep(for: d); return true } catch { return false }

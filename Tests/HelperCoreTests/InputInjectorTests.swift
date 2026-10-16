@@ -249,6 +249,39 @@ import Testing
         #expect(poster.events.isEmpty)
     }
 
+    @Test func endingOneSessionReleasesOnlyItsOwnInput() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 55, down: true, modifiers: .command)), session: 1)
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 8, down: true, modifiers: .command)), session: 2)
+        await injector.handle(pointer(10, 10, .left), session: 2)
+        #expect(await injector.pressedKeycodes(session: 1) == [55])
+        #expect(await injector.pressedKeycodes(session: 2) == [8])
+        poster.clear()
+
+        await injector.releaseAll(session: 1)
+        #expect(poster.events == [.key(keycode: 55, down: false, modifiers: [])])
+        #expect(await injector.pressedKeycodes == [8])
+        #expect(await injector.pressedButtons == .left)
+
+        poster.clear()
+        await injector.releaseAll(session: 2)
+        #expect(poster.events.contains(.key(keycode: 8, down: false, modifiers: [])))
+        #expect(poster.events.contains { if case .mouseUp = $0 { true } else { false } })
+        #expect(await injector.pressedKeycodes.isEmpty)
+        #expect(await injector.pressedButtons.isEmpty)
+    }
+
+    @Test func aKeyBothSessionsHoldStaysDownUntilTheLastReleases() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 56, down: true, modifiers: .shift)), session: 1)
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: 56, down: true, modifiers: .shift)), session: 2)
+        poster.clear()
+        await injector.releaseAll(session: 1)
+        #expect(poster.events.isEmpty)
+        await injector.releaseAll(session: 2)
+        #expect(poster.events == [.key(keycode: 56, down: false, modifiers: [])])
+    }
+
     @Test func releaseAllLeavesStylusProximityAndCancelsGestures() async {
         await injector.handle(pointer(10, 10, .left, pressure: 0.3))
         await injector.handle(.inputGesture(LinkGestureEvent(window: window, kind: .magnify, value: 0.1, phase: .began)))
@@ -262,6 +295,35 @@ import Testing
         await injector.setKeyboardWindow(window); focuser.front = window
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 0, down: true, modifiers: [])))
         await injector.handle(.inputKey(LinkKeyEvent(keycode: 0, down: false, modifiers: [])))
+        #expect(await injector.pressedKeycodes.isEmpty)
+    }
+
+    @Test func keyWithoutMacKeycodeUsesTheKeysymTable() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0x61, down: true, modifiers: [])))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0x61, down: false, modifiers: [])))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0x41, down: true, modifiers: [])))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0x41, down: false, modifiers: [])))
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0xFF0D, down: true, modifiers: [])))
+        #expect(poster.events == [
+            .key(keycode: 0, down: true, modifiers: []),
+            .key(keycode: 0, down: false, modifiers: []),
+            .key(keycode: 0, down: true, modifiers: .shift),
+            .key(keycode: 0, down: false, modifiers: .shift),
+            .key(keycode: 36, down: true, modifiers: []),
+        ])
+    }
+
+    @Test func printableKeysymWithoutAKeyUsesUnicodeTextAndUnknownOnesAreDropped() async {
+        await injector.setKeyboardWindow(window); focuser.front = window
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0x0100_1EA1, down: true, modifiers: [])))  // ạ
+        await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: 0x0100_1EA1, down: false, modifiers: [])))
+        #expect(poster.events == [.unicode("ạ")])
+        poster.clear()
+        for keysym: UInt32? in [0xFE50, 0xFFFFFF, 0x0000, 0x1F, nil] {
+            await injector.handle(.inputKey(LinkKeyEvent(keycode: LinkKeyEvent.noKeycode, keysym: keysym, down: true, modifiers: [])))
+        }
+        #expect(poster.events.isEmpty)
         #expect(await injector.pressedKeycodes.isEmpty)
     }
 

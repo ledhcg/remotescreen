@@ -14,7 +14,8 @@ public struct HelperServiceOptions: Sendable {
     /// The virtual stage display created when the first iPad connects. `nil`: no virtual display; windows are still resized in
     /// place and restored.
     public var stageDisplay: VirtualDisplaySpec? = VirtualDisplaySpec(width: 1920, height: 1200)
-    /// Per-app audio (needs `HelperDependencies.audio`, the `.audio` capability from the iPad, and this switch). Off by default.
+    /// Per-app audio: the user setting. Audio is sent only when this is on, `HelperDependencies.audio` is provided and the iPad
+    /// announced the `.audio` capability. Off by default.
     public var audioEnabled = false
     public var preferredCodec: LinkVideoCodec = .hevc
     /// How often permissions are re-checked (the person may grant one in System Settings while the helper runs).
@@ -35,8 +36,8 @@ public struct HelperServiceOptions: Sendable {
 
 /// Audio for one app: capture, and a mapping from the packetizer's PCM packets to what the wire carries.
 ///
-/// The wire protocol only defines Opus (`LinkAudioCodec.opus`) while `AudioPacketizer` produces 16-bit PCM, so audio stays
-/// off until a real Opus encoder is supplied as `encode`. (Interface mismatch recorded in the HelperService documentation.)
+/// `AudioPacketizer` already produces 48 kHz interleaved 16-bit PCM, which is what `LinkAudioCodec.pcm16` carries, so the
+/// default `encode` passes packets through unchanged. A different codec needs a matching `encode`.
 public struct HelperAudio: Sendable {
     public var capture: any AudioCapturing
     public var codec: LinkAudioCodec
@@ -44,9 +45,14 @@ public struct HelperAudio: Sendable {
     public var encode: @Sendable (LinkAudioPacket) -> LinkAudioPacket?
     public var channels: Int
 
+    /// PCM audio from ScreenCaptureKit (needs the Screen Recording grant).
+    public static func screenCaptureKitPCM(channels: Int = 2) -> HelperAudio {
+        HelperAudio(capture: ScreenCaptureKitAudioCapture(), codec: .pcm16, channels: channels)
+    }
+
     public init(
-        capture: any AudioCapturing, codec: LinkAudioCodec = .opus, channels: Int = 2,
-        encode: @escaping @Sendable (LinkAudioPacket) -> LinkAudioPacket?
+        capture: any AudioCapturing, codec: LinkAudioCodec = .pcm16, channels: Int = 2,
+        encode: @escaping @Sendable (LinkAudioPacket) -> LinkAudioPacket? = { $0 }
     ) {
         self.capture = capture; self.codec = codec; self.channels = channels; self.encode = encode
     }

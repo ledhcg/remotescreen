@@ -82,8 +82,6 @@ final class AppModeConnection: AppModeSession {
     static let statsInterval: Duration = .milliseconds(250)
     /// Well under QUIC's idle timeout (60 s).
     static let pingInterval: Duration = .seconds(15)
-    /// The protocol cannot say that secure input ended; the helper repeats the status while typing is blocked.
-    static let secureInputLifetime: Duration = .seconds(8)
     static let minResyncGap: TimeInterval = 2
 
     let computerID: UUID
@@ -116,7 +114,6 @@ final class AppModeConnection: AppModeSession {
     @ObservationIgnored private var keyframes: KeyframeRequester!
     @ObservationIgnored private var rttMicros: UInt32 = 0
     @ObservationIgnored private var lastResync: TimeInterval = 0
-    @ObservationIgnored private var secureInputTask: Task<Void, Never>?
     @ObservationIgnored private var scenesWaitingForWindow: [SceneID: WindowID] = [:]
     @ObservationIgnored private var scenesReopening: Set<SceneID> = []
 
@@ -148,7 +145,6 @@ final class AppModeConnection: AppModeSession {
         runTask?.cancel()
         runTask = nil
         backoffTask?.cancel()
-        secureInputTask?.cancel()
         let closing = link
         link = nil
         sender?.finish()
@@ -307,7 +303,9 @@ final class AppModeConnection: AppModeSession {
             }
         case .status(let status):
             helper.apply(status)
-            if case .secureInput = status { expireSecureInput() }
+        case .windowSubscribeFailed(let window, let reason):
+            // Only for a window a scene asked for: a helper cannot fill the table with windows nobody shows.
+            if subscriptions.wanted.contains(window) { helper.noteSubscribeFailure(window: window, reason: reason) }
         case .snapshot, .windowCreated, .windowUpdated, .windowDestroyed, .windowOrder, .windowCapabilities, .appsChanged:
             applyWorkspace(message)
         default:
@@ -338,15 +336,6 @@ final class AppModeConnection: AppModeSession {
         }
     }
 
-    private func expireSecureInput() {
-        secureInputTask?.cancel()
-        secureInputTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.secureInputLifetime)
-            guard !Task.isCancelled else { return }
-            self?.helper.clearSecureInput()
-        }
-    }
-
     /// The model cannot be trusted any more: the quickest repair is a reconnect, which brings a full snapshot.
     private func requestResync() {
         let now = ProcessInfo.processInfo.systemUptime
@@ -361,6 +350,7 @@ final class AppModeConnection: AppModeSession {
         statsBook.withLock { $0.forget(window: id) }
         streams.removeValue(forKey: id)?.shutdown()
         framesShown.remove(id)
+        helper.clearSubscribeFailure(window: id)
         // Menus and popovers of other windows live in their parent's stream.
         for stream in streams.values { stream.removeSurface(SurfaceID(rawValue: id.rawValue)) }
     }
@@ -417,7 +407,12 @@ final class AppModeConnection: AppModeSession {
             window: window, statsBook: statsBook,
             send: { [weak self] message in self?.sendNow(message) },
             requestKeyframe: { id in requester.request(id) },
-            onFirstFrame: { [weak self] id in Task { @MainActor in self?.framesShown.insert(id) } }
+            onFirstFrame: { [weak self] id in
+                Task { @MainActor in
+                    self?.framesShown.insert(id)
+                    self?.helper.clearSubscribeFailure(window: id)
+                }
+            }
         )
         streams[window] = created
         return created

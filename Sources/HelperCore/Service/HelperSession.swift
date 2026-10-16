@@ -188,7 +188,7 @@ actor HelperSession: HelperConnectionHandler {
         await send(.status(.stage(c.stage)))
         if c.stage == .unavailable { await send(.status(.stageUnavailable)) }
         if c.macLocked { await send(.status(.macLocked(true))) }
-        if c.secureInput { await send(.status(.secureInput(pid: c.frontmostPID))) }
+        if c.secureInput { await send(.status(.secureInput(active: true, pid: c.frontmostPID))) }
     }
 
     // MARK: Changes from the Mac
@@ -268,16 +268,16 @@ actor HelperSession: HelperConnectionHandler {
         case .inputPointer(let event):
             guard streams[event.window] != nil else { return }
             if !event.buttons.isEmpty, focused != event.window { focused = event.window; await updateRate() }
-            await host.inject(message, keyboardWindow: nil)
+            await host.inject(message, keyboardWindow: nil, session: id)
         case .inputScroll(let event):
             guard streams[event.window] != nil else { return }
-            await host.inject(message, keyboardWindow: nil)
+            await host.inject(message, keyboardWindow: nil, session: id)
         case .inputGesture(let event):
             guard streams[event.window] != nil else { return }
-            await host.inject(message, keyboardWindow: nil)
+            await host.inject(message, keyboardWindow: nil, session: id)
         case .inputKey, .inputText:
             guard let target = focused, streams[target] != nil else { return }
-            await host.inject(message, keyboardWindow: target)
+            await host.inject(message, keyboardWindow: target, session: id)
         default:
             break
         }
@@ -296,10 +296,14 @@ actor HelperSession: HelperConnectionHandler {
     // MARK: Subscriptions
 
     private func subscribe(_ request: LinkSubscribe) async {
-        guard let info = await resources.tracker.info(of: request.window), info.kind == .managed else { return }
+        guard let info = await resources.tracker.info(of: request.window), info.kind == .managed else {
+            await send(.windowSubscribeFailed(window: request.window, reason: .unknownWindow))
+            return
+        }
         if streams[request.window] != nil { await unsubscribe(request.window, tellDevice: false) }
         guard streams.count < maxSubscriptions else {
             log.notice("subscription refused: limit of \(self.maxSubscriptions, privacy: .public) windows reached")
+            await send(.windowSubscribeFailed(window: request.window, reason: .limit))
             return
         }
         let permission = resources.permissions.state(of: .screenRecording)
@@ -307,6 +311,7 @@ actor HelperSession: HelperConnectionHandler {
             await send(.status(.permission(.screenRecording, permission)))
             await send(.status(.permissionMissing(.screenRecording)))
             await host.reportPermissionDenied(.screenRecording)
+            await send(.windowSubscribeFailed(window: request.window, reason: .permission))
             return
         }
 
@@ -333,9 +338,13 @@ actor HelperSession: HelperConnectionHandler {
                 await send(.status(.permission(.screenRecording, .denied)))
                 await send(.status(.permissionMissing(.screenRecording)))
                 await host.reportPermissionDenied(.screenRecording)
+                await send(.windowSubscribeFailed(window: request.window, reason: .permission))
+            } else {
+                await send(.windowSubscribeFailed(window: request.window, reason: .transient))
             }
             return
         } catch {
+            await send(.windowSubscribeFailed(window: request.window, reason: .transient))
             return
         }
         guard !closed else {

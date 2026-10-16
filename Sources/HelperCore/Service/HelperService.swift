@@ -231,7 +231,7 @@ public actor HelperService {
         guard let entry = sessions.removeValue(forKey: id) else { return }
         await entry.session.shutdown()
         hub.update { $0.sessions.removeAll { $0.id == id } }
-        await injector.releaseAll()
+        await injector.releaseAll(session: id)
         if sessions.isEmpty {
             dependencies.awake.release()
             await endStageIfIdle()
@@ -307,8 +307,7 @@ public actor HelperService {
         switch event {
         case .secureInputChanged(let enabled):
             hub.update { $0.secureInput = enabled }
-            // The protocol has no "secure input ended" status; the iPad learns about the start only (see the open issues).
-            if enabled { broadcast(.secureInput(pid: await frontmostPID())) }
+            broadcast(.secureInput(active: enabled, pid: enabled ? await frontmostPID() : nil))
         case .postingNotPermitted:
             await refreshPermissions()
             if hub.current.accessibility != .denied {
@@ -407,11 +406,11 @@ extension HelperService: HelperSessionHost {
         }
     }
 
-    func inject(_ message: LinkMessage, keyboardWindow: WindowID?) async {
+    func inject(_ message: LinkMessage, keyboardWindow: WindowID?, session: UInt64) async {
         let injector = injector
         await inputGate.run {
             if let keyboardWindow { await injector.setKeyboardWindow(keyboardWindow) }
-            await injector.handle(message)
+            await injector.handle(message, session: session)
         }
     }
 

@@ -59,9 +59,8 @@ public struct AudioPacketizer: Sendable {
     public var frameBytes: Int { frameSamples * channels * 2 }
     public var frameDurationMicros: UInt32 { UInt32(frameSamples * 1_000_000 / sampleRate) }
 
-    /// The `audio.config` for this stream. The wire enum only defines `.opus` today; the caller picks the value that
-    /// the negotiated protocol assigns to `mode` (see the deviation noted in the H11 report).
-    public func makeConfig(codec: LinkAudioCodec) -> LinkAudioConfig {
+    /// The `audio.config` for this stream. The packets are PCM, so the codec is `.pcm16` unless the caller re-encodes them.
+    public func makeConfig(codec: LinkAudioCodec = .pcm16) -> LinkAudioConfig {
         LinkAudioConfig(pid: pid, codec: codec, sampleRate: UInt32(sampleRate), channels: UInt8(channels), frameDurationMicros: frameDurationMicros)
     }
 

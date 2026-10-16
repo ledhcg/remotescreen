@@ -50,15 +50,28 @@ public struct HelperStatus: Sendable, Equatable {
             if state == .granted { missingPermissions.remove(kind) } else { missingPermissions.insert(kind) }
         case .stageUnavailable: stage = .unavailable
         case .stage(let state): stage = state
-        case .secureInput(let pid): secureInput = true; secureInputPID = pid
+        case .secureInput(let active, let pid): secureInput = active; secureInputPID = active ? pid : nil
         }
     }
+
+    /// Windows the helper refused to stream, with the reason (`window.subscribeFailed`). Cleared when the window is subscribed again.
+    public private(set) var subscribeFailures: [WindowID: LinkSubscribeFailure] = [:]
+
+    /// At most this many remembered; a hostile helper cannot grow the table.
+    static let maxSubscribeFailures = 64
+
+    public mutating func noteSubscribeFailure(window: WindowID, reason: LinkSubscribeFailure) {
+        if subscribeFailures[window] == nil, subscribeFailures.count >= Self.maxSubscribeFailures { return }
+        subscribeFailures[window] = reason
+    }
+
+    public mutating func clearSubscribeFailure(window: WindowID) { subscribeFailures[window] = nil }
 
     /// The process that holds secure input, when the helper knows it.
     public private(set) var secureInputPID: Int32?
 
-    /// The protocol has no message that says secure input ended, only one that says it is active. The helper repeats it while typing is
-    /// being blocked, so the app calls this when no such message has come for a while (and when the connection is renewed).
+    /// Forgets secure input without a helper message (for example when the connection is renewed). The helper normally says when it
+    /// ends with `secureInput(active: false, ...)`.
     public mutating func clearSecureInput() { secureInput = false; secureInputPID = nil }
 
     /// A new connection: nothing said so far still holds.
@@ -187,10 +200,19 @@ public enum RemoteWindowOverlay: Sendable, Equatable {
 /// A notice shown over a working window.
 public enum RemoteWindowBanner: Sendable, Equatable {
     case secureInput
+    /// The Mac would not stream this window.
+    case subscribeFailed(LinkSubscribeFailure)
 
     public var text: String {
         switch self {
         case .secureInput: tr("Typing is blocked by a password field on the Mac")
+        case .subscribeFailed(let reason):
+            switch reason {
+            case .unknownWindow: tr("The Mac can no longer find this window.")
+            case .limit: tr("The Mac is already streaming as many windows as it allows.")
+            case .permission: tr("Screon Helper needs permission to record the screen.")
+            case .transient: tr("The Mac could not start streaming this window. Trying again may help.")
+            }
         }
     }
 }
@@ -234,7 +256,13 @@ public enum RemoteWindowStatus {
         case .bound:
             if helper.macLocked { return RemoteWindowPresentation(overlay: .macLocked) }
             if let kind = helper.firstMissingPermission { return RemoteWindowPresentation(overlay: .permissionMissing(kind)) }
-            if !hasFrame { return RemoteWindowPresentation(overlay: .waitingForFirstFrame) }
+            if !hasFrame {
+                // The Mac said no: a spinner would wait for a picture that is not coming.
+                if let window = binding.windowID, let reason = helper.subscribeFailures[window] {
+                    return RemoteWindowPresentation(banner: .subscribeFailed(reason))
+                }
+                return RemoteWindowPresentation(overlay: .waitingForFirstFrame)
+            }
             return RemoteWindowPresentation(banner: helper.secureInput ? .secureInput : nil)
         }
     }

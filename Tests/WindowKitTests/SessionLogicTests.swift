@@ -325,7 +325,7 @@ struct RemoteWindowStatusTests {
 
     @Test func secureInputIsABannerOverAWorkingWindowOnly() {
         var helper = HelperStatus()
-        helper.apply(.secureInput(pid: 42))
+        helper.apply(.secureInput(active: true, pid: 42))
         #expect(present(helper: helper) == RemoteWindowPresentation(overlay: nil, banner: .secureInput))
         #expect(RemoteWindowBanner.secureInput.text == "Typing is blocked by a password field on the Mac")
         #expect(present(helper: helper, hasFrame: false).banner == nil)
@@ -333,10 +333,38 @@ struct RemoteWindowStatusTests {
         #expect(present(helper: helper).banner == nil)
     }
 
+    @Test func inactiveSecureInputClearsTheBanner() {
+        var helper = HelperStatus()
+        helper.apply(.secureInput(active: true, pid: 42))
+        helper.apply(.secureInput(active: false, pid: nil))
+        #expect(!helper.secureInput)
+        #expect(helper.secureInputPID == nil)
+        #expect(present(helper: helper).banner == nil)
+    }
+
+    @Test func refusedSubscriptionExplainsItselfInsteadOfWaiting() {
+        var helper = HelperStatus()
+        let binding = SceneBindingState.bound(WindowID(5))
+        let workspace = RemoteWorkspace()
+        helper.noteSubscribeFailure(window: 5, reason: .limit)
+        let shown = RemoteWindowStatus.present(connection: .connected, binding: binding, workspace: workspace, helper: helper, hasFrame: false)
+        #expect(shown == RemoteWindowPresentation(overlay: nil, banner: .subscribeFailed(.limit)))
+        #expect(RemoteWindowBanner.subscribeFailed(.limit).text == "The Mac is already streaming as many windows as it allows.")
+        helper.clearSubscribeFailure(window: 5)
+        let waiting = RemoteWindowStatus.present(connection: .connected, binding: binding, workspace: workspace, helper: helper, hasFrame: false)
+        #expect(waiting.overlay == .waitingForFirstFrame)
+    }
+
+    @Test func subscribeFailureTableIsBounded() {
+        var helper = HelperStatus()
+        for id in 0..<1000 { helper.noteSubscribeFailure(window: WindowID(rawValue: UInt32(id)), reason: .transient) }
+        #expect(helper.subscribeFailures.count == HelperStatus.maxSubscribeFailures)
+    }
+
     @Test func aNewConnectionForgetsTheOldStatus() {
         var helper = HelperStatus()
         helper.apply(.macLocked(true))
-        helper.apply(.secureInput(pid: nil))
+        helper.apply(.secureInput(active: true, pid: nil))
         helper.reset()
         #expect(helper == HelperStatus())
     }

@@ -8,7 +8,8 @@ import os
 /// - Coordinates arrive **window-relative**; the window's frame is read at injection time, so a window that moved between
 ///   the touch and the injection never receives a click meant for another place. Unknown or destroyed windows drop the event.
 /// - Focus follows interaction: before a button press the window is made topmost at that point (`WindowFocuser`).
-/// - Everything that is pressed is remembered and released by `releaseAll()` (session end, disconnect): no stuck keys.
+/// - Everything that is pressed is remembered **per session** and released by `releaseAll(session:)` when that session ends:
+///   no stuck keys, and ending one iPad's session never releases a key or button another iPad is holding.
 /// - Events are processed strictly in arrival order even though focusing and geometry lookups suspend.
 public actor InputInjector {
     private let poster: any EventPoster
@@ -28,12 +29,38 @@ public actor InputInjector {
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    // State that must be undone by `releaseAll()`.
-    private var heldButtons: LinkMouseButtons = []
+    /// What one session holds down. Undone by `releaseAll(session:)`.
+    private struct Holds {
+        var buttons: LinkMouseButtons = []
+        var keys: [UInt16: LinkModifiers] = [:]
+        var penInProximity = false
+        var gesture: (kind: LinkGestureKind, at: LinkPoint)?
+    }
+
+    /// Session id used by callers that do not distinguish sessions (the single-session API and the tests).
+    public static let defaultSession: UInt64 = 0
+
+    private var holds: [UInt64: Holds] = [:]
+    /// The session whose message is being handled. Messages are processed one at a time (see the gate), so this is stable
+    /// across the suspension points of one message.
+    private var current = InputInjector.defaultSession
     private var lastGlobalPoint: LinkPoint?
-    private var heldKeys: [UInt16: LinkModifiers] = [:]
-    private var penInProximity = false
-    private var activeGesture: (kind: LinkGestureKind, at: LinkPoint)?
+    private var heldButtons: LinkMouseButtons {
+        get { holds[current]?.buttons ?? [] }
+        set { holds[current, default: Holds()].buttons = newValue }
+    }
+    private var heldKeys: [UInt16: LinkModifiers] {
+        get { holds[current]?.keys ?? [:] }
+        set { holds[current, default: Holds()].keys = newValue }
+    }
+    private var penInProximity: Bool {
+        get { holds[current]?.penInProximity ?? false }
+        set { holds[current, default: Holds()].penInProximity = newValue }
+    }
+    private var activeGesture: (kind: LinkGestureKind, at: LinkPoint)? {
+        get { holds[current]?.gesture }
+        set { holds[current, default: Holds()].gesture = newValue }
+    }
 
     // Bookkeeping.
     private var lastRelativePoint: [WindowID: LinkPoint] = [:]
@@ -46,8 +73,9 @@ public actor InputInjector {
     private var authorized: Set<WindowID> = []
     /// The authorized window the keyboard is aimed at: the one the client last pressed in or focused.
     private var keyboardWindow: WindowID?
-    /// Bumped by `releaseAll()`: an event that was waiting for the window server when the session ended must not be posted.
-    private var epoch = 0
+    /// Bumped by `releaseAll`: an event that was waiting for the window server when its session ended must not be posted.
+    private var epochs: [UInt64: Int] = [:]
+    private var epoch: Int { epochs[current] ?? 0 }
 
     public init(
         poster: any EventPoster,
@@ -64,14 +92,15 @@ public actor InputInjector {
 
     // MARK: Entry points
 
-    /// Handles one message. Anything that is not an input message is ignored.
-    public func handle(_ message: LinkMessage) async {
+    /// Handles one message from `session`. Anything that is not an input message is ignored.
+    public func handle(_ message: LinkMessage, session: UInt64 = InputInjector.defaultSession) async {
         switch message {
         case .inputPointer, .inputScroll, .inputGesture, .inputKey, .inputText: break
         default: return
         }
         await enter()
         defer { leave() }
+        current = session
         guard checkPermission() else { return }
         let startEpoch = epoch
         switch message {
@@ -84,29 +113,34 @@ public actor InputInjector {
         }
     }
 
-    /// Releases every button and key that is still down and leaves the stylus proximity. Call on session end and disconnect.
-    /// It never suspends, so nothing can interleave with it.
-    public func releaseAll() {
-        epoch += 1
-        if let gesture = activeGesture {
+    /// Releases what `session` still holds down (its buttons, keys, stylus proximity and gesture). Input held by other sessions
+    /// stays down. Call when that session ends. It never suspends, so nothing can interleave with it.
+    public func releaseAll(session: UInt64) {
+        epochs[session, default: 0] += 1
+        guard let held = holds.removeValue(forKey: session) else { return }
+        let others = holds.values
+        if let gesture = held.gesture {
             post(.gesture(kind: gesture.kind, phase: .cancelled, value: 0, at: gesture.at))
-            activeGesture = nil
         }
-        if !heldButtons.isEmpty, let point = lastGlobalPoint {
-            for button in SyntheticButton.allCases where heldButtons.contains(Self.linkButton(button)) {
+        if !held.buttons.isEmpty, let point = lastGlobalPoint {
+            for button in SyntheticButton.allCases where held.buttons.contains(Self.linkButton(button)) {
+                // A button another session also holds stays down.
+                if others.contains(where: { $0.buttons.contains(Self.linkButton(button)) }) { continue }
                 post(.mouseUp(button: button, at: point, clickCount: currentClickCount, modifiers: [], pen: nil))
             }
         }
-        heldButtons = []
-        for keycode in heldKeys.keys.sorted() {
+        for keycode in held.keys.keys.sorted() where !others.contains(where: { $0.keys[keycode] != nil }) {
             post(.key(keycode: keycode, down: false, modifiers: []))
         }
-        heldKeys = [:]
-        if penInProximity, let point = lastGlobalPoint {
+        if held.penInProximity, !others.contains(where: \.penInProximity), let point = lastGlobalPoint {
             post(.tabletProximity(entering: false, at: point))
         }
-        penInProximity = false
-        lastClick = nil
+        if holds.isEmpty { lastClick = nil }
+    }
+
+    /// Releases everything every session holds (the helper is stopping).
+    public func releaseAll() {
+        for session in Set(holds.keys).union(epochs.keys) { releaseAll(session: session) }
     }
 
     /// Checks `IsSecureEventInputEnabled` and reports a change. Call from a slow timer while a session is active;
@@ -134,8 +168,11 @@ public actor InputInjector {
         keyboardWindow = window
     }
 
-    public var pressedButtons: LinkMouseButtons { heldButtons }
-    public var pressedKeycodes: Set<UInt16> { Set(heldKeys.keys) }
+    /// Buttons and keys held down, over all sessions.
+    public var pressedButtons: LinkMouseButtons { holds.values.reduce(into: []) { $0.formUnion($1.buttons) } }
+    public var pressedKeycodes: Set<UInt16> { holds.values.reduce(into: Set<UInt16>()) { $0.formUnion($1.keys.keys) } }
+    public func pressedButtons(session: UInt64) -> LinkMouseButtons { holds[session]?.buttons ?? [] }
+    public func pressedKeycodes(session: UInt64) -> Set<UInt16> { Set((holds[session]?.keys ?? [:]).keys) }
 
     // MARK: Gate
 
@@ -382,14 +419,30 @@ public actor InputInjector {
     }
 
     private func key(_ event: LinkKeyEvent, epoch startEpoch: Int) async {
+        var keycode = event.keycode
+        var modifiers = event.modifiers
+        if keycode == LinkKeyEvent.noKeycode {
+            // The sender has no Mac key code: derive one from the keysym (US layout), type a printable character, or drop it.
+            guard let keysym = event.keysym else { return }
+            switch KeysymMapping.resolve(keysym) {
+            case .key(let code, let shift):
+                keycode = code
+                if shift { modifiers.insert(.shift) }
+            case .text(let text):
+                if event.down { await inputText(text, epoch: startEpoch) }
+                return
+            case .drop:
+                return
+            }
+        }
         if event.down {
             guard await keyboardTargetIsReady(epoch: startEpoch) else { return }
             pollSecureInput() // synthetic keys are still posted: some secure fields accept them, and the banner tells the user
-            heldKeys[event.keycode] = event.modifiers
-            post(.key(keycode: event.keycode, down: true, modifiers: event.modifiers))
-        } else if let recorded = heldKeys.removeValue(forKey: event.keycode) {
+            heldKeys[keycode] = modifiers
+            post(.key(keycode: keycode, down: true, modifiers: modifiers))
+        } else if let recorded = heldKeys.removeValue(forKey: keycode) {
             // Only keys this session pressed are released, with the modifiers they were pressed with.
-            post(.key(keycode: event.keycode, down: false, modifiers: recorded))
+            post(.key(keycode: keycode, down: false, modifiers: recorded))
         }
     }
 

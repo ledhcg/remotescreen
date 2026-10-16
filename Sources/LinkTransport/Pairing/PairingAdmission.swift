@@ -32,6 +32,9 @@ public final class PairingAdmission: @unchecked Sendable {
     private let lock = NSLock()
     private let clock: LinkClock
     private var windowEnd: Date?
+    private var successes: UInt64 = 0
+    private var claimID: UInt64?
+    private var nextClaim: UInt64 = 1
     private var sasGlobal: [Date] = []
     private var sasBySource: [String: [Date]] = [:]
 
@@ -52,13 +55,38 @@ public final class PairingAdmission: @unchecked Sendable {
         }
     }
 
-    /// Atomically uses the window for a successful pairing: returns whether it was open, and closes it either way.
-    func consumeWindow() -> Bool {
+    /// Counts successful pairings. A handshake remembers the value when it starts; if it changed by the time that handshake
+    /// is approved, another device paired first and this one is stale ("closed after one success", also for sessions that
+    /// were already running when the first one succeeded).
+    var epoch: UInt64 { lock.withLock { successes } }
+
+    /// A device was paired: closes the SAS window and makes every running pairing handshake stale.
+    func recordPairingSuccess() {
+        lock.withLock { successes += 1; windowEnd = nil; claimID = nil }
+    }
+
+    /// Cancels pairing as a whole: closes the SAS window, drops the claim and makes every running pairing handshake stale.
+    func reset() {
+        lock.withLock { successes += 1; windowEnd = nil; claimID = nil }
+    }
+
+    /// Reserves the right to pair a device. Only one pairing attempt may be proving or waiting for approval at a time, so
+    /// two devices cannot both pass the admission check and both pair on one window or one QR code. Returns `nil` when
+    /// another attempt holds the claim or when `epoch` is stale (something was paired or cancelled since this handshake began).
+    func claim(epoch: UInt64) -> UInt64? {
         lock.withLock {
-            defer { windowEnd = nil }
-            guard let end = windowEnd else { return false }
-            return end > clock()
+            guard epoch == successes, claimID == nil else { return nil }
+            let id = nextClaim
+            nextClaim += 1
+            claimID = id
+            return id
         }
+    }
+
+    /// Gives a claim back (denial, failure, timeout, connection closed). A claim already consumed or reset is left alone.
+    func release(_ id: UInt64?) {
+        guard let id else { return }
+        lock.withLock { if claimID == id { claimID = nil } }
     }
 
     /// Admits one SAS session from `source`, or throws. The attempt is counted when admitted.

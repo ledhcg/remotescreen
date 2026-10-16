@@ -150,6 +150,11 @@ public final class ResumeTokenStore: @unchecked Sendable {
         return token
     }
 
+    /// Forgets every token of one identity (the device was revoked).
+    public func invalidate(identityHash: Data) {
+        lock.withLock { entries = entries.filter { !constantTimeEqual($0.value.identity, identityHash) } }
+    }
+
     /// Consumes a token. It is burned on any presentation, valid or not, so a stolen token cannot be probed.
     public func consume(_ token: Data, identityHash: Data) -> Bool {
         guard token.count == 32 else { return false }

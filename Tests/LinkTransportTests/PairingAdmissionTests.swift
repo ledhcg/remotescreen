@@ -19,12 +19,13 @@ import Testing
         #expect(!admission.isOpen)
     }
 
-    @Test func consumeUsesTheWindowOnce() {
+    @Test func aSuccessClosesTheWindowAndStalesRunningHandshakes() {
         let admission = PairingAdmission(clock: TestClock().clock)
         admission.open()
-        #expect(admission.consumeWindow())
-        #expect(!admission.consumeWindow())
+        let before = admission.epoch
+        admission.recordPairingSuccess()
         #expect(!admission.isOpen)
+        #expect(admission.epoch == before + 1)
     }
 
     @Test func sasNeedsAnOpenWindow() {

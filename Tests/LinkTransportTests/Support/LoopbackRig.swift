@@ -127,12 +127,64 @@ final class LoopbackRig: @unchecked Sendable {
     }
 }
 
-/// Records approval requests and answers them.
+/// Records approval requests and answers them. In hold mode a request stays pending until `release`, so a test can change
+/// the world (revoke, stop, close the window) while the "Mac user" is still deciding. No sleeps: tests wait on
+/// `waitForRequests`.
 actor ApprovalLog {
     private(set) var requests: [PairingApprovalRequest] = []
+    /// How many pending prompts were cancelled by the server (their answers are ignored).
+    private(set) var cancelledPrompts = 0
     private var answer = true
+    private var holding = false
+    private var pendingPrompts: [CheckedContinuation<Bool, Never>] = []
+    private var requestWaiters: [(count: Int, cont: CheckedContinuation<Void, Never>)] = []
+
     func setAnswer(_ a: Bool) { answer = a }
-    func decide(_ r: PairingApprovalRequest) -> Bool { requests.append(r); return answer }
+    func hold(_ on: Bool) { holding = on }
+
+    func decide(_ r: PairingApprovalRequest) async -> Bool {
+        requests.append(r)
+        let ready = requestWaiters.filter { requests.count >= $0.count }
+        requestWaiters.removeAll { requests.count >= $0.count }
+        for w in ready { w.cont.resume() }
+        guard holding else { return answer }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in pendingPrompts.append(c) }
+        } onCancel: {
+            Task { await self.promptCancelled() }
+        }
+    }
+
+    private var cancelWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Suspends until the server has cancelled at least `count` prompts.
+    func waitForCancelledPrompts(_ count: Int) async {
+        if cancelledPrompts >= count { return }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in cancelWaiters.append(c) }
+        await waitForCancelledPrompts(count)
+    }
+
+    private func promptCancelled() {
+        cancelledPrompts += 1
+        let waiting = cancelWaiters
+        cancelWaiters = []
+        for w in waiting { w.resume() }
+        let all = pendingPrompts
+        pendingPrompts = []
+        for c in all { c.resume(returning: false) }
+    }
+
+    /// Answers every pending prompt.
+    func release(_ approved: Bool) {
+        let all = pendingPrompts
+        pendingPrompts = []
+        for c in all { c.resume(returning: approved) }
+    }
+
+    func waitForRequests(_ count: Int) async {
+        if requests.count >= count { return }
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in requestWaiters.append((count, c)) }
+    }
 }
 
 extension LinkTransportKind {

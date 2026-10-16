@@ -279,20 +279,23 @@ struct HelperSessionMachine {
         var helperSPKIHash: Data
         var capabilities: LinkCapabilities
         var displays: [LinkDisplayInfo]
-        var askBeforeEachSession: Bool
+        /// Evaluated when the device asks to resume, so a change in settings applies to handshakes already under way.
+        var askBeforeEachSession: @Sendable () -> Bool
     }
 
     enum Action: Equatable {
         case send(LinkMessage)
         case ready(HelperSessionReady)
         case requestApproval(PairingApprovalRequest)
+        /// Make this true atomically (see `HandshakeCommit`), then call `commitResult`.
+        case commit(HandshakeCommit)
         case terminate(LinkSessionError, notifyPeer: Bool)
     }
 
     private enum Phase {
         case awaitingHello, awaitingFirst
         case sasAwaitReveal, sasAwaitConfirm
-        case awaitingApproval, finished
+        case awaitingApproval, awaitingCommit, finished
     }
 
     private enum PendingApproval {
@@ -317,6 +320,12 @@ struct HelperSessionMachine {
     private var sas: SASExchange?
     private var sasCode: String?
     private var pending: PendingApproval?
+    private enum Committing { case pairing(name: String), session(resumed: Bool, lastStateVersion: UInt64?) }
+    private var committing: Committing?
+    private let startEpoch: UInt64
+    /// The admission claim this handshake holds while it proves or waits for approval. The connection driver releases it
+    /// whenever the handshake ends, however it ends.
+    private(set) var claimID: UInt64?
 
     init(
         configuration: Configuration, peerSPKIHash: Data, exporter: Data?, devices: any PairedDeviceStore,
@@ -330,6 +339,7 @@ struct HelperSessionMachine {
         self.ledger = ledger
         self.resumeTokens = resumeTokens
         self.admission = admission
+        self.startEpoch = admission.epoch
         self.source = source
         self.clock = clock
     }
@@ -339,7 +349,7 @@ struct HelperSessionMachine {
     /// Seconds the current phase may take, or `nil` when it waits for a person (approval has its own deadline).
     var phaseTimeout: TimeInterval? {
         switch phase {
-        case .awaitingApproval, .finished: nil
+        case .awaitingApproval, .awaitingCommit, .finished: nil
         case .sasAwaitConfirm: 150  // the person at the iPad compares digits
         default: 10
         }
@@ -347,11 +357,18 @@ struct HelperSessionMachine {
 
     private mutating func fail(_ error: LinkSessionError, notify: Bool = true) -> [Action] {
         phase = .finished
+        releaseClaim()
         return [.terminate(error, notifyPeer: notify)]
+    }
+
+    mutating func releaseClaim() {
+        admission.release(claimID)
+        claimID = nil
     }
 
     private mutating func deny(_ reason: LinkPairDenyReason) -> [Action] {
         phase = .finished
+        releaseClaim()
         return [.send(.pairDenied(reason)), .terminate(.pairingDenied(reason), notifyPeer: false)]
     }
 
@@ -394,7 +411,7 @@ struct HelperSessionMachine {
             resumed = resumeTokens.consume(r.resumeToken.data, identityHash: peerSPKIHash)
         }
         let version = resumed ? r.lastStateVersion : nil
-        if configuration.askBeforeEachSession {
+        if configuration.askBeforeEachSession() {
             pending = .session(resumed: resumed, lastStateVersion: version)
             phase = .awaitingApproval
             return [
@@ -402,13 +419,18 @@ struct HelperSessionMachine {
                 .requestApproval(PairingApprovalRequest(reason: .session, deviceName: device.name, deviceSPKIHash: peerSPKIHash, sasCode: nil)),
             ]
         }
-        return welcome(deviceName: device.name, resumed: resumed, lastStateVersion: version, newlyPaired: false, extra: [])
+        committing = .session(resumed: resumed, lastStateVersion: version)
+        phase = .awaitingCommit
+        return [.commit(.session)]
     }
 
     // MARK: QR pairing
 
     private mutating func handleQRProve(_ p: LinkPairProve) -> [Action] {
-        // The admission is the offer itself: only a proof naming an outstanding QR nonce gets past the ledger.
+        // The admission is the offer itself: only a proof naming an outstanding QR nonce gets past the ledger. One attempt at a
+        // time: claim before the ledger is touched, so a second device cannot burn the offer or pair beside this one.
+        guard let claim = admission.claim(epoch: startEpoch) else { return deny(.busy) }
+        claimID = claim
         let name = p.deviceName
         guard constantTimeEqual(p.ipadSPKIHash.data, peerSPKIHash),
               name.utf8.count <= PairingProof.maxDeviceNameBytes, !name.isEmpty
@@ -475,6 +497,8 @@ struct HelperSessionMachine {
     private mutating func handleSASConfirm() -> [Action] {
         guard let code = sasCode, let hello = clientHello else { return fail(.protocolViolation("sas state")) }
         let safeName = SessionText.sanitizedDeviceName(hello.deviceName)
+        guard let claim = admission.claim(epoch: startEpoch) else { return deny(.busy) }
+        claimID = claim
         pending = .pairing(name: safeName, method: .sas)
         phase = .awaitingApproval
         return [
@@ -484,7 +508,7 @@ struct HelperSessionMachine {
         ]
     }
 
-    // MARK: Approval and welcome
+    // MARK: Approval, commit and welcome
 
     /// The local approval (LocalAuthentication on the Mac) finished.
     mutating func approvalResult(_ approved: Bool) -> [Action] {
@@ -496,33 +520,45 @@ struct HelperSessionMachine {
                 if case .sas = method { admission.close() }  // one denial closes the SAS window
                 return deny(.userDenied)
             }
-            // One pairing per window: the SAS window is used up here, atomically; a QR pairing burns every offer on screen
-            // and closes the SAS window too.
-            switch method {
-            case .sas: guard admission.consumeWindow() else { return deny(.expired) }
-            case .qr: admission.close()
-            }
-            ledger.revokeAll()
-            do { try devices.add(PairedDevice(spkiHash: peerSPKIHash, name: name, pairedAt: clock())) } catch { return deny(.busy) }
-            guard let helperID = try? LinkBytes32(configuration.helperSPKIHash) else { return fail(.transport("helper id")) }
-            return welcome(
-                deviceName: name, resumed: false, lastStateVersion: nil, newlyPaired: true,
-                extra: [.send(.pairOK(LinkPairOK(macName: configuration.macName, helperID: helperID)))])
+            committing = .pairing(name: name)
+            phase = .awaitingCommit
+            return [.commit(.pairing(PairedDevice(spkiHash: peerSPKIHash, name: name, pairedAt: clock()), method: method, epoch: startEpoch))]
         case .session(let resumed, let lastStateVersion):
             guard approved else { return fail(.approvalDenied) }
-            let name = devices.device(spkiHash: peerSPKIHash)?.name ?? "iPad"
-            // Revoked while the prompt was open?
-            guard devices.device(spkiHash: peerSPKIHash) != nil else { return fail(.notAuthorized) }
-            return welcome(deviceName: name, resumed: resumed, lastStateVersion: lastStateVersion, newlyPaired: false, extra: [])
+            committing = .session(resumed: resumed, lastStateVersion: lastStateVersion)
+            phase = .awaitingCommit
+            return [.commit(.session)]
+        }
+    }
+
+    /// The server's answer to `.commit`. Admission is decided there, atomically with the paired-device store, so nothing is
+    /// admitted after a revoke, a stop or a disconnect that happened while this handshake was waiting.
+    mutating func commitResult(_ result: CommitResult) -> [Action] {
+        guard phase == .awaitingCommit, let committing else { return [] }
+        self.committing = nil
+        guard case .admitted(let token, let storedName) = result else {
+            switch result {
+            case .windowClosed: return deny(.expired)
+            case .storeFull: return deny(.busy)
+            default: return fail(.notAuthorized)
+            }
+        }
+        switch committing {
+        case .pairing(let name):
+            guard let helperID = try? LinkBytes32(configuration.helperSPKIHash) else { return fail(.transport("helper id")) }
+            return welcome(
+                deviceName: name, token: token, resumed: false, lastStateVersion: nil, newlyPaired: true,
+                extra: [.send(.pairOK(LinkPairOK(macName: configuration.macName, helperID: helperID)))])
+        case .session(let resumed, let lastStateVersion):
+            return welcome(
+                deviceName: storedName, token: token, resumed: resumed, lastStateVersion: lastStateVersion, newlyPaired: false, extra: [])
         }
     }
 
     private mutating func welcome(
-        deviceName: String, resumed: Bool, lastStateVersion: UInt64?, newlyPaired: Bool, extra: [Action]
+        deviceName: String, token: Data, resumed: Bool, lastStateVersion: UInt64?, newlyPaired: Bool, extra: [Action]
     ) -> [Action] {
-        guard let hello = clientHello,
-              let token = try? resumeTokens.issue(for: peerSPKIHash), let tokenBytes = try? LinkBytes32(token),
-              let idBytes = try? LinkRandom.bytes(8)
+        guard let hello = clientHello, let tokenBytes = try? LinkBytes32(token), let idBytes = try? LinkRandom.bytes(8)
         else { return fail(.transport("cannot issue session")) }
         let sessionID = idBytes.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) } | 1  // never zero
         let caps = configuration.capabilities.intersection(hello.capabilities)
@@ -537,5 +573,48 @@ struct HelperSessionMachine {
                 capabilities: caps, sessionID: sessionID, resumed: resumed, lastStateVersion: lastStateVersion,
                 newlyPaired: newlyPaired)),
         ]
+    }
+}
+
+/// What the helper must make true, atomically, before it may send `welcome`.
+enum HandshakeCommit: Equatable {
+    /// An approved new pairing: store the device. `epoch` is `PairingAdmission.epoch` when the handshake began; a pairing
+    /// that succeeded in the meantime makes this one stale.
+    case pairing(PairedDevice, method: PairingApprovalRequest.Method, epoch: UInt64)
+    /// A paired device is let in: it must still be paired.
+    case session
+}
+
+enum CommitResult: Equatable {
+    case admitted(resumeToken: Data, deviceName: String)
+    /// Revoked, stopped or disconnected, or no longer paired.
+    case notAuthorized
+    /// The pairing window closed or another pairing succeeded first.
+    case windowClosed
+    case storeFull
+}
+
+extension HandshakeCommit {
+    /// The state change behind a commit. `LinkServer` calls this from inside its actor right after checking that the handshake
+    /// is still alive; tests call it directly. It touches the store, the admission and the token store in one synchronous step.
+    func apply(
+        peerSPKIHash: Data, devices: any PairedDeviceStore, admission: PairingAdmission, ledger: PairingSecretLedger,
+        resumeTokens: ResumeTokenStore
+    ) -> CommitResult {
+        let name: String
+        switch self {
+        case .session:
+            guard let device = devices.device(spkiHash: peerSPKIHash) else { return .notAuthorized }
+            name = device.name
+        case .pairing(let device, let method, let epoch):
+            guard admission.epoch == epoch else { return .windowClosed }
+            if case .sas = method, !admission.isOpen { return .windowClosed }
+            do { try devices.add(device) } catch { return .storeFull }
+            admission.recordPairingSuccess()
+            ledger.revokeAll()
+            name = device.name
+        }
+        guard let token = try? resumeTokens.issue(for: peerSPKIHash) else { return .notAuthorized }
+        return .admitted(resumeToken: token, deviceName: name)
     }
 }

@@ -52,7 +52,7 @@ struct MachineRig {
         let h = HelperSessionMachine(
             configuration: .init(
                 macName: "Test Mac", helperSPKIHash: helperSPKI, capabilities: [.hevc, .menus], displays: [],
-                askBeforeEachSession: askBeforeEachSession),
+                askBeforeEachSession: { askBeforeEachSession }),
             peerSPKIHash: clientSeenByHelper ?? clientSPKI, exporter: exporterHelper, devices: devices, ledger: ledger,
             resumeTokens: tokens, admission: admission, source: source, clock: clock.clock)
         return MachineRig(
@@ -92,6 +92,11 @@ struct MachineRig {
                 case .requestApproval(let req):
                     out.approvals.append(req)
                     performHelper(rig.helper.approvalResult(approve), rig: &rig, out: &out, toClient: &toClient, helperDone: &helperDone)
+                case .commit(let commit):
+                    let result = commit.apply(
+                        peerSPKIHash: rig.helper.peerSPKIHash, devices: rig.devices, admission: rig.admission, ledger: rig.ledger,
+                        resumeTokens: rig.resumeTokens)
+                    performHelper(rig.helper.commitResult(result), rig: &rig, out: &out, toClient: &toClient, helperDone: &helperDone)
                 }
             }
         }
@@ -400,7 +405,7 @@ private func qrRig(
         var replay = try MachineRig.make(mode: .pairWithQR(payload), devices: rig.devices, ledger: rig.ledger, resumeTokens: rig.resumeTokens, clock: rig.clock)
         replay.helper = HelperSessionMachine(
             configuration: .init(
-                macName: "Test Mac", helperSPKIHash: rig.helperSPKI, capabilities: [], displays: [], askBeforeEachSession: false),
+                macName: "Test Mac", helperSPKIHash: rig.helperSPKI, capabilities: [], displays: [], askBeforeEachSession: { false }),
             peerSPKIHash: replay.clientSPKI, exporter: Data(repeating: 7, count: 32), devices: rig.devices, ledger: rig.ledger,
             resumeTokens: rig.resumeTokens, admission: rig.admission, clock: rig.clock.clock)
         replay.client = ClientSessionMachine(

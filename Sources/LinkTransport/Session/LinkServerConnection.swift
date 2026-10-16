@@ -50,6 +50,9 @@ public actor LinkServerConnection {
         var admission: PairingAdmission
         /// Normalised remote address, for rate limiting only.
         var source: String
+        /// Decides admission (revoke / stop / store changes) when `welcome` is about to be sent.
+        var server: LinkServer
+        var handshakeID: UInt64
     }
 
     /// Runs the helper side of the handshake on a channel whose wire is up. Throws `LinkSessionError`.
@@ -59,10 +62,12 @@ public actor LinkServerConnection {
         var machine = HelperSessionMachine(
             configuration: HelperSessionMachine.Configuration(
                 macName: config.macName, helperSPKIHash: d.helperSPKIHash, capabilities: config.capabilities,
-                displays: config.displays(), askBeforeEachSession: config.askBeforeEachSession()),
+                displays: config.displays(), askBeforeEachSession: config.askBeforeEachSession),
             peerSPKIHash: peer.spkiHash, exporter: peer.exporter, devices: config.pairedDevices, ledger: d.ledger,
             resumeTokens: d.resumeTokens, admission: d.admission, source: d.source)
         var ready: HelperSessionReady?
+        // However the handshake ends, it gives back its pairing claim (consumed on success, so then this does nothing).
+        defer { d.admission.release(machine.claimID) }
         let deadline = DeadlineTimer { await channel.fail(.timeout, notify: true) }
         defer { deadline.cancel() }
 
@@ -74,10 +79,22 @@ public actor LinkServerConnection {
                 case .terminate(let error, let notify):
                     await channel.terminate(error, notify: notify)
                     throw error
+                case .commit(let commit):
+                    let result = await d.server.commitHandshake(d.handshakeID, commit)
+                    try await perform(machine.commitResult(result))
                 case .requestApproval(let request):
                     deadline.disarm()
+                    if case .newPairing = request.reason { await d.server.beginPairingApproval(d.handshakeID) }
                     let handler = config.approvalHandler
-                    let approved = await withTimeout(config.approvalTimeout) { await handler(request) } ?? false
+                    // The prompt races the connection: if the connection ends (peer left, revoke, stop, close pairing) the
+                    // prompt's task is cancelled and whatever it answers is ignored.
+                    let outcome = OneShot<Bool?>()
+                    let prompt = Task { outcome.complete(.success(await handler(request))) }
+                    let timer = Task { if await sleepUnlessCancelled(config.approvalTimeout) { outcome.complete(.success(false)) } }
+                    let watcher = Task { await channel.waitUntilClosed(); outcome.complete(.success(nil)) }
+                    let answer = try await outcome.wait()
+                    prompt.cancel(); timer.cancel(); watcher.cancel()
+                    guard let approved = answer else { throw (await channel.failure) ?? LinkSessionError.closed }
                     let next = machine.approvalResult(approved)
                     deadline.arm(machine.phaseTimeout == nil ? nil : step)
                     try await perform(next)

@@ -10,6 +10,7 @@ import WindowKit
 /// - `LINK_PAIRING`: the text of the pairing QR code. The app pairs with it, then connects.
 ///
 /// - `LINK_OPEN`: `launcher` opens the launcher scene; `window` (the default) opens the first managed window in its own scene.
+/// - `LINK_OPEN_BUNDLE`: with `window`, the first window of the app with this bundle identifier.
 ///
 /// Only the first scene of a launch runs this.
 @available(iOS 26, *)
@@ -55,7 +56,11 @@ enum DebugLinkHooks {
         for _ in 0..<200 where !connection.workspace.hasSnapshot {
             try? await Task.sleep(for: .milliseconds(100))
         }
-        guard let window = connection.workspace.orderedWindows.first(where: { $0.isManaged }) else { return }
+        // `LINK_OPEN_BUNDLE`: open the first window of that app instead of the frontmost one (device tests pick a window
+        // whose content is safe to capture).
+        let bundle = environment["LINK_OPEN_BUNDLE"]
+        guard let window = connection.workspace.orderedWindows.first(where: { $0.isManaged && (bundle == nil || $0.bundleID == bundle) })
+        else { return }
         open(.remoteWindow(computerID: computer.id, windowRef: WindowRef(window: window.id, in: connection.workspace)?.encoded ?? String(window.id.rawValue)))
     }
 }

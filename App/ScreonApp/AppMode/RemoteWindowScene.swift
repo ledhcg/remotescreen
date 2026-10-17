@@ -296,6 +296,8 @@ struct RemoteWindowSceneView: View {
     @Environment(PhoneNavigation.self) private var phone: PhoneNavigation?
     @State private var model: RemoteWindowSceneModel
     @State private var pairing: SavedConnection?
+    @State private var showsSettings = false
+    @State private var showsMenus = false
     @AppStorage(AppModePreferences.openStyleKey) private var openStyle = AppOpenStyle.separateWindows.rawValue
 
     init(role: SceneRole, computerID: UUID, windowRef: String) {
@@ -376,6 +378,10 @@ struct RemoteWindowSceneView: View {
         }
         .onChange(of: model.boundState?.info.title) { _, _ in model.applyWindowMetadata() }
         .onChange(of: model.boundState?.capabilities) { _, _ in model.applyWindowMetadata() }
+        .onChange(of: model.connection?.isConnected) { _, connected in
+            // The menu asked for before the link was up was never sent: ask again as soon as it is.
+            if connected == true, scenePhase == .active { model.focusGained() }
+        }
         .onChange(of: model.connection?.menuRevision) { _, _ in
             model.installKeyCommands()
             FocusedRemoteMenu.shared.menusChanged()
@@ -395,6 +401,14 @@ struct RemoteWindowSceneView: View {
                 pairing = nil
                 model.connection?.retry()
             }
+        }
+        .sheet(isPresented: $showsSettings) {
+            WindowSettingsSheet(model: model, isPhone: phone != nil, openDesktop: { perform(.openDesktop) }, closeScene: { closeScene() })
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showsMenus) {
+            RemoteMenuSheet(model: model)
+                .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: Binding(get: { phone?.showsSwitcher ?? false }, set: { phone?.showsSwitcher = $0 })) {
             if let connection = model.connection, let phone {
@@ -446,7 +460,7 @@ struct RemoteWindowSceneView: View {
                             .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 1))
                             .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(HapticPlainStyle())
                     .accessibilityIdentifier("tab-\(item.id.rawValue)")
                 }
             }
@@ -455,68 +469,20 @@ struct RemoteWindowSceneView: View {
         .accessibilityIdentifier("window-tabs")
     }
 
-    /// The Mac app's menu bar as a button menu: the fallback for where the system menu bar is not shown.
+    /// The Mac app's menu bar: a button that opens the menus as a bottom sheet (also the way to them where the system menu bar is not shown).
     private var menusButton: some View {
-        let bundleID = model.focusedBundleID
-        let entries = bundleID.flatMap { model.connection?.menuEntries(bundleID: $0) } ?? []
-        return Menu {
-            if entries.isEmpty {
-                Text("No menu available")
-            } else if let bundleID {
-                RemoteMenuItems(entries: entries) { path in model.pressMenu(bundleID: bundleID, path: path) }
-            }
-        } label: {
-            ChromeRoundLabel(systemImage: "filemenu.and.selection")
-        }
-        .accessibilityLabel("Menus")
-        .accessibilityIdentifier("menus-button")
-        .simultaneousGesture(TapGesture().onEnded {
-            // Opening the menu refreshes it: the tree on screen may be out of date by the time of the next time.
-            if let bundleID { model.connection?.requestMenu(bundleID: bundleID, force: true) }
-        })
+        Button { showsMenus = true } label: { Image(systemName: "filemenu.and.selection") }
+            .buttonStyle(ChromeRoundButtonStyle())
+            .accessibilityLabel("Menus")
+            .accessibilityIdentifier("menus-button")
     }
 
+    /// The options button: opens the window's settings sheet.
     private var windowMenu: some View {
-        let actions = WindowActionAvailability(window: model.boundState)
-        return Menu {
-            Picker("Fit", selection: Bindable(model).fitMode) {
-                Text("Fit").tag(WindowFitMode.fit)
-                Text("Fill").tag(WindowFitMode.fill)
-                Text("Actual size").tag(WindowFitMode.actual)
-            }
-            Button("Reset zoom", systemImage: "arrow.up.left.and.down.right.magnifyingglass") { model.view?.resetZoom() }
-            Toggle("Keyboard", systemImage: "keyboard", isOn: Bindable(model).isKeyboardVisible)
-            Section("Mac window") {
-                if actions.canResize {
-                    Button("Resize Mac window to fit", systemImage: "arrow.up.left.and.arrow.down.right") { model.resizeMacWindowToScene() }
-                        .accessibilityIdentifier("action-resize-mac")
-                }
-                if actions.canMinimise {
-                    Button("Minimise", systemImage: "minus.rectangle") { model.macCommand(.minimise) }
-                        .accessibilityIdentifier("action-minimise")
-                }
-                if actions.canZoom {
-                    Button("Zoom", systemImage: "plus.magnifyingglass") { model.macCommand(.zoom) }
-                        .accessibilityIdentifier("action-zoom")
-                }
-                if actions.canExitFullScreen {
-                    Button("Exit full screen", systemImage: "arrow.down.right.and.arrow.up.left") { model.macCommand(.exitFullScreen) }
-                        .accessibilityIdentifier("action-exit-full-screen")
-                }
-                if actions.canClose {
-                    Button("Close Mac window", systemImage: "xmark.rectangle", role: .destructive) { model.macCommand(.close) }
-                        .accessibilityIdentifier("action-close-mac")
-                }
-                Button("Show on full desktop", systemImage: "display") { perform(.openDesktop) }
-                    .accessibilityIdentifier("action-show-desktop")
-            }
-            Button(phone == nil ? "Close this window" : "Back to apps", systemImage: "rectangle.portrait.and.arrow.right") { closeScene() }
-                .accessibilityIdentifier("action-close-scene")
-        } label: {
-            ChromeRoundLabel(systemImage: "ellipsis")
-        }
-        .accessibilityLabel("Window options")
-        .accessibilityIdentifier("window-menu")
+        Button { showsSettings = true } label: { Image(systemName: "ellipsis") }
+            .buttonStyle(ChromeRoundButtonStyle())
+            .accessibilityLabel("Window options")
+            .accessibilityIdentifier("window-menu")
     }
 
     // MARK: Actions
@@ -589,9 +555,9 @@ struct RemoteWindowOverlayView: View {
                 HStack(spacing: 12) {
                     ForEach(overlay.actions, id: \.self) { action in
                         if action == overlay.actions.first {
-                            Button(action.title) { perform(action) }.buttonStyle(.borderedProminent)
+                            Button(action.title) { perform(action) }.buttonStyle(.borderedProminent).tapHaptic()
                         } else {
-                            Button(action.title) { perform(action) }.buttonStyle(.bordered)
+                            Button(action.title) { perform(action) }.buttonStyle(.bordered).tapHaptic()
                         }
                     }
                 }

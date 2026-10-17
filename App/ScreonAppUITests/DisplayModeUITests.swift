@@ -58,8 +58,7 @@ final class DisplayModeUITests: XCTestCase {
     }
 
     private func choose(_ label: String, in app: XCUIApplication) {
-        app.buttons["Options"].tap()
-        app.buttons[label].tap()
+        app.setOption(label, inRow: "Display")
         Thread.sleep(forTimeInterval: 1.5)
     }
 

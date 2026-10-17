@@ -38,14 +38,35 @@ is missing. A screen that looks different from its neighbours is a bug.
 
 - Round chrome button: `ChromeRoundButtonStyle` (44 pt disc, white icon, accent fill while selected). For a `Menu`, whose label
   cannot take a button style, use `ChromeRoundLabel`. Do not hand-draw a disc.
-- Key (extra-keys bar, sidebar): `KeyCapStyle`, one fill, white label, accent fill while held or on. Modifier keys, esc, tab,
-  arrows, clipboard keys and the sidebar buttons are all the same cap.
+- Key (extra-keys bar, sidebar): `KeyCapStyle`, **one size (44 × 40)**, one fill, white label, accent fill while held or on. Modifier
+  keys, esc, tab, arrows, home/end, clipboard keys and the sidebar buttons are all the same cap: a word (esc, home) is set smaller with
+  `KeyCapText`, a menu key is drawn with `KeyCapLabel`; no key is wider or narrower than another. The system Paste button draws its own
+  icon, so it is scaled and clipped to the cap.
+- **Destructive** (disconnect, close): a **red fill with a white icon and text** (`Theme.destructiveFill`), never a red icon on grey. In
+  the toolbar it is `ChromeRoundButtonStyle(isDestructive: true)`; at the foot of a sheet it is `DestructiveWideButton`, full width.
 - Quick action on a list row: `QuickActionStyle`.
 - **Hit target is 44 pt minimum**, even where the visible disc is 40: pad the hit area, never shrink it.
 - Surfaces: `chromePill()`, `chromeBanner()`, `chromeCard()`, `chromeSheet()` (+ `chromeList()` for a list inside it). A bottom
   sheet over a session is **opaque and lighter than the black behind it** (`Theme.sheet`), with a visible grabber, so its edge can
   be seen. UIKit views use the same values through `UIColor(Theme.…)`.
 - A control that is not available is dimmed (opacity 0.4) and says why when the reason is not obvious.
+
+## Settings
+
+Settings of a session (the "…" button, Screen Sharing and App Mode alike) are a **bottom sheet**, not a system menu: `SettingsSheet`
+with `SettingsGroup` cards. A row has the **icon and title on the left and the current value on the right**; tapping the value opens a
+menu of the other values (`SettingsMenuRow`). An on/off setting is a switch (`SettingsToggleRow`), something that does a thing is a
+`SettingsActionRow`. The last thing in the sheet is the full-width red `DestructiveWideButton` (Disconnect, or Close this window).
+The Mac app's menus open in their own sheet (`RemoteMenuSheet`), which asks the Mac when it opens.
+
+## Haptics
+
+**Every touch point answers with a haptic.** The button styles (`ChromeRoundButtonStyle`, `KeyCapStyle`, `QuickActionStyle`, the
+settings row styles) add a light tap when the finger goes down (`pressHaptic`), a picker, toggle or segment ticks when its value
+changes (`selectionHaptic`), and a control that handles touches itself (a `UIControl` such as the sidebar's modifier keys) calls
+`Haptics.tap()`. Use `Haptics.success()` when something finishes well and `Haptics.warning()` before a destructive action runs. A new
+button style without `pressHaptic` fails `DesignRulesTests`. Do not add a haptic to the Mac picture itself: its touches are the
+Mac's input, not controls.
 
 ## Lists of computers
 
@@ -60,6 +81,6 @@ is missing. A screen that looks different from its neighbours is a bug.
 
 1. No `.ultraThinMaterial`, `.regularMaterial`, raw `Color.blue`, `cornerRadius` without `.continuous`, or hand-made round button.
 2. Every icon is monochrome except where it is the selected one.
-3. Hit targets ≥ 44 pt; labels for VoiceOver; every new string in English in code and Vietnamese in `vi.lproj`.
+3. Every control answers with a haptic; hit targets ≥ 44 pt; labels for VoiceOver; every new string in English in code and Vietnamese in `vi.lproj`.
 4. Looked at on an iPhone (390 pt wide) and an iPad, in light and dark appearance, and over a bright and a dark remote screen.
 5. `docs/app-status.md` says what was looked at and what was not.

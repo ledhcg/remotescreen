@@ -40,7 +40,7 @@ final class AppModeUITests: XCTestCase {
     /// Opens a menu button and taps the item with this title (a SwiftUI menu shows its items as buttons).
     private func choose(_ item: String, in menu: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         menu.tap()
-        let button = app.buttons[item].firstMatch
+        let button = app.labelled(item) // rows carry identifiers, so look them up by label
         XCTAssertTrue(button.waitForExistence(timeout: 5), "menu item '\(item)' not found. Tree:\n\(app.debugDescription)", file: file, line: line)
         button.tap()
     }
@@ -69,7 +69,11 @@ final class AppModeUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.5)
 
         // 4. Text: turn the on-screen keyboard on, then type.
-        choose("Keyboard", in: app.buttons["window-menu"].firstMatch)
+        app.buttons["window-menu"].firstMatch.tap()
+        let keyboard = app.switches["Keyboard"].firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "no Keyboard switch in the window options. Tree:\n\(app.debugDescription)")
+        keyboard.tap()
+        app.dismissSheet()
         Thread.sleep(forTimeInterval: 1)
         app.typeText("hi")
         Thread.sleep(forTimeInterval: 0.5)
@@ -81,7 +85,8 @@ final class AppModeUITests: XCTestCase {
         let file = app.buttons["File"].firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 10), "menu tree did not load. Tree:\n\(app.debugDescription)")
         file.tap()
-        let newItem = app.buttons["New"].firstMatch
+        // The item carries an identifier and its shortcut in its label ("New, ⌘N"): find it by the start of the label.
+        let newItem = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'New'")).firstMatch
         XCTAssertTrue(newItem.waitForExistence(timeout: 5), "File > New not found. Tree:\n\(app.debugDescription)")
         newItem.tap()
         Thread.sleep(forTimeInterval: 0.5)

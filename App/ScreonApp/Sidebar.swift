@@ -100,8 +100,7 @@ private struct ModifierKeyButton: View {
         ZStack(alignment: .bottomTrailing) {
             RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous)
                 .fill(state == .up ? Theme.chromeRaised : state == .held ? Theme.accent.opacity(0.75) : Theme.accent)
-            Text(symbol)
-                .font(.title2.weight(.medium))
+            KeyCapText(symbol)
                 .foregroundStyle(Theme.onChrome)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if state == .locked {
@@ -111,7 +110,7 @@ private struct ModifierKeyButton: View {
                     .padding(5)
             }
         }
-        .frame(width: Theme.Size.hit, height: Theme.Size.hit)
+        .frame(width: Theme.Size.key.width, height: Theme.Size.key.height)
         .opacity(isEnabled ? 1 : 0.35)
         .accessibilityHidden(true)
         .overlay {
@@ -137,10 +136,10 @@ private struct SidebarButton: View {
             if let systemImage {
                 Image(systemName: systemImage)
             } else if let text {
-                Text(text)
+                KeyCapText(text)
             }
         }
-        .buttonStyle(KeyCapStyle(isSelected: isSelected, isDestructive: isDestructive, fixedWidth: Theme.Size.hit))
+        .buttonStyle(KeyCapStyle(isSelected: isSelected, isDestructive: isDestructive))
         .accessibilityLabel(label)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -189,6 +188,7 @@ final class PressControl: UIControl {
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         isPressing = true
+        MainActor.assumeIsolated { Haptics.tap() }
         onDown?()
         return true
     }

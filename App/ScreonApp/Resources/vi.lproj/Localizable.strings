@@ -278,3 +278,13 @@
 "Unexpected answer" = "Phản hồi không như mong đợi";
 "Couldn't reach Tailscale" = "Không kết nối được tới Tailscale";
 "Couldn't remove: %@" = "Không xoá được: %@";
+
+/* Settings sheet */
+"Control" = "Điều khiển";
+"Sidebar" = "Thanh bên";
+"Clipboard" = "Bộ nhớ tạm";
+"View" = "Hiển thị";
+"Smooth scrolling" = "Cuộn mượt";
+"Pinch and rotate" = "Chụm và xoay";
+"Zoom on iPad" = "Phóng to trên iPad";
+"Fingers scroll only with pencil" = "Ngón tay chỉ cuộn khi dùng bút";

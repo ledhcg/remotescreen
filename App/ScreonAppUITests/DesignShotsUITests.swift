@@ -50,7 +50,9 @@ final class DesignShotsUITests: XCTestCase {
         app.buttons["Options"].tap()
         Thread.sleep(forTimeInterval: 1)
         UIShots.save(app, "session-options")
-        app.buttons["Options"].firstMatch.tap() // closes the menu
+        app.swipeUp() // the sheet is taller than its first stop: the rest of it, down to the Disconnect button
+        Thread.sleep(forTimeInterval: 1)
+        UIShots.save(app, "session-options-end")
     }
 
     func testTheSessionWithTheSidebar() {

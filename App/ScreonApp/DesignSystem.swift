@@ -30,6 +30,8 @@ enum Theme {
     static let onChrome = Color.white
     static let onChromeSecondary = Color.white.opacity(0.62)
     static let destructive = Color(red: 1.0, green: 0.35, blue: 0.33)
+    /// A destructive control filled with colour (disconnect): deep enough for white text and a white icon to read on it.
+    static let destructiveFill = Color(red: 0.84, green: 0.16, blue: 0.15)
     static let online = Color(red: 0.19, green: 0.82, blue: 0.35)
 
     // MARK: Shape
@@ -114,9 +116,61 @@ extension View {
     }
 }
 
+// MARK: - Haptics
+
+/// Haptic feedback: every control that can be touched answers with one, so a touch is felt even when the Mac is slow to react.
+/// Button styles add it themselves (`pressHaptic`), so a button that uses them needs nothing more; a control with its own touch
+/// handling (a `UIControl`, a toggle, a picker) calls these.
+@MainActor
+enum Haptics {
+    /// A press: a button, a key, a tab.
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.8) }
+    /// A choice changed: a picker, a toggle, a segment.
+    static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
+    /// Something finished well (a paired computer, a copied value).
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    /// Something needs care (a destructive action is about to run).
+    static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
+}
+
+extension View {
+    /// A light tap at the moment a button goes down (not when it is released), as the system's own controls do.
+    func pressHaptic(_ isPressed: Bool) -> some View {
+        sensoryFeedback(.impact(weight: .light, intensity: 0.8), trigger: isPressed) { _, pressed in pressed }
+    }
+
+    /// For a button in a system style (`.bordered`, `.borderedProminent`), which cannot add the haptic itself: a light tap on each tap.
+    func tapHaptic() -> some View { modifier(TapHaptic()) }
+
+    /// A tick when the value of a picker, toggle or segment changes.
+    func selectionHaptic<V: Equatable>(_ value: V) -> some View {
+        sensoryFeedback(.selection, trigger: value)
+    }
+}
+
+private struct TapHaptic: ViewModifier {
+    @State private var taps = 0
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(TapGesture().onEnded { taps += 1 })
+            .sensoryFeedback(.impact(weight: .light, intensity: 0.8), trigger: taps)
+    }
+}
+
+/// `.plain` (the label as drawn, no tint) plus the press haptic: for rows and tabs that draw themselves.
+struct HapticPlainStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .pressHaptic(configuration.isPressed)
+    }
+}
+
 // MARK: - Controls
 
-/// A round button of the chrome (40 pt of icon in a 44 pt circle): white icon on a dark disc, accent fill while selected.
+/// A round button of the chrome (40 pt of icon in a 44 pt circle): white icon on a dark disc, accent fill while selected, red fill (still
+/// a white icon) when it is destructive.
 /// Used for buttons and, through `ChromeRoundLabel`, for menus.
 struct ChromeRoundButtonStyle: ButtonStyle {
     var isSelected = false
@@ -125,15 +179,17 @@ struct ChromeRoundButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 18, weight: .medium))
-            .foregroundStyle(isDestructive ? Theme.destructive : Theme.onChrome)
+            .foregroundStyle(Theme.onChrome)
             .frame(width: Theme.Size.round, height: Theme.Size.round)
             .background(fill(pressed: configuration.isPressed), in: Circle())
             .overlay(Circle().strokeBorder(Theme.hairline, lineWidth: 1))
             .contentShape(Circle())
             .environment(\.colorScheme, .dark)
+            .pressHaptic(configuration.isPressed)
     }
 
     private func fill(pressed: Bool) -> Color {
+        if isDestructive { return pressed ? Theme.destructiveFill.opacity(0.8) : Theme.destructiveFill }
         if isSelected { return Theme.accent }
         return pressed ? Theme.chromeRaised : Theme.chrome
     }
@@ -156,29 +212,57 @@ struct ChromeRoundLabel: View {
     }
 }
 
-/// A key of the extra-keys bar and of the sidebar: one shape, one fill, white label, accent fill while it is held or on.
+/// A key of the extra-keys bar and of the sidebar: one shape, one size (44 × 40), one fill, white label, accent fill while it is held or
+/// on. No key is wider than another whatever its label: a word (esc, home) is set smaller by `KeyCapText` to fit.
 struct KeyCapStyle: ButtonStyle {
     var isSelected = false
     var isDestructive = false
-    /// A key of the sidebar is exactly this wide, whatever its label (esc is no wider than ⌘). `nil`: the key grows with its label, as
-    /// esc, tab and home do on the keys bar.
-    var fixedWidth: CGFloat?
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(isDestructive ? Theme.destructive : Theme.onChrome)
-            .padding(.horizontal, fixedWidth == nil ? 10 : 0)
-            .frame(minWidth: fixedWidth ?? Theme.Size.key.width, minHeight: Theme.Size.key.height)
-            .frame(width: fixedWidth)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(Theme.onChrome)
+            .frame(width: Theme.Size.key.width, height: Theme.Size.key.height)
             .background(fill(pressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
             .environment(\.colorScheme, .dark)
+            .pressHaptic(configuration.isPressed)
     }
 
     private func fill(pressed: Bool) -> Color {
+        if isDestructive { return pressed ? Theme.destructiveFill.opacity(0.8) : Theme.destructiveFill }
         if isSelected { return Theme.accent }
         return pressed ? Theme.chromeRaised.opacity(0.7) : Theme.chromeRaised
+    }
+}
+
+/// The text of a key: a single glyph (⌘ ← ⇧) at the full size, a word (esc, home, pg↑) smaller, so both sit in the same 44 pt key.
+struct KeyCapText: View {
+    let text: String
+
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: text.count > 1 ? 13 : 18, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+}
+
+/// The look of `KeyCapStyle` for something that is not a `Button` (a `Menu` label): the same cap, same size, same icon size.
+struct KeyCapLabel: View {
+    let systemImage: String
+    var isSelected = false
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(Theme.onChrome)
+            .frame(width: Theme.Size.key.width, height: Theme.Size.key.height)
+            .background(isSelected ? Theme.accent : Theme.chromeRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
+            .environment(\.colorScheme, .dark)
     }
 }
 
@@ -192,6 +276,7 @@ struct QuickActionStyle: ButtonStyle {
             .background(configuration.isPressed ? Color(.tertiarySystemFill) : Color(.secondarySystemFill), in: Circle())
             .frame(width: Theme.Size.hit, height: Theme.Size.hit) // the hit area is 44 pt even though the disc is 40
             .contentShape(Rectangle())
+            .pressHaptic(configuration.isPressed)
     }
 }
 
@@ -223,5 +308,230 @@ struct ComputerTile: View {
                 }
             }
             .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Settings sheet
+
+/// One choice of a `SettingsMenuRow`.
+struct SettingsOption<Value: Hashable>: Identifiable {
+    let value: Value
+    let title: LocalizedStringKey
+    var systemImage: String?
+
+    var id: Value { value }
+}
+
+/// A bottom sheet of settings over a session: a title, rows grouped in cards, and a full-width red button at the foot. Rows have the icon
+/// and title on the left and the current value on the right; tapping a value opens a menu of the other values.
+struct SettingsSheet<Content: View>: View {
+    let title: LocalizedStringKey
+    let destructiveTitle: LocalizedStringKey
+    var destructiveImage = "xmark.circle"
+    var destructiveIdentifier: String?
+    let destructiveAction: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Theme.onChrome)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 22)
+                .padding(.bottom, 12)
+            ScrollView {
+                VStack(spacing: 20) { content }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+            }
+            DestructiveWideButton(title: destructiveTitle, systemImage: destructiveImage, action: destructiveAction)
+                .modifier(OptionalIdentifier(identifier: destructiveIdentifier))
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.sheet)
+        .chromeSheet()
+    }
+}
+
+/// An accessibility identifier only when there is one: an empty one would replace the label that UI tests look a button up by.
+private struct OptionalIdentifier: ViewModifier {
+    let identifier: String?
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if let identifier { content.accessibilityIdentifier(identifier) } else { content }
+    }
+}
+
+/// A titled card of rows, with a hairline between rows.
+struct SettingsGroup<Content: View>: View {
+    var title: LocalizedStringKey?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.onChromeSecondary)
+                    .textCase(.uppercase)
+                    .padding(.horizontal, 16)
+            }
+            VStack(spacing: 0) {
+                Group(subviews: content) { rows in
+                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                        if index > 0 { Divider().overlay(Theme.hairline).padding(.leading, 56) }
+                        row
+                    }
+                }
+            }
+            .background(Theme.chrome, in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 1))
+        }
+    }
+}
+
+/// A row: icon and title on the left, whatever `trailing` draws on the right. At least 52 pt tall, so every row is a 44 pt target.
+struct SettingsRow<Trailing: View>: View {
+    let systemImage: String
+    let title: LocalizedStringKey
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(Theme.onChrome)
+                .frame(width: 28)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.body)
+                .foregroundStyle(Theme.onChrome)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            trailing
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 52)
+    }
+}
+
+/// A row whose value is one of several: the current one is shown on the right, and tapping it opens a menu of the others.
+struct SettingsMenuRow<Value: Hashable>: View {
+    let systemImage: String
+    let title: LocalizedStringKey
+    @Binding var selection: Value
+    let options: [SettingsOption<Value>]
+    var isEnabled = true
+
+    private var current: LocalizedStringKey { options.first { $0.value == selection }?.title ?? "" }
+
+    var body: some View {
+        SettingsRow(systemImage: systemImage, title: title) {
+            Menu {
+                Picker(selection: $selection) {
+                    ForEach(options) { option in
+                        if let image = option.systemImage {
+                            Label(option.title, systemImage: image).tag(option.value)
+                        } else {
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                } label: { Text(title) }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(current).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold))
+                }
+                .font(.body)
+                .foregroundStyle(Theme.onChromeSecondary)
+                .frame(minHeight: Theme.Size.hit)
+                .contentShape(Rectangle())
+            }
+            .menuOrder(.fixed)
+            .accessibilityLabel(title)
+            .accessibilityValue(current)
+        }
+        .opacity(isEnabled ? 1 : 0.4)
+        .disabled(!isEnabled)
+        .selectionHaptic(selection)
+    }
+}
+
+/// A row with an on/off switch.
+struct SettingsToggleRow: View {
+    let systemImage: String
+    let title: LocalizedStringKey
+    @Binding var isOn: Bool
+    var isEnabled = true
+
+    var body: some View {
+        SettingsRow(systemImage: systemImage, title: title) {
+            Toggle(isOn: $isOn) { Text(title) }
+                .labelsHidden()
+                .tint(Theme.accent) // on the switch only: a tint higher up would reach the icons of every menu inside
+        }
+        .opacity(isEnabled ? 1 : 0.4)
+        .disabled(!isEnabled)
+        .selectionHaptic(isOn)
+    }
+}
+
+/// A row that does something when tapped, with an optional short note on the right.
+struct SettingsActionRow: View {
+    let systemImage: String
+    let title: LocalizedStringKey
+    var detail: String?
+    var isEnabled = true
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            SettingsRow(systemImage: systemImage, title: title) {
+                if let detail { Text(detail).font(.body).foregroundStyle(Theme.onChromeSecondary) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(SettingsRowPressStyle())
+        .opacity(isEnabled ? 1 : 0.4)
+        .disabled(!isEnabled)
+    }
+}
+
+/// The press look of an action row: the row lightens under the finger.
+struct SettingsRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Theme.chromeRaised : Color.clear)
+            .pressHaptic(configuration.isPressed)
+    }
+}
+
+/// The red, full-width button that ends a settings sheet (disconnect, close): white text and icon on the destructive colour.
+struct DestructiveWideButton: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 52)
+        }
+        .buttonStyle(DestructiveWideStyle())
+    }
+}
+
+private struct DestructiveWideStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Theme.destructiveFill.opacity(0.8) : Theme.destructiveFill,
+                        in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            .pressHaptic(configuration.isPressed)
     }
 }

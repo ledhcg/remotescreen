@@ -59,8 +59,27 @@ struct DesignRulesTests {
 
     @Test func theDesignSystemFileExistsAndIsWhatTheRuleSays() throws {
         let text = try String(contentsOf: Self.appDirectory.appendingPathComponent("DesignSystem.swift"), encoding: .utf8)
-        for needed in ["enum Theme", "ChromeRoundButtonStyle", "KeyCapStyle", "QuickActionStyle", "chromeSheet", "static let hit: CGFloat = 44"] {
+        for needed in ["enum Theme", "ChromeRoundButtonStyle", "KeyCapStyle", "QuickActionStyle", "chromeSheet", "static let hit: CGFloat = 44", "SettingsSheet", "DestructiveWideButton", "enum Haptics"] {
             #expect(text.contains(needed), "DesignSystem.swift lost `\(needed)`")
         }
+    }
+
+    /// Every touch is felt: each button style of the design system adds the press haptic, so a screen that uses them gets it for free.
+    @Test func everyButtonStyleGivesHapticFeedback() throws {
+        let text = try String(contentsOf: Self.appDirectory.appendingPathComponent("DesignSystem.swift"), encoding: .utf8)
+        let styles = text.components(separatedBy: "\n").enumerated().filter { $0.element.contains(": ButtonStyle {") }.map(\.offset)
+        try #require(styles.count >= 5, "the button styles of the design system were not found")
+        let lines = text.components(separatedBy: "\n")
+        for (position, start) in styles.enumerated() {
+            let end = position + 1 < styles.count ? styles[position + 1] : lines.count
+            let body = lines[start..<end].joined(separator: "\n")
+            #expect(body.contains("pressHaptic"), "the button style at line \(start + 1) has no haptic: add `.pressHaptic(configuration.isPressed)`")
+        }
+    }
+
+    /// One key size: a key never grows with its label, so no screen asks for a width of its own.
+    @Test func keysAreOneSize() throws {
+        let found = try Self.offences { line, _, _ in line.contains("KeyCapStyle(") && line.contains("fixedWidth") }
+        #expect(found.isEmpty, "every key is Theme.Size.key; use KeyCapText for a word:\n\(found.joined(separator: "\n"))")
     }
 }

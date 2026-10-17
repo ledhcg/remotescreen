@@ -41,15 +41,14 @@ final class SessionChromeUITests: XCTestCase {
         let app = connect()
         app.buttons["Options"].tap()
         UIShots.save(app, "session-menu")
-        app.buttons["View only"].tap()
+        app.setOption("View only", inRow: "Mode", opener: nil)
 
         XCTAssertTrue(statusButton(app, containing: "View only").waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Keyboard"].isEnabled, "no keyboard in view-only mode")
         XCTAssertFalse(app.buttons["Extra keys"].isEnabled)
         UIShots.save(app, "session-observe")
 
-        app.buttons["Options"].tap()
-        app.buttons["Take control"].tap()
+        app.setOption("Take control", inRow: "Mode")
         XCTAssertTrue(statusButton(app, containing: "Controlling").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Keyboard"].isEnabled)
     }
@@ -74,8 +73,7 @@ final class SessionChromeUITests: XCTestCase {
     /// Every session starts from the default configuration: view-only mode from the previous session must not leak into the next one.
     func testViewOnlyDoesNotLeakIntoTheNextSession() {
         let app = connect()
-        app.buttons["Options"].tap()
-        app.buttons["View only"].tap()
+        app.setOption("View only", inRow: "Mode")
         XCTAssertTrue(statusButton(app, containing: "View only").waitForExistence(timeout: 5))
         app.buttons["Options"].tap()
         app.buttons["Disconnect"].tap()
@@ -114,8 +112,7 @@ final class ObserveModeUITests: XCTestCase {
         func point(_ x: Double, _ y: Double) -> XCUICoordinate { points.point(x, y) }
 
         // 1. View only: tap, double-tap, drag, two-finger tap. None of it may reach the server.
-        app.buttons["Options"].tap()
-        app.buttons["View only"].tap()
+        app.setOption("View only", inRow: "Mode")
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'View only'")).firstMatch.waitForExistence(timeout: 5))
         point(100, 450).tap()
         Thread.sleep(forTimeInterval: 0.6)
@@ -127,8 +124,7 @@ final class ObserveModeUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
 
         // 2. Back to control: a single tap at a clearly different point.
-        app.buttons["Options"].tap()
-        app.buttons["Take control"].tap()
+        app.setOption("Take control", inRow: "Mode")
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS 'Controlling'")).firstMatch.waitForExistence(timeout: 5))
         point(250, 300).tap()
         Thread.sleep(forTimeInterval: 1.5)
@@ -184,9 +180,7 @@ final class QualityUITests: XCTestCase {
     }
 
     private func choose(_ mode: String, in app: XCUIApplication) {
-        app.buttons["Options"].tap()
-        app.buttons["Picture quality"].tap()
-        app.buttons[mode].tap()
+        app.setOption(mode, inRow: "Picture quality")
     }
 
     private func closeEnough(_ a: (Int, Int, Int), _ b: (Int, Int, Int), tolerance: Int) -> Bool {

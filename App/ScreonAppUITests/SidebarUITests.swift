@@ -55,8 +55,7 @@ final class SidebarUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.5)
 
         // 4. Hide the sidebar from the menu: the Mac screen widens, the ⌘ key disappears.
-        app.buttons["Options"].tap()
-        app.buttons["Hide sidebar"].tap()
+        app.setOption("Hide sidebar", inRow: "Sidebar")
         XCTAssertTrue(command.waitForNonExistence(timeout: 5))
         Thread.sleep(forTimeInterval: 1)
         XCTAssertGreaterThan(screen.frame.width, widthWithSidebar + 20, "hiding the sidebar must widen the Mac screen")

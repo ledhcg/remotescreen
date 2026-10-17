@@ -113,6 +113,7 @@ struct SessionView: View {
     @State private var bannerFrame = CGRect.zero
     /// The toolbar collapses into a small pill to make room for the Mac screen (especially on iPhone).
     @State private var isToolbarCollapsed = false
+    @State private var showsSettings = false
 
     private var excludedRegions: [CGRect] {
         [toolbarFrame, keyBarFrame, bannerFrame].filter { $0 != .zero }.map { $0.insetBy(dx: -12, dy: -12) }
@@ -146,6 +147,10 @@ struct SessionView: View {
         .preferredColorScheme(.dark)
         .onChange(of: controller.isKeyBarVisible) { _, visible in
             if !visible { keyBarFrame = .zero } // the old frame must not block touches to the remote screen
+        }
+        .sheet(isPresented: $showsSettings) {
+            SessionSettingsSheet(controller: controller, name: name)
+                .presentationDetents([.medium, .large])
         }
     }
 
@@ -324,7 +329,7 @@ struct SessionView: View {
                     .accessibilityLabel("Extra keys")
                     .accessibilityAddTraits(controller.isKeyBarVisible ? .isSelected : [])
             }
-            optionsMenu
+            optionsButton
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
@@ -333,115 +338,12 @@ struct SessionView: View {
         .padding(.top, 4)
     }
 
-    /// The options menu, grouped like Screen Sharing's menu: control/view only, display size, clipboard, cursor.
-    private var optionsMenu: some View {
-        Menu {
-            Picker("Mode", selection: Binding(get: { controller.isViewOnly }, set: { controller.setViewOnly($0) })) {
-                Label("Take control", systemImage: "cursorarrow.click.2").tag(false)
-                Label("View only", systemImage: "eye").tag(true)
-            }
-            .pickerStyle(.inline)
-
-            Picker("Display", selection: Binding(get: { controller.displayMode }, set: { controller.setDisplayMode($0) })) {
-                Label("Fit to screen", systemImage: "arrow.down.right.and.arrow.up.left").tag(DisplayMode.fit)
-                Label("Fill screen", systemImage: "arrow.up.left.and.arrow.down.right").tag(DisplayMode.fill)
-                Label("Native pixels (1:1)", systemImage: "1.square").tag(DisplayMode.native)
-                Label("Match device resolution", systemImage: "rectangle.on.rectangle").tag(DisplayMode.device)
-            }
-            .pickerStyle(.inline)
-
-            Picker("Touch style", selection: Binding(get: { controller.touchMode }, set: { controller.setTouchMode($0) })) {
-                Label("Direct touch", systemImage: "hand.point.up.left").tag(TouchMode.directTouch)
-                Label("Trackpad", systemImage: "rectangle.and.hand.point.up.left").tag(TouchMode.trackpad)
-            }
-            .pickerStyle(.inline)
-
-            Picker("Sidebar", selection: Binding(get: { controller.sidebarPosition }, set: { controller.setSidebarPosition($0) })) {
-                Label("Sidebar on the left", systemImage: "sidebar.left").tag(SidebarPosition.leading)
-                Label("Sidebar on the right", systemImage: "sidebar.right").tag(SidebarPosition.trailing)
-                Label("Hide sidebar", systemImage: "rectangle").tag(SidebarPosition.hidden)
-            }
-            .pickerStyle(.inline)
-
-            Menu("Gestures on Mac", systemImage: "hand.draw") {
-                Group {
-                    Toggle("Smooth trackpad-style scrolling", isOn: Binding(
-                        get: { controller.smoothScroll }, set: { controller.setSmoothScroll($0) }
-                    ))
-                    Picker("Two-finger pinch/rotate", selection: Binding(
-                        get: { controller.pinchSendsToMac }, set: { controller.setPinchSendsToMac($0) }
-                    )) {
-                        Text("Zoom the iPad view").tag(false)
-                        Text("Send to Mac").tag(true)
-                    }
-                    .pickerStyle(.inline)
-                }
-                .disabled(!controller.isAppleServer)
-                if !controller.isAppleServer {
-                    Text("Only available with a Mac (macOS Screen Sharing)")
-                }
-            }
-
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                Menu("Apple Pencil", systemImage: "applepencil") {
-                    Picker("Pencil double tap", selection: Binding(
-                        get: { controller.pencilDoubleTapAction }, set: { controller.setPencilDoubleTapAction($0) }
-                    )) {
-                        Text("Right-click").tag(PencilDoubleTapAction.secondaryClick)
-                        Text("Show/hide keyboard").tag(PencilDoubleTapAction.toggleKeyboard)
-                        Text("Do nothing").tag(PencilDoubleTapAction.nothing)
-                    }
-                    .pickerStyle(.inline)
-                    Toggle("Fingers scroll only when using the pencil", isOn: Binding(
-                        get: { controller.fingersOnlyScrollWithPencil }, set: { controller.setFingersOnlyScrollWithPencil($0) }
-                    ))
-                }
-            }
-
-            Menu("Cursor", systemImage: "cursorarrow") {
-                Toggle("Show Mac cursor", isOn: Binding(
-                    get: { controller.isRemoteCursorVisible }, set: { controller.setRemoteCursorVisible($0) }
-                ))
-                Picker("Cursor style", selection: Binding(get: { controller.cursorStyle }, set: { controller.setCursorStyle($0) })) {
-                    ForEach(CursorStyle.allCases, id: \.self) { style in
-                        Label { Text(style.title) } icon: { style.menuIcon }.tag(style)
-                    }
-                }
-                .pickerStyle(.inline)
-                .disabled(!controller.isRemoteCursorVisible || !controller.drawsCursorLocally)
-                if !controller.drawsCursorLocally {
-                    Text("In Best performance the Mac draws its own cursor")
-                }
-            }
-
-            Picker("Picture quality", selection: Binding(get: { controller.qualityMode }, set: { controller.setQualityMode($0) })) {
-                Label("Automatic", systemImage: "wand.and.stars").tag(QualityMode.adaptive)
-                Label("Best quality", systemImage: "sparkles.tv").tag(QualityMode.bestQuality)
-                Label("Best performance", systemImage: "bolt").tag(QualityMode.bestPerformance)
-            }
-            .pickerStyle(.menu)
-
-            Toggle("Show stream statistics", systemImage: "gauge.with.dots.needle.33percent", isOn: Binding(
-                get: { controller.isStatsVisible }, set: { controller.setStatsVisible($0) }
-            ))
-
-            Menu("Clipboard", systemImage: "doc.on.clipboard") {
-                Button("Get clipboard from Mac", systemImage: "arrow.down.doc") { controller.clipboard.requestFromMac() }
-                Picker("Sync", selection: Binding(get: { controller.clipboard.mode }, set: { controller.clipboard.mode = $0 })) {
-                    Text("Manual").tag(ClipboardBridge.Mode.manual)
-                    Text("Automatic (⌘C, ⌘V)").tag(ClipboardBridge.Mode.shared)
-                }
-                .pickerStyle(.inline)
-            }
-
-            Section {
-                Button("Disconnect", systemImage: "xmark.circle", role: .destructive) { controller.disconnect() }
-            }
-        } label: {
-            // The look is on the label only: a `.tint` on the Menu would also reach the items inside, painting their icons beside dark text.
-            ChromeRoundLabel(systemImage: "ellipsis")
-        }
-        .accessibilityLabel("Options")
+    /// The options button: opens the settings sheet (icon and title, current value, a menu of the others; Disconnect at the foot).
+    private var optionsButton: some View {
+        Button { showsSettings = true } label: { Image(systemName: "ellipsis") }
+            .buttonStyle(ChromeRoundButtonStyle())
+            .accessibilityLabel("Options")
+            .accessibilityIdentifier("options-button")
     }
 }
 
@@ -474,28 +376,30 @@ struct KeyBar: View {
                     Text("Automatic (⌘C, ⌘V)").tag(ClipboardBridge.Mode.shared)
                 }
             } label: {
-                // A menu is not a `Button`, so it cannot take a button style: the same cap, drawn by hand.
-                Image(systemName: controller.clipboard.mode == .shared ? "doc.on.clipboard.fill" : "doc.on.clipboard")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.onChrome)
-                    .frame(minWidth: Theme.Size.key.width, minHeight: Theme.Size.key.height)
-                    .background(Theme.chromeRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
+                // A menu is not a `Button`, so it cannot take a button style: `KeyCapLabel` is the same cap. Automatic sync is a state,
+                // so the key fills with the accent while it is on (the icon stays the same one as the other keys').
+                KeyCapLabel(systemImage: "doc.on.clipboard", isSelected: controller.clipboard.mode == .shared)
             }
             .accessibilityLabel("Clipboard mode")
+            .selectionHaptic(controller.clipboard.mode)
 
             Button { controller.clipboard.requestFromMac() } label: { Image(systemName: "arrow.down.doc") }
                 .buttonStyle(KeyCapStyle())
                 .accessibilityLabel("Get clipboard from Mac")
 
-            // The system's own paste control (it reads the clipboard without the permission prompt): dressed like the other keys.
+            // The system's own paste control (it reads the clipboard without the permission prompt): dressed like the other keys. Its
+            // icon is the system's, so the cap around it is cut to the key size and filled with the key colour.
             PasteButton(payloadType: String.self) { strings in
                 controller.clipboard.send(text: strings.first ?? "")
             }
             .labelStyle(.iconOnly)
+            .controlSize(.large)
             .buttonBorderShape(.roundedRectangle(radius: Theme.Radius.key))
             .tint(Theme.chromeRaised)
             .foregroundStyle(Theme.onChrome)
-            .frame(minWidth: Theme.Size.key.width, minHeight: Theme.Size.key.height)
+            .scaleEffect(1.3) // the system draws its icon small; scaled up it matches the other keys' icons, and the clip cuts the cap to size
+            .frame(width: Theme.Size.key.width, height: Theme.Size.key.height)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
             .accessibilityLabel("Send clipboard to Mac")
         }
     }
@@ -507,9 +411,9 @@ struct KeyBar: View {
                     ForEach(Self.modifiers, id: \.0) { modifier, symbol, name in
                         let state = controller.modifierStates[modifier] ?? .up
                         Button { controller.toggleModifier(modifier) } label: {
-                            HStack(spacing: 2) {
-                                Text(symbol)
-                                if state == .locked { Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)) }
+                            ZStack(alignment: .bottomTrailing) {
+                                KeyCapText(symbol).frame(maxWidth: .infinity, maxHeight: .infinity)
+                                if state == .locked { Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)).padding(4) }
                             }
                         }
                         .buttonStyle(KeyCapStyle(isSelected: state != .up))
@@ -522,7 +426,7 @@ struct KeyBar: View {
                 clipboardControls
                 Divider().frame(height: 24).overlay(Theme.hairline)
                 ForEach(Self.keys, id: \.0) { key, symbol, name in
-                    Button { controller.press(key) } label: { Text(symbol) }
+                    Button { controller.press(key) } label: { KeyCapText(symbol) }
                         .buttonStyle(KeyCapStyle())
                     .accessibilityLabel(name)
                 }

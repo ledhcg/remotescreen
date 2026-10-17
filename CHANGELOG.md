@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The "…" button of a session (Screen Sharing and App Mode) opens a bottom sheet instead of a system menu: icon and title on the left,
+  the current value on the right (tap it for a menu of the other values), switches for on/off settings, and a full-width red
+  Disconnect (App Mode: Close this window) button at the foot. The disconnect button of the toolbar and the sidebar is now a red
+  fill with a white icon.
+- App Mode: the Mac app's menus open from the Menus button as a sheet that asks the Mac when it opens and again until it answers, and
+  asks again when the link comes up. Before, a menu requested while the link was still connecting was never sent and stayed empty.
+- Extra keys: every key is the same 44 × 40 cap (esc, tab, home, end, pg↑, del and the arrows no longer differ in width), the
+  clipboard keys share one icon size, and the sidebar keys match them.
+- Every control gives haptic feedback: buttons and keys tap when pressed, pickers and switches tick when they change (rule in
+  `.claude/rules/design-system.md`, checked by `DesignRulesTests`).
+
 - Design system: one look for the whole app (`DesignSystem.swift`, rules in `.claude/rules/design-system.md`). Everything that floats
   over a remote screen is now dark and opaque with a hairline edge (no more grey frosted glass that washed out over a bright Mac
   screen), every icon is monochrome (blue only marks what is selected), all keys share one shape (modifiers, esc, tab, arrows,

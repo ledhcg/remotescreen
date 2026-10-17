@@ -213,6 +213,7 @@ struct AppModePairingView: View {
                 .accessibilityIdentifier("pairing-code")
             Button("The codes match") { flow.answerCode(matches: true) }
                 .buttonStyle(.borderedProminent)
+                .tapHaptic()
                 .accessibilityIdentifier("pairing-match")
             Button("They are different", role: .destructive) { flow.answerCode(matches: false) }
         } header: {

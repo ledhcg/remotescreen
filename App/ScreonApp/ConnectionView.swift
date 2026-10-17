@@ -245,7 +245,7 @@ struct ConnectionView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain) // keep the button tint from coloring the whole row
+            .buttonStyle(HapticPlainStyle()) // keep the button tint from coloring the whole row
             .disabled(controller.state == .connecting)
             .accessibilityLabel(accessibilityDescription(of: row))
             .accessibilityIdentifier("computer.\(row.name)")
@@ -347,6 +347,7 @@ struct ConnectionView: View {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                     }
                     .buttonStyle(.borderedProminent)
+                    .tapHaptic()
                 } else {
                     HStack(spacing: 8) {
                         ProgressView()
@@ -369,6 +370,7 @@ struct ConnectionView: View {
             Text("Connecting to \(connectingName)…").font(.headline).multilineTextAlignment(.center)
             Button("Cancel") { controller.disconnect() }
                 .buttonStyle(.bordered)
+                .tapHaptic()
         }
         .padding(24)
         .frame(maxWidth: 300)

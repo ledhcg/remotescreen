@@ -409,6 +409,14 @@ Verified (`swift test`; `Tools/mock-link-helper/run_appmode_test.sh` on the iPad
   picture are covered by build, unit tests (real-GPU corner tests) and UI tests on the simulator, but have not been looked at on a real
   iPhone or iPad over a bright and a dark Mac screen. The corner radius of a Mac window (14 Mac points) is an estimate: a window with a
   bigger radius may still show a sliver of the wedge.
+- **Settings sheet, Menus sheet, extra keys, haptics, on a device**: the "…" sheet (Screen Sharing and App Mode), the Mac app's Menus
+  sheet, the uniform 44 × 40 keys and the red disconnect buttons were looked at in simulator screenshots (iPhone) and exercised by UI
+  tests (every option of Mode, Display, Sidebar and Picture quality is set through the sheet; in the App Mode end-to-end run the
+  menu item File > New, "Resize Mac window to fit" and "Close Mac window" reach the fake helper through the new sheets). Not
+  verified: the haptics themselves (a simulator has no Taptic Engine), the look on an iPad, the Menus sheet with a real Mac app's
+  large menus, and the system Paste key's icon next to the other keys (it draws its own icon, scaled to match). The iPad App Mode
+  run still reports 0 pointer and 0 key events at the helper, the same as before these changes. In UI tests, a tap on the dimmed area
+  that closes a sheet swallows the next tap on the toolbar (dragging the sheet down does not): not reproduced by hand.
 - **Tailscale on a real tailnet**: address and name recognition, the device-list parser (`TailscaleAPI.parse`, against a hand-written
   sample of the API's JSON), the request (header, host) and the probes (a real loopback port) are tested. Not tried: a real
   Tailscale API token, a real tailnet, the iOS Tailscale app being connected or not while the list is on screen, probes over a tunnel.

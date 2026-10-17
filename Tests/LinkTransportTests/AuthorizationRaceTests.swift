@@ -40,12 +40,15 @@ import Testing
         await rig.approvals.waitForRequests(1)
 
         _ = try await server.revoke(deviceSPKIHash: rig.ipadSPKI)
+        // The server cancels the prompt first (that is what the test is about); only then does the Mac user tap Approve.
+        // Approve before the cancel is processed is also legal and is covered by the tests that do not count cancelled prompts: both
+        // orders must not admit, but only this one makes "the prompt was cancelled" a fact that can be waited for.
+        await rig.approvals.waitForCancelledPrompts(1)
         await rig.approvals.release(true)  // the Mac user taps Approve a moment too late
 
         await expectFailure(await attempt.value, "approval completed after revoke")
         #expect(rig.devices.all().isEmpty, "a revoked handshake must not store the device")
         #expect(await server.activeSessions.isEmpty)
-        await rig.approvals.waitForCancelledPrompts(1)
         #expect(await rig.approvals.cancelledPrompts == 1, "the pending prompt was cancelled")
         await rig.tearDown()
     }
@@ -110,11 +113,14 @@ import Testing
         await rig.approvals.waitForRequests(1)
 
         await server.stop()
+        // The server cancels the prompt first (that is what the test is about); only then does the Mac user tap Approve.
+        // Approve before the cancel is processed is also legal and is covered by the tests that do not count cancelled prompts: both
+        // orders must not admit, but only this one makes "the prompt was cancelled" a fact that can be waited for.
+        await rig.approvals.waitForCancelledPrompts(1)
         await rig.approvals.release(true)
 
         await expectFailure(await attempt.value, "approval completed after stop")
         #expect(rig.devices.all().isEmpty)
-        await rig.approvals.waitForCancelledPrompts(1)
         #expect(await rig.approvals.cancelledPrompts == 1)
         #expect(!server.pairingAdmission.isOpen)
         await rig.tearDown()
@@ -147,11 +153,14 @@ import Testing
         #expect(server.pairingAdmission.claim(epoch: server.pairingAdmission.epoch) == nil, "the attempt holds the claim")
 
         await server.disconnectAll()
+        // The server cancels the prompt first (that is what the test is about); only then does the Mac user tap Approve.
+        // Approve before the cancel is processed is also legal and is covered by the tests that do not count cancelled prompts: both
+        // orders must not admit, but only this one makes "the prompt was cancelled" a fact that can be waited for.
+        await rig.approvals.waitForCancelledPrompts(1)
         await rig.approvals.release(true)
 
         await expectFailure(await attempt.value, "approval completed after disconnectAll")
         #expect(rig.devices.all().isEmpty)
-        await rig.approvals.waitForCancelledPrompts(1)
         #expect(await rig.approvals.cancelledPrompts == 1)
         // The connection ended, so its claim was given back.
         #expect(server.pairingAdmission.claim(epoch: server.pairingAdmission.epoch) != nil)
@@ -171,11 +180,14 @@ import Testing
         await rig.approvals.waitForRequests(1)
 
         await server.closePairingWindow()
+        // The server cancels the prompt first (that is what the test is about); only then does the Mac user tap Approve.
+        // Approve before the cancel is processed is also legal and is covered by the tests that do not count cancelled prompts: both
+        // orders must not admit, but only this one makes "the prompt was cancelled" a fact that can be waited for.
+        await rig.approvals.waitForCancelledPrompts(1)
         await rig.approvals.release(true)
 
         await expectFailure(await attempt.value, "approval completed after the window closed")
         #expect(rig.devices.all().isEmpty)
-        await rig.approvals.waitForCancelledPrompts(1)
         #expect(await rig.approvals.cancelledPrompts == 1)
         #expect(!(await server.isPairingWindowOpen()))
         // The QR code that was on screen is dead too.

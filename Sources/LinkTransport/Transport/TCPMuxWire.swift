@@ -31,15 +31,19 @@ final class MuxStream: LinkWireStream, @unchecked Sendable {
 
     // MARK: Inbound (called by the wire's read loop)
 
+    // A continuation is never resumed while `lock` is held. `resume` takes the awaiting task's status lock, and `Task.cancel()` holds
+    // that lock while it runs the `onCancel` handlers below, which take `lock`: resuming under `lock` could deadlock the two
+    // (found with a stack sample of a hung test run). Every function here takes the waiter out under the lock and resumes it after.
+
     func deliver(_ data: Data) async {
-        let mustWait: Bool = lock.withLock {
+        let (mustWait, wake): (Bool, CheckedContinuation<Void, Never>?) = lock.withLock {
             chunks.append(data)
             buffered += data.count
             let w = readWaiter
             readWaiter = nil
-            w?.resume()
-            return buffered > Self.maxBufferedBytes
+            return (buffered > Self.maxBufferedBytes, w)
         }
+        wake?.resume()
         guard mustWait else { return }
         await withTaskCancellationHandler {
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
@@ -57,19 +61,23 @@ final class MuxStream: LinkWireStream, @unchecked Sendable {
     }
 
     func deliverFin() {
-        lock.withLock {
+        let wake: CheckedContinuation<Void, Never>? = lock.withLock {
             peerFinished = true
-            let w = readWaiter; readWaiter = nil; w?.resume()
+            let w = readWaiter; readWaiter = nil
+            return w
         }
+        wake?.resume()
         wire.noteStreamState(self)
     }
 
     func fail(_ error: Error) {
-        lock.withLock {
+        let waiters: [CheckedContinuation<Void, Never>] = lock.withLock {
             if failure == nil { failure = error }
-            let w = readWaiter; readWaiter = nil; w?.resume()
-            let s = spaceWaiter; spaceWaiter = nil; s?.resume()
+            let r = readWaiter, s = spaceWaiter
+            readWaiter = nil; spaceWaiter = nil
+            return [r, s].compactMap { $0 }
         }
+        for waiter in waiters { waiter.resume() }
     }
 
     var isFullyFinished: Bool { lock.withLock { peerFinished && localFinished } }
@@ -79,17 +87,19 @@ final class MuxStream: LinkWireStream, @unchecked Sendable {
     func read() async throws -> Data? {
         while true {
             enum Step { case data(Data), fin, error(Error), wait }
-            let step: Step = lock.withLock {
+            let (step, wake): (Step, CheckedContinuation<Void, Never>?) = lock.withLock {
                 if !chunks.isEmpty {
                     let d = chunks.removeFirst()
                     buffered -= d.count
-                    if buffered <= Self.maxBufferedBytes { let s = spaceWaiter; spaceWaiter = nil; s?.resume() }
-                    return .data(d)
+                    var space: CheckedContinuation<Void, Never>?
+                    if buffered <= Self.maxBufferedBytes { space = spaceWaiter; spaceWaiter = nil }
+                    return (.data(d), space)
                 }
-                if let failure { return .error(failure) }
-                if peerFinished { return .fin }
-                return .wait
+                if let failure { return (.error(failure), nil) }
+                if peerFinished { return (.fin, nil) }
+                return (.wait, nil)
             }
+            wake?.resume() // the writer waiting for room: after the lock is released
             switch step {
             case .data(let d): return d
             case .fin: return nil

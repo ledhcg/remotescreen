@@ -1,5 +1,6 @@
 # Manual release of the Screon Helper (Developer ID signing, notarization, stapled .dmg, signed update manifest).
-# Skeleton: run it only when the maintainer asks for a helper release. It never runs on push or pull_request.
+# Runs when the maintainer starts it by hand (workflow_dispatch) or pushes a tag `helper-v<version>`. A tag push always
+# publishes the GitHub Release; it never runs on a branch push or pull_request. Push the tag only when asked for a release.
 #
 # Required repository secrets (values are never stored in this file):
 #   DEVELOPER_ID_CERT_P12       base64 of the Developer ID Application certificate + key (.p12)
@@ -11,6 +12,9 @@
 name: Helper release
 
 on:
+  push:
+    tags:
+      - "helper-v*"
   workflow_dispatch:
     inputs:
       version:
@@ -32,8 +36,31 @@ permissions:
   contents: read   # the build job holds the signing material and gets no write access; only `publish` below can write
 
 jobs:
+  # Version and publish flag: from the inputs of a manual run, or from the pushed tag helper-v<version>.
+  meta:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      publish: ${{ steps.resolve.outputs.publish }}
+    steps:
+      - id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then VERSION="${REF_NAME#helper-v}"; PUBLISH=true
+          else VERSION="$INPUT_VERSION"; PUBLISH="$INPUT_PUBLISH"; fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a version: $VERSION"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
   release:
     name: Sign, notarize, package
+    needs: meta
     runs-on: macos-15
     environment: helper-release   # protect this environment with required reviewers
     env:
@@ -46,7 +73,7 @@ jobs:
         run: test -f Helper/project.yml || { echo "Helper/project.yml is missing"; exit 1; }
       - name: Check the version and the update public key
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.meta.outputs.version }}
         run: |
           set -euo pipefail
           PROJECT_VERSION="$(sed -n 's/^ *MARKETING_VERSION: *"\(.*\)"/\1/p' Helper/project.yml | head -n1)"
@@ -112,7 +139,7 @@ jobs:
           xcrun stapler validate "$RUNNER_TEMP/ScreonHelper.app"
       - name: Build, sign, notarize and staple the disk image
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.meta.outputs.version }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
           NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
@@ -131,7 +158,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -vv "$DMG"
       - name: Sign the update manifest
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.meta.outputs.version }}
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
           set -euo pipefail
@@ -148,9 +175,9 @@ jobs:
       - name: Keep the disk image and the manifest
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ScreonHelper-${{ inputs.version }}
+          name: ScreonHelper-${{ needs.meta.outputs.version }}
           path: |
-            ${{ runner.temp }}/ScreonHelper-${{ inputs.version }}.dmg
+            ${{ runner.temp }}/ScreonHelper-${{ needs.meta.outputs.version }}.dmg
             ${{ runner.temp }}/update-manifest.json
             ${{ runner.temp }}/update-manifest.json.sig
           if-no-files-found: error
@@ -164,8 +191,8 @@ jobs:
   # release is marked latest. Runs only when the maintainer checked `publish`.
   publish:
     name: Publish the GitHub Release
-    needs: release
-    if: ${{ inputs.publish }}
+    needs: [meta, release]
+    if: ${{ needs.meta.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -173,11 +200,11 @@ jobs:
       - name: Fetch the release output
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: ScreonHelper-${{ inputs.version }}
+          name: ScreonHelper-${{ needs.meta.outputs.version }}
           path: out
       - name: Create the release
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.meta.outputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

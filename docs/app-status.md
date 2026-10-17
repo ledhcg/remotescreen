@@ -405,6 +405,14 @@ Verified (`swift test`; `Tools/mock-link-helper/run_appmode_test.sh` on the iPad
 
 ## Not yet verified, do not treat as done
 
+- **Design system, looked at on a device**: the new chrome (dark opaque bars, round buttons, key caps, Windows sheet) and the rounded Mac
+  picture are covered by build, unit tests (real-GPU corner tests) and UI tests on the simulator, but have not been looked at on a real
+  iPhone or iPad over a bright and a dark Mac screen. The corner radius of a Mac window (14 Mac points) is an estimate: a window with a
+  bigger radius may still show a sliver of the wedge.
+- **Tailscale on a real tailnet**: address and name recognition, the device-list parser (`TailscaleAPI.parse`, against a hand-written
+  sample of the API's JSON), the request (header, host) and the probes (a real loopback port) are tested. Not tried: a real
+  Tailscale API token, a real tailnet, the iOS Tailscale app being connected or not while the list is on screen, probes over a tunnel.
+  The device-list fields were written from the API's documentation, not from a recorded answer.
 - **Network following and Tailscale detection**: the decisions are unit-tested (`NetworkConditionsTests`: Tailscale address and
   name recognition, prechecks, host order, recovery after link changes and outages; `SessionLogicTests` for the new overlays).
   The live parts (`NWPathMonitor`, the `utun` address read on the device, switching Wi-Fi/mobile data, Tailscale connecting and

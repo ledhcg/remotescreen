@@ -56,15 +56,18 @@ public final class VideoWindowRenderer {
     /// - Parameters:
     ///   - geometry: `remoteSize` is the coded frame size (`frameSize`); `setSourceRect` selects the window content.
     ///   - pointer: pixel of the coded frame where the pointer is; `nil` draws no cursor.
+    ///   - cornerRadius: radius in view points of the window picture's corners (children stay square). 0 = square.
     public func encode(
         into commandBuffer: MTLCommandBuffer,
         pass: MTLRenderPassDescriptor,
         geometry: ViewportGeometry,
         deviceScale: Double = 1,
-        pointer: (x: Int, y: Int)? = nil
+        pointer: (x: Int, y: Int)? = nil,
+        cornerRadius: Double = 0
     ) {
         compositor.encode(
-            into: commandBuffer, pass: pass, main: surface, children: children, geometry: geometry, deviceScale: deviceScale, pointer: pointer
+            into: commandBuffer, pass: pass, main: surface, children: children, geometry: geometry, deviceScale: deviceScale, pointer: pointer,
+            cornerRadius: cornerRadius
         )
     }
 
@@ -74,10 +77,12 @@ public final class VideoWindowRenderer {
         geometry: ViewportGeometry,
         deviceScale: Double = 1,
         pointer: (x: Int, y: Int)? = nil,
-        clearColor: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        clearColor: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1),
+        cornerRadius: Double = 0
     ) {
         compositor.render(
-            to: target, main: surface, children: children, geometry: geometry, deviceScale: deviceScale, pointer: pointer, clearColor: clearColor
+            to: target, main: surface, children: children, geometry: geometry, deviceScale: deviceScale, pointer: pointer, clearColor: clearColor,
+            cornerRadius: cornerRadius
         )
     }
 

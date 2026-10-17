@@ -20,9 +20,15 @@ struct ScreonApp: App {
         Localization.forcedLanguage = "en"
         // Start watching the network now, so the first connection is checked against a real snapshot.
         NetworkMonitor.shared.start()
+        #if DEBUG
+        let model = DebugComputers.model() ?? ConnectionsModel(
+            store: ConnectionStore(fileURL: ConnectionStore.defaultURL()), secrets: KeychainSecretStore()
+        )
+        #else
         let model = ConnectionsModel(
             store: ConnectionStore(fileURL: ConnectionStore.defaultURL()), secrets: KeychainSecretStore()
         )
+        #endif
         _model = State(initialValue: model)
         _linkSessions = State(initialValue: LinkSessionRegistry(makeSession: { computerID in
             if #available(iOS 26, *) {

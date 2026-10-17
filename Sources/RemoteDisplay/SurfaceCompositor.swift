@@ -31,7 +31,19 @@ public final class SurfaceCompositor {
     struct VertexOut {
         float4 position [[position]];
         float2 uv;
+        float2 local;   // 0...1 across the quad, (0, 0) at the top left
     };
+
+    // Rounded-rectangle test for `rounding` = (quad width px, quad height px, radius px). Pixels outside the shape are discarded,
+    // so the render target keeps its clear colour there. A radius of half a pixel or less draws the full rectangle.
+    static void clipRounded(float2 local, float3 rounding) {
+        if (rounding.z <= 0.5) return;
+        float2 half_ = rounding.xy * 0.5;
+        float radius = min(rounding.z, min(half_.x, half_.y));
+        float2 q = abs(local * rounding.xy - half_) - (half_ - radius);
+        float distance = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+        if (distance > 0.5) discard_fragment();
+    }
 
     vertex VertexOut screenVertex(uint vertexID [[vertex_id]],
                                   constant float4 &rect [[buffer(0)]],
@@ -41,12 +53,15 @@ public final class SurfaceCompositor {
         VertexOut out;
         out.position = float4(mix(rect.x, rect.z, corner.x), mix(rect.w, rect.y, corner.y), 0, 1);
         out.uv = float2(mix(uvRect.x, uvRect.z, corner.x), mix(uvRect.y, uvRect.w, corner.y));
+        out.local = corner;
         return out;
     }
 
     fragment float4 screenFragment(VertexOut in [[stage_in]],
                                    texture2d<float> screen [[texture(0)]],
-                                   sampler screenSampler [[sampler(0)]]) {
+                                   sampler screenSampler [[sampler(0)]],
+                                   constant float3 &rounding [[buffer(1)]]) {
+        clipRounded(in.local, rounding);
         return float4(screen.sample(screenSampler, in.uv).rgb, 1.0);
     }
 
@@ -56,7 +71,9 @@ public final class SurfaceCompositor {
                                   texture2d<float> luma [[texture(0)]],
                                   texture2d<float> chroma [[texture(1)]],
                                   sampler videoSampler [[sampler(0)]],
-                                  constant float4 &range [[buffer(0)]]) {
+                                  constant float4 &range [[buffer(0)]],
+                                  constant float3 &rounding [[buffer(1)]]) {
+        clipRounded(in.local, rounding);
         float y = (luma.sample(videoSampler, in.uv).r - range.x) * range.y;
         float2 c = (chroma.sample(videoSampler, in.uv).rg - range.z) * range.w;
         float3 rgb = float3(y + 1.5748 * c.y, y - 0.187324 * c.x - 0.468124 * c.y, y + 1.8556 * c.x);
@@ -169,6 +186,8 @@ public final class SurfaceCompositor {
     ///   - children: surfaces drawn over `main` in order, positioned in `main`'s pixels.
     ///   - deviceScale: device pixels per point (`UIScreen.scale`), used to choose the sampler.
     ///   - pointer: Mac pixel where the pointer is. `nil` draws no cursor (its position is not yet known).
+    ///   - cornerRadius: corner radius in view points of the main surface's displayed rectangle (`geometry.contentRect`). The
+    ///     pixels outside the rounded corners keep the pass's clear colour. Children and the cursor are never rounded. 0 = square.
     public func encode(
         into commandBuffer: MTLCommandBuffer,
         pass: MTLRenderPassDescriptor,
@@ -177,7 +196,8 @@ public final class SurfaceCompositor {
         children: [ChildSurface] = [],
         geometry: ViewportGeometry,
         deviceScale: Double = 1,
-        pointer: (x: Int, y: Int)? = nil
+        pointer: (x: Int, y: Int)? = nil,
+        cornerRadius: Double = 0
     ) {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         defer { encoder.endEncoding() }
@@ -195,7 +215,14 @@ public final class SurfaceCompositor {
             } else {
                 uv = geometry.sourceUVRect
             }
-            mainDrawn = draw(main, rect: geometry.normalizedDeviceRect, uv: uv, sampler: sampler, encoder: encoder, commandBuffer: commandBuffer)
+            let content = geometry.contentRect
+            let rounding = SIMD3<Float>(
+                Float(content.width * deviceScale), Float(content.height * deviceScale), Float(max(cornerRadius, 0) * deviceScale)
+            )
+            mainDrawn = draw(
+                main, rect: geometry.normalizedDeviceRect, uv: uv, sampler: sampler, rounding: rounding,
+                encoder: encoder, commandBuffer: commandBuffer
+            )
         }
 
         for child in children {
@@ -211,7 +238,7 @@ public final class SurfaceCompositor {
                 child.surface,
                 rect: CursorPlacement.normalizedDeviceRect(viewRect: viewRect, viewSize: geometry.viewSize),
                 uv: SIMD4(Float(uv.minX), Float(uv.minY), Float(uv.maxX), Float(uv.maxY)),
-                sampler: sampler, encoder: encoder, commandBuffer: commandBuffer
+                sampler: sampler, rounding: .zero, encoder: encoder, commandBuffer: commandBuffer
             )
         }
 
@@ -233,11 +260,12 @@ public final class SurfaceCompositor {
     @discardableResult
     private func draw(
         _ surface: any SurfaceTexture, rect: SIMD4<Float>, uv: SIMD4<Float>, sampler: MTLSamplerState,
-        encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer
+        rounding: SIMD3<Float>, encoder: MTLRenderCommandEncoder, commandBuffer: MTLCommandBuffer
     ) -> Bool {
         guard let frame = surface.beginDraw(in: commandBuffer) else { return false } // no data yet
         var rect = rect
         var uv = uv
+        var rounding = rounding
         switch surface.pixelLayout {
         case .bgra:
             encoder.setRenderPipelineState(bgraPipeline)
@@ -248,6 +276,7 @@ public final class SurfaceCompositor {
             encoder.setFragmentTexture(chroma, index: 1)
             encoder.setFragmentBytes(&range, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
         }
+        encoder.setFragmentBytes(&rounding, length: MemoryLayout<SIMD3<Float>>.size, index: 1)
         encoder.setVertexBytes(&rect, length: MemoryLayout<SIMD4<Float>>.size, index: 0)
         encoder.setVertexBytes(&uv, length: MemoryLayout<SIMD4<Float>>.size, index: 1)
         encoder.setFragmentTexture(frame.primary, index: 0)
@@ -265,7 +294,8 @@ public final class SurfaceCompositor {
         geometry: ViewportGeometry,
         deviceScale: Double = 1,
         pointer: (x: Int, y: Int)? = nil,
-        clearColor: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        clearColor: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1),
+        cornerRadius: Double = 0
     ) {
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target
@@ -273,7 +303,7 @@ public final class SurfaceCompositor {
         pass.colorAttachments[0].clearColor = clearColor
         pass.colorAttachments[0].storeAction = .store
         guard let buffer = commandQueue.makeCommandBuffer() else { return }
-        encode(into: buffer, pass: pass, main: main, uvRect: uvRect, children: children, geometry: geometry, deviceScale: deviceScale, pointer: pointer)
+        encode(into: buffer, pass: pass, main: main, uvRect: uvRect, children: children, geometry: geometry, deviceScale: deviceScale, pointer: pointer, cornerRadius: cornerRadius)
         buffer.commit()
         buffer.waitUntilCompleted()
     }

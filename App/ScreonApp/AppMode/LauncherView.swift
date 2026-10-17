@@ -205,11 +205,11 @@ struct AppIconView: View {
             if let image = store.image(for: app, points: points, scale: scale) {
                 Image(uiImage: image).resizable().interpolation(.high)
             } else {
-                RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.quaternary)
+                RoundedRectangle(cornerRadius: points * Theme.Radius.tileRatio, style: .continuous).fill(.quaternary)
             }
         }
         .frame(width: points, height: points)
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: points * Theme.Radius.tileRatio, style: .continuous))
         .accessibilityHidden(true)
     }
 }
@@ -267,7 +267,8 @@ struct WindowSwitcherSheet: View {
         NavigationStack {
             List {
                 Section {
-                    Button("Apps", systemImage: "square.grid.2x2") { phone.showLauncher() }
+                    Button { phone.showLauncher() } label: { Label("Apps", systemImage: "square.grid.2x2") }
+                        .foregroundStyle(Theme.onChrome)
                         .accessibilityIdentifier("switcher-apps")
                 }
                 Section("Windows") {
@@ -277,21 +278,23 @@ struct WindowSwitcherSheet: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading) {
-                                    Text(item.title.isEmpty ? item.appName : item.title)
-                                    if !item.title.isEmpty { Text(item.appName).font(.caption).foregroundStyle(.secondary) }
+                                    Text(item.title.isEmpty ? item.appName : item.title).foregroundStyle(Theme.onChrome)
+                                    if !item.title.isEmpty { Text(item.appName).font(.caption).foregroundStyle(Theme.onChromeSecondary) }
                                 }
                                 Spacer()
-                                if item.isCurrent { Image(systemName: "checkmark") }
+                                if item.isCurrent { Image(systemName: "checkmark").foregroundStyle(Theme.accent) }
                             }
                         }
                         .accessibilityIdentifier("switcher-window-\(item.id.rawValue)")
                     }
                 }
             }
+            .chromeList()
             .navigationTitle("Windows")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
+        .chromeSheet()
         .presentationDetents([.medium, .large])
         .accessibilityIdentifier("window-switcher")
     }

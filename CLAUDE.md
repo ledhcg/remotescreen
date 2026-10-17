@@ -13,7 +13,7 @@ Sources/RFBKit         RFB protocol: handshake, auth, Raw/CopyRect/ZRLE, cursor,
 Sources/RemoteDisplay  viewport geometry, Metal renderer, ScreonView (UIKit)
 Sources/InputKit       keyboard/touch/pencil → RFB events. Pure logic, no UIKit
 Sources/SessionKit     reconnect policy, clipboard bridge, stream quality, user-facing messages. Pure logic
-Sources/ConnectionKit  saved computers (JSON), Bonjour browser, form validation
+Sources/ConnectionKit  saved computers (JSON), Bonjour browser, form validation, network source (LAN/Tailscale), reachability probes
 Sources/LinkProtocol   App Mode wire format: frames, messages, bounded codecs. Pure, no I/O
 Sources/LinkTransport  App Mode link: QUIC + TCP/TLS fallback, pinned identities, pairing, session machine
 Sources/WindowKit      iPad-side window model, stream/input glue for App Mode
@@ -26,7 +26,8 @@ scripts/               helper release skeletons (make-helper-dmg.sh, sign-update
 App/                   SwiftUI app (project.yml = source of truth; the .xcodeproj is generated and git-ignored)
 docs/                  protocol-notes.md (what Apple's server does), app-status.md (what is verified)
 ```
-Dependency direction: `App` → `SessionKit`/`RemoteDisplay`/`ConnectionKit` → `InputKit` → `RFBKit` → `RFBCrypto`.
+Dependency direction: `App` → `SessionKit`/`RemoteDisplay`/`ConnectionKit` → `InputKit` → `RFBKit` → `RFBCrypto`
+(`SessionKit` also uses `ConnectionKit` for Tailscale address recognition).
 App Mode: `App` → `WindowKit` → `LinkTransport` → `LinkProtocol`; `Helper` → `HelperCore` → `LinkTransport` → `LinkProtocol`
 (`HelperCore` is macOS-only). Never import upward.
 
@@ -65,6 +66,8 @@ swift run mock-link-helper                                  # fake helper on 127
 - Match surrounding code. **English is the source language of everything**: code, comments, docs, UI strings, commit messages.
   Vietnamese exists only as a translation (`vi.lproj` tables, `README.vi.md`) and as Unicode test data. See
   `.claude/rules/localization.md`. Reply to people in the language they write in.
+- UI follows the design system in `App/ScreonApp/DesignSystem.swift` and `.claude/rules/design-system.md`: two layers (dark chrome over a
+  remote screen, system look elsewhere), one accent, monochrome icons, continuous corners from `Theme.Radius`, 44 pt hit targets.
 - Logic goes in the pure packages with Swift Testing (`@Suite`/`@Test`/`#expect`); UIKit/SwiftUI stays thin.
 - Hot paths (decode, upload, cursor) do not allocate per frame without a reason. They are built with `-O` even in debug.
 - Any new user-visible string: English in code through `tr("…")` (or SwiftUI `Text("…")`), plus its Vietnamese entry in the
@@ -80,6 +83,7 @@ swift run mock-link-helper                                  # fake helper on 127
 | `security-review` | Touching auth, key exchange, decoders, clipboard, Keychain or anything reading server lengths |
 | `protocol-finding` | Recording a new observation about Apple's server in `docs/protocol-notes.md` |
 | `release` | Only when the maintainer asks for a release |
+| `build` | Build the app or the helper, Debug or Release (TestFlight upload, notarized helper .dmg, install into /Applications) |
 
 ## Gotchas
 

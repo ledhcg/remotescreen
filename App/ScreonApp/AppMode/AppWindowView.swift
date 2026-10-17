@@ -294,10 +294,20 @@ final class AppWindowView: MTKView, MTKViewDelegate, UIGestureRecognizerDelegate
         guard let renderer, let pass = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let buffer = renderer.makeCommandBuffer() else { return }
         renderer.encode(
-            into: buffer, pass: pass, geometry: geometry, deviceScale: Double(view.contentScaleFactor), pointer: pointerPixel
+            into: buffer, pass: pass, geometry: geometry, deviceScale: Double(view.contentScaleFactor), pointer: pointerPixel,
+            cornerRadius: pictureCornerRadius
         )
         buffer.present(drawable)
         buffer.commit()
+    }
+
+    /// Corner radius of a Mac window in Mac points.
+    private static let macCornerRadius = 14.0
+
+    /// The window picture's corner radius in view points: Mac points to coded-frame pixels to view points. 0 until there is a layout.
+    private var pictureCornerRadius: Double {
+        guard let layout = lastLayout else { return 0 }
+        return Self.macCornerRadius * layout.scale * geometry.scale
     }
 
     /// The local cursor sits where the last input put the pointer, in pixels of the coded frame.
@@ -1004,23 +1014,28 @@ final class FileTransfersHUD: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        blur.layer.cornerRadius = 18 // the same continuous 18-point corners as the other floating cards
-        blur.layer.cornerCurve = .continuous
-        blur.clipsToBounds = true
-        addSubview(blur)
+        // The same card as the SwiftUI ones (`Theme.chromeCard`): dark, near opaque, hairline edge, continuous 18-point corners.
+        overrideUserInterfaceStyle = .dark
+        let card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.backgroundColor = UIColor(Theme.chromeBar)
+        card.layer.cornerRadius = Theme.Radius.card
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 1
+        card.layer.borderColor = UIColor(Theme.hairline).cgColor
+        card.clipsToBounds = true
+        addSubview(card)
         stack.axis = .vertical
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
-        blur.contentView.addSubview(stack)
+        card.addSubview(stack)
         NSLayoutConstraint.activate([
-            blur.leadingAnchor.constraint(equalTo: leadingAnchor), blur.trailingAnchor.constraint(equalTo: trailingAnchor),
-            blur.topAnchor.constraint(equalTo: topAnchor), blur.bottomAnchor.constraint(equalTo: bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: blur.contentView.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: blur.contentView.trailingAnchor, constant: -14),
-            stack.topAnchor.constraint(equalTo: blur.contentView.topAnchor, constant: 12),
-            stack.bottomAnchor.constraint(equalTo: blur.contentView.bottomAnchor, constant: -12),
+            card.leadingAnchor.constraint(equalTo: leadingAnchor), card.trailingAnchor.constraint(equalTo: trailingAnchor),
+            card.topAnchor.constraint(equalTo: topAnchor), card.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 12),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12),
         ])
         accessibilityIdentifier = "file-transfers"
         accessibilityLabel = String(localized: "File transfers")
@@ -1038,7 +1053,7 @@ final class FileTransfersHUD: UIView {
             label.adjustsFontForContentSizeCategory = true
             label.numberOfLines = 2
             label.text = Self.text(for: item)
-            label.textColor = Self.isFailure(item) ? .systemRed : .label
+            label.textColor = Self.isFailure(item) ? UIColor(Theme.destructive) : UIColor(Theme.onChrome)
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             let row = UIStackView(arrangedSubviews: [label])
@@ -1051,6 +1066,7 @@ final class FileTransfersHUD: UIView {
                 progress.widthAnchor.constraint(equalToConstant: 90).isActive = true
                 var configuration = UIButton.Configuration.plain()
                 configuration.image = UIImage(systemName: "xmark.circle.fill")
+                configuration.baseForegroundColor = UIColor(Theme.onChromeSecondary) // monochrome like every icon of the chrome
                 let button = UIButton(configuration: configuration, primaryAction: UIAction { _ in cancel(item.id) })
                 button.accessibilityLabel = String(localized: "Cancel")
                 button.accessibilityIdentifier = "cancel-transfer"

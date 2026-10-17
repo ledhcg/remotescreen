@@ -42,15 +42,18 @@ public final class FramebufferRenderer {
     /// - Parameters:
     ///   - deviceScale: device pixels per point (`UIScreen.scale`), used to choose the sampler.
     ///   - pointer: Mac pixel where the pointer is. `nil` draws no cursor (its position is not yet known).
+    ///   - cornerRadius: radius in view points of the picture's corners; the corners show the clear colour. 0 = square.
     public func encode(
         into commandBuffer: MTLCommandBuffer,
         pass: MTLRenderPassDescriptor,
         geometry: ViewportGeometry,
         deviceScale: Double = 1,
-        pointer: (x: Int, y: Int)? = nil
+        pointer: (x: Int, y: Int)? = nil,
+        cornerRadius: Double = 0
     ) {
         compositor.encode(
-            into: commandBuffer, pass: pass, main: surface, geometry: geometry, deviceScale: deviceScale, pointer: pointer
+            into: commandBuffer, pass: pass, main: surface, geometry: geometry, deviceScale: deviceScale, pointer: pointer,
+            cornerRadius: cornerRadius
         )
     }
 
@@ -60,10 +63,12 @@ public final class FramebufferRenderer {
         geometry: ViewportGeometry,
         deviceScale: Double = 1,
         pointer: (x: Int, y: Int)? = nil,
-        clearColor: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        clearColor: MTLClearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1),
+        cornerRadius: Double = 0
     ) {
         compositor.render(
-            to: target, main: surface, geometry: geometry, deviceScale: deviceScale, pointer: pointer, clearColor: clearColor
+            to: target, main: surface, geometry: geometry, deviceScale: deviceScale, pointer: pointer, clearColor: clearColor,
+            cornerRadius: cornerRadius
         )
     }
 

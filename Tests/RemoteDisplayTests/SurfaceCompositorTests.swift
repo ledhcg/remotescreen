@@ -244,4 +244,90 @@ struct SurfaceCompositorTests {
         #expect(isClose(pixel(target, 5, 5), expectedRGB(y: 126, cb: 128, cr: 128), 3))
         #expect(isClose(pixel(target, 30, 30), (250, 0, 0)))
     }
+
+    // MARK: rounded corners
+
+    private let clear: RGB = (0, 0, 255)
+    private let clearColor = MTLClearColor(red: 0, green: 0, blue: 1, alpha: 1)
+
+    private func expectRoundedCorners(_ target: MTLTexture, picture: RGB, size: Int, sourceLocation: SourceLocation = #_sourceLocation) {
+        let last = size - 1
+        let mid = size / 2
+        for (x, y) in [(0, 0), (last, 0), (0, last), (last, last)] {
+            #expect(isClose(pixel(target, x, y), clear), "corner (\(x), \(y))", sourceLocation: sourceLocation)
+        }
+        for (x, y) in [(mid, mid), (mid, 0), (mid, last), (0, mid), (last, mid)] {
+            #expect(isClose(pixel(target, x, y), picture, 3), "inside (\(x), \(y))", sourceLocation: sourceLocation)
+        }
+    }
+
+    @Test func cornerRadiusClearsTheFourCornersAndKeepsTheRest() throws {
+        let compositor = try makeCompositor()
+        let surface = FramebufferSurface(device: compositor.device)
+        surface.upload(try solid(8, 8, b: 0, g: 0, r: 200))
+        let geometry = ViewportGeometry(remoteSize: CGSize(width: 8, height: 8), viewSize: CGSize(width: 40, height: 40))
+        let target = try makeTarget(compositor.device, width: 40, height: 40)
+        compositor.render(to: target, main: surface, geometry: geometry, clearColor: clearColor, cornerRadius: 10)
+        expectRoundedCorners(target, picture: (200, 0, 0), size: 40)
+    }
+
+    @Test func cornerRadiusIsInPointsAndScalesWithDeviceScale() throws {
+        let compositor = try makeCompositor()
+        let surface = FramebufferSurface(device: compositor.device)
+        surface.upload(try solid(8, 8, b: 0, g: 0, r: 200))
+        // 20 pt view at 2x = 40 px target. A 5 pt radius is 10 px: pixel (2, 2) is outside the arc, (12, 12) inside.
+        let geometry = ViewportGeometry(remoteSize: CGSize(width: 8, height: 8), viewSize: CGSize(width: 20, height: 20))
+        let target = try makeTarget(compositor.device, width: 40, height: 40)
+        compositor.render(to: target, main: surface, geometry: geometry, deviceScale: 2, clearColor: clearColor, cornerRadius: 5)
+        expectRoundedCorners(target, picture: (200, 0, 0), size: 40)
+        #expect(isClose(pixel(target, 2, 2), clear))
+        #expect(isClose(pixel(target, 12, 12), (200, 0, 0)))
+    }
+
+    @Test func zeroRadiusIsPixelIdenticalToTheUnroundedOutput() throws {
+        let compositor = try makeCompositor()
+        let surface = FramebufferSurface(device: compositor.device)
+        surface.upload(try makeScreen(width: 4, height: 4))
+        let geometry = ViewportGeometry(remoteSize: CGSize(width: 4, height: 4), viewSize: CGSize(width: 20, height: 20))
+        let plain = try makeTarget(compositor.device, width: 20, height: 20)
+        let zero = try makeTarget(compositor.device, width: 20, height: 20)
+        compositor.render(to: plain, main: surface, geometry: geometry, clearColor: clearColor)
+        compositor.render(to: zero, main: surface, geometry: geometry, clearColor: clearColor, cornerRadius: 0)
+        for y in 0..<20 {
+            for x in 0..<20 {
+                #expect(isClose(pixel(plain, x, y), pixel(zero, x, y)), "pixel (\(x), \(y))")
+            }
+        }
+        // The corner shows the picture, not the clear colour.
+        #expect(!isClose(pixel(zero, 0, 0), clear))
+    }
+
+    @Test func childSurfacesAreNotRounded() throws {
+        let compositor = try makeCompositor()
+        let main = FramebufferSurface(device: compositor.device)
+        main.upload(try solid(8, 8, b: 0, g: 0, r: 200))
+        let child = FramebufferSurface(device: compositor.device)
+        child.upload(try solid(2, 2, b: 0, g: 200, r: 0))
+        let geometry = ViewportGeometry(remoteSize: CGSize(width: 8, height: 8), viewSize: CGSize(width: 40, height: 40))
+        let target = try makeTarget(compositor.device, width: 40, height: 40)
+        // The child covers the main surface's top-left corner (10 x 10 px), where the main picture is cut away.
+        compositor.render(
+            to: target, main: main, children: [ChildSurface(surface: child, offset: .zero)], geometry: geometry,
+            clearColor: clearColor, cornerRadius: 12
+        )
+        #expect(isClose(pixel(target, 0, 0), (0, 200, 0)), "child pixel in the rounded corner stays")
+        #expect(isClose(pixel(target, 9, 9), (0, 200, 0)))
+        #expect(isClose(pixel(target, 39, 0), clear), "other corners are still rounded")
+    }
+
+    @Test func videoSurfaceHonoursTheCornerRadius() throws {
+        let compositor = try makeCompositor()
+        let video = try VideoSurface(device: compositor.device)
+        let gray = (y: 126, cb: 128, cr: 128)
+        #expect(video.update(try makeVideoFrame(bitDepth: 8, blocks: [gray, gray, gray, gray])))
+        let geometry = ViewportGeometry(remoteSize: CGSize(width: 4, height: 4), viewSize: CGSize(width: 40, height: 40))
+        let target = try makeTarget(compositor.device, width: 40, height: 40)
+        compositor.render(to: target, main: video, geometry: geometry, clearColor: clearColor, cornerRadius: 10)
+        expectRoundedCorners(target, picture: expectedRGB(y: 126, cb: 128, cr: 128), size: 40)
+    }
 }

@@ -141,8 +141,9 @@ struct SessionView: View {
         // The Mac screen gets the status bar's room (it used to sit over the Mac menu bar); the home indicator fades while idle.
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        // The controls float over a black letterbox: keep their material and white labels dark even when the device is in light mode.
-        .environment(\.colorScheme, .dark)
+        // The controls float over a black letterbox: the whole window is dark for the session, so the system's menus and alerts are too
+        // (`.environment(\.colorScheme)` would only darken SwiftUI views, and a menu would open light over the dark bar).
+        .preferredColorScheme(.dark)
         .onChange(of: controller.isKeyBarVisible) { _, visible in
             if !visible { keyBarFrame = .zero } // the old frame must not block touches to the remote screen
         }
@@ -165,9 +166,10 @@ struct SessionView: View {
                 if controller.isStatsVisible {
                     Text(controller.statsLine)
                         .font(.caption.monospacedDigit())
+                        .foregroundStyle(Theme.onChrome)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .chromePill()
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("stream-stats")
                 }
@@ -177,8 +179,8 @@ struct SessionView: View {
                         .font(.footnote)
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Self.bannerShape)
+                        .padding(.vertical, 8)
+                        .chromeBanner()
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("offline-banner")
                 }
@@ -187,8 +189,8 @@ struct SessionView: View {
                         .font(.footnote)
                         .foregroundStyle(.orange)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial, in: Self.bannerShape)
+                        .padding(.vertical, 8)
+                        .chromeBanner()
                         .allowsHitTesting(false)
                         .accessibilityIdentifier("security-warning")
                 }
@@ -197,9 +199,10 @@ struct SessionView: View {
                 } else if let notice = controller.clipboard.notice {
                     Text(notice)
                         .font(.footnote)
+                        .foregroundStyle(Theme.onChrome)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Self.bannerShape)
+                        .chromeBanner()
                         .transition(.opacity)
                         .allowsHitTesting(false)
                 }
@@ -214,9 +217,6 @@ struct SessionView: View {
         }
     }
 
-    /// Banners whose text can wrap onto two lines (iPhone): a capsule's round ends would cut into the text, so a continuous rounded rectangle.
-    private static let bannerShape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
     private func reconnectBanner(name: String, attempt: Int, total: Int) -> some View {
         HStack(spacing: 10) {
             ProgressView()
@@ -229,9 +229,10 @@ struct SessionView: View {
             Button("Cancel") { controller.disconnect() }
                 .font(.footnote.weight(.semibold))
         }
+        .foregroundStyle(Theme.onChrome)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Self.bannerShape)
+        .chromeBanner()
         .claimingTouches(frame: $bannerFrame)
         // When the banner disappears its frame must disappear too: `onGeometryChange` does not report when the view is removed, so
         // previously a strip under the toolbar (usually the Mac menu bar) stayed touch-blocked for the rest of the session after each reconnect.
@@ -247,7 +248,7 @@ struct SessionView: View {
 
     private var statusColor: Color {
         if isReconnecting { return .orange }
-        return controller.isViewOnly ? .blue : .green
+        return controller.isViewOnly ? Theme.accent : Theme.online
     }
 
     private var statusText: String {
@@ -270,10 +271,11 @@ struct SessionView: View {
                 Text(name).font(.footnote.weight(.semibold)).lineLimit(1)
                 Image(systemName: "chevron.down").font(.caption2.weight(.bold))
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.ultraThinMaterial, in: Capsule())
+            .foregroundStyle(Theme.onChrome)
+            .padding(.horizontal, 14)
+            .frame(minHeight: Theme.Size.hit)
+            .chromePill()
+            .contentShape(Capsule())
         }
         .accessibilityLabel("Show toolbar")
         .accessibilityValue("\(name), \(statusText)")
@@ -281,12 +283,14 @@ struct SessionView: View {
     }
 
     /// The floating toolbar, laid out like Screen Sharing's: disconnect, computer name and status, common buttons, then the options menu.
+    /// Every button is a round chrome button; the keyboard and extra-keys buttons fill with the accent while they are on.
     private var fullToolbar: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 8) {
             // When the sidebar is showing it already has disconnect, keyboard and extra-keys: the toolbar stays compact and covers less of the Mac menu bar.
             if !showsSidebar {
-                Button("Disconnect from \(name)", systemImage: "xmark.circle.fill") { controller.disconnect() }
-                    .tint(.red)
+                Button { controller.disconnect() } label: { Image(systemName: "xmark") }
+                    .buttonStyle(ChromeRoundButtonStyle(isDestructive: true))
+                    .accessibilityLabel("Disconnect from \(name)")
             }
 
             Button {
@@ -297,32 +301,34 @@ struct SessionView: View {
                         Circle().fill(statusColor).frame(width: 7, height: 7)
                         Text(name).font(.subheadline.weight(.semibold)).lineLimit(1)
                     }
-                    Text(statusText).font(.caption2).foregroundStyle(.secondary)
+                    Text(statusText).font(.caption2).foregroundStyle(Theme.onChromeSecondary)
                 }
-                .frame(maxWidth: 150, alignment: .leading)
-                .foregroundStyle(.white)
+                .frame(maxWidth: 110, alignment: .leading)
+                .frame(minHeight: Theme.Size.hit)
+                .foregroundStyle(Theme.onChrome)
+                .contentShape(Rectangle())
             }
             .accessibilityLabel(String(localized: "\(name), \(statusText). Tap to collapse the toolbar"))
 
-            Divider().frame(height: 24)
-
             if !showsSidebar {
-                Button("Keyboard", systemImage: "keyboard") { controller.toggleKeyboard() }
-                    .tint(controller.isKeyboardVisible ? .blue : .white)
+                Button { controller.toggleKeyboard() } label: { Image(systemName: "keyboard") }
+                    .buttonStyle(ChromeRoundButtonStyle(isSelected: controller.isKeyboardVisible))
                     .disabled(controller.isViewOnly || !controller.isLive)
+                    .opacity(controller.isViewOnly || !controller.isLive ? 0.4 : 1)
+                    .accessibilityLabel("Keyboard")
                     .accessibilityAddTraits(controller.isKeyboardVisible ? .isSelected : [])
-                Button("Extra keys", systemImage: "command") { controller.toggleKeyBar() }
-                    .tint(controller.isKeyBarVisible ? .blue : .white)
+                Button { controller.toggleKeyBar() } label: { Image(systemName: "command") }
+                    .buttonStyle(ChromeRoundButtonStyle(isSelected: controller.isKeyBarVisible))
                     .disabled(controller.isViewOnly || !controller.isLive)
+                    .opacity(controller.isViewOnly || !controller.isLive ? 0.4 : 1)
+                    .accessibilityLabel("Extra keys")
                     .accessibilityAddTraits(controller.isKeyBarVisible ? .isSelected : [])
             }
             optionsMenu
         }
-        .labelStyle(.iconOnly)
-        .font(.title3)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .chromePill()
         .contentShape(Capsule()) // the whole pill receives the touch, not just the icon
         .padding(.top, 4)
     }
@@ -432,8 +438,8 @@ struct SessionView: View {
                 Button("Disconnect", systemImage: "xmark.circle", role: .destructive) { controller.disconnect() }
             }
         } label: {
-            // White on the label only: a `.tint` on the Menu also reaches the items inside, painting their icons white beside dark text.
-            Image(systemName: "ellipsis.circle").foregroundStyle(.white)
+            // The look is on the label only: a `.tint` on the Menu would also reach the items inside, painting their icons beside dark text.
+            ChromeRoundLabel(systemImage: "ellipsis")
         }
         .accessibilityLabel("Options")
     }
@@ -468,23 +474,28 @@ struct KeyBar: View {
                     Text("Automatic (⌘C, ⌘V)").tag(ClipboardBridge.Mode.shared)
                 }
             } label: {
+                // A menu is not a `Button`, so it cannot take a button style: the same cap, drawn by hand.
                 Image(systemName: controller.clipboard.mode == .shared ? "doc.on.clipboard.fill" : "doc.on.clipboard")
-                    .frame(minWidth: 28)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Theme.onChrome)
+                    .frame(minWidth: Theme.Size.key.width, minHeight: Theme.Size.key.height)
+                    .background(Theme.chromeRaised, in: RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous))
             }
-            .buttonStyle(.bordered)
             .accessibilityLabel("Clipboard mode")
 
-            Button { controller.clipboard.requestFromMac() } label: {
-                Image(systemName: "arrow.down.doc").frame(minWidth: 28)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel("Get clipboard from Mac")
+            Button { controller.clipboard.requestFromMac() } label: { Image(systemName: "arrow.down.doc") }
+                .buttonStyle(KeyCapStyle())
+                .accessibilityLabel("Get clipboard from Mac")
 
+            // The system's own paste control (it reads the clipboard without the permission prompt): dressed like the other keys.
             PasteButton(payloadType: String.self) { strings in
                 controller.clipboard.send(text: strings.first ?? "")
             }
             .labelStyle(.iconOnly)
-            .buttonBorderShape(.roundedRectangle)
+            .buttonBorderShape(.roundedRectangle(radius: Theme.Radius.key))
+            .tint(Theme.chromeRaised)
+            .foregroundStyle(Theme.onChrome)
+            .frame(minWidth: Theme.Size.key.width, minHeight: Theme.Size.key.height)
             .accessibilityLabel("Send clipboard to Mac")
         }
     }
@@ -500,23 +511,19 @@ struct KeyBar: View {
                                 Text(symbol)
                                 if state == .locked { Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)) }
                             }
-                            .frame(minWidth: 28)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(state == .up ? .gray : .blue)
+                        .buttonStyle(KeyCapStyle(isSelected: state != .up))
                         .accessibilityLabel(name)
                         .accessibilityValue(state == .locked ? String(localized: "Locked") : "")
                         .accessibilityAddTraits(state == .up ? [] : .isSelected)
                     }
-                    Divider().frame(height: 24)
+                    Divider().frame(height: 24).overlay(Theme.hairline)
                 }
                 clipboardControls
-                Divider().frame(height: 24)
+                Divider().frame(height: 24).overlay(Theme.hairline)
                 ForEach(Self.keys, id: \.0) { key, symbol, name in
-                    Button { controller.press(key) } label: {
-                        Text(symbol).frame(minWidth: 28)
-                    }
-                    .buttonStyle(.bordered)
+                    Button { controller.press(key) } label: { Text(symbol) }
+                        .buttonStyle(KeyCapStyle())
                     .accessibilityLabel(name)
                 }
             }
@@ -526,7 +533,7 @@ struct KeyBar: View {
         .fixedSize(horizontal: false, vertical: true)
         // While reconnecting, a tapped sticky key would be dropped (no session) yet still show as sticky: disable the whole bar until reconnected.
         .disabled(!controller.isLive)
-        .background(.ultraThinMaterial, in: Capsule())
+        .chromePill()
         .clipShape(Capsule()) // keys scrolled to the ends must not stick out past the rounded ends
         .contentShape(Capsule())
         .padding(.horizontal, 12)

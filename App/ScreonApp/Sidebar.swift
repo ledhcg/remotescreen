@@ -37,6 +37,11 @@ struct Sidebar: View {
 
     private var acceptsInput: Bool { controller.isLive && !controller.isViewOnly }
 
+    /// The sidebar's edge that touches the Mac screen.
+    private static func edgeAlignment(for position: SidebarPosition) -> Alignment {
+        position == .trailing ? .leading : .trailing
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             ForEach(Self.modifiers, id: \.0) { modifier, symbol, label in
@@ -45,7 +50,7 @@ struct Sidebar: View {
                     onDown: { controller.modifierTouchDown(modifier) }, onUp: { controller.modifierTouchUp(modifier) }
                 )
             }
-            Divider().overlay(.white.opacity(0.2)).padding(.vertical, 4)
+            Divider().overlay(Theme.hairline).padding(.vertical, 4)
             SidebarButton(label: String(localized: "Undo"), systemImage: "arrow.uturn.backward") { controller.undo() }
                 .disabled(!acceptsInput)
             SidebarButton(label: "Escape", text: "esc") { controller.press(.escape) }
@@ -59,12 +64,16 @@ struct Sidebar: View {
                 controller.toggleKeyBar()
             }
             .disabled(!acceptsInput)
-            SidebarButton(label: String(localized: "Disconnect from \(name)"), systemImage: "xmark", tint: .red) { controller.disconnect() }
+            SidebarButton(label: String(localized: "Disconnect from \(name)"), systemImage: "xmark", isDestructive: true) { controller.disconnect() }
         }
         .padding(.vertical, 12)
         .frame(width: Self.width)
         .frame(maxHeight: .infinity)
-        .background(Color(white: 0.12).ignoresSafeArea())
+        .background(Theme.chromeBar.ignoresSafeArea())
+        .overlay(alignment: Self.edgeAlignment(for: controller.sidebarPosition)) {
+            Rectangle().fill(Theme.hairline).frame(width: 1).ignoresSafeArea() // the edge toward the Mac screen
+        }
+        .environment(\.colorScheme, .dark)
     }
 }
 
@@ -89,11 +98,11 @@ private struct ModifierKeyButton: View {
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(state == .up ? Color.white.opacity(0.1) : state == .held ? Color.blue.opacity(0.75) : Color.blue)
+            RoundedRectangle(cornerRadius: Theme.Radius.key, style: .continuous)
+                .fill(state == .up ? Theme.chromeRaised : state == .held ? Theme.accent.opacity(0.75) : Theme.accent)
             Text(symbol)
                 .font(.title2.weight(.medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.onChrome)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if state == .locked {
                 Image(systemName: "lock.fill")
@@ -102,7 +111,7 @@ private struct ModifierKeyButton: View {
                     .padding(5)
             }
         }
-        .frame(width: 44, height: 44)
+        .frame(width: Theme.Size.hit, height: Theme.Size.hit)
         .opacity(isEnabled ? 1 : 0.35)
         .accessibilityHidden(true)
         .overlay {
@@ -120,23 +129,18 @@ private struct SidebarButton: View {
     var systemImage: String?
     var text: String?
     var isSelected = false
-    var tint: Color = .white
+    var isDestructive = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Group {
-                if let systemImage {
-                    Image(systemName: systemImage).font(.title3)
-                } else if let text {
-                    Text(text).font(.callout.weight(.semibold))
-                }
+            if let systemImage {
+                Image(systemName: systemImage)
+            } else if let text {
+                Text(text)
             }
-            .foregroundStyle(isSelected ? .white : tint)
-            .frame(width: 44, height: 40)
-            .background(isSelected ? Color.blue : Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(KeyCapStyle(isSelected: isSelected, isDestructive: isDestructive, fixedWidth: Theme.Size.hit))
         .accessibilityLabel(label)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

@@ -40,6 +40,10 @@ permissions) and **iPadOS 26**. RFB mode is unchanged and still works on iOS 18.
   forward input to them, and exchange clipboard and allow-listed documents.
 - Away from home, Screon reaches the Mac through **Tailscale** when it is connected on the device (detected automatically; it can
   be turned off under Network in the computer list). Without a network Screon waits and reconnects when it is back.
+- The computer list marks which computers are available (green dot, checked by probing their Screen Sharing port, so it also works
+  over Tailscale), draws Tailscale computers on a black tile, and has quick actions at the end of each row: Screen Sharing and App
+  Mode (or its setup). With a Tailscale API token saved under Network, the Macs of your tailnet are listed too; the token stays in the
+  Keychain and is only ever sent to api.tailscale.com.
 
 App Mode is in development: see [docs/app-status.md](docs/app-status.md) for what is verified.
 

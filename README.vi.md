@@ -36,6 +36,10 @@ hình (Screen Recording), và **iPadOS 26**. Chế độ RFB không đổi và v
   vào đó, và trao đổi clipboard cùng tài liệu thuộc danh sách cho phép.
 - Khi ở xa nhà, Screon kết nối tới Mac qua **Tailscale** nếu Tailscale đang chạy trên thiết bị (tự phát hiện; có thể tắt trong mục
   Mạng ở danh sách máy tính). Khi mất mạng, Screon chờ và tự kết nối lại khi có mạng trở lại.
+- Danh sách máy tính cho biết máy nào đang sẵn sàng (chấm xanh, kiểm tra bằng cách thăm dò cổng Chia sẻ màn hình nên cũng chạy qua
+  Tailscale), vẽ máy Tailscale trên ô màu đen, và mỗi hàng có nút nhanh ở cuối: Chia sẻ màn hình và App Mode (hoặc phần thiết lập). Nếu
+  lưu token API của Tailscale trong mục Mạng, các máy Mac trong tailnet cũng được liệt kê; token nằm trong Keychain và chỉ được gửi
+  tới api.tailscale.com.
 
 App Mode đang phát triển: xem [docs/app-status.md](docs/app-status.md) để biết phần nào đã kiểm chứng.
 

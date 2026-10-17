@@ -331,6 +331,9 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
 
+    /// Corner radius, in points, of the Mac picture.
+    private static let pictureCornerRadius = 12.0
+
     public func draw(in view: MTKView) {
         guard let renderer,
               let pass = view.currentRenderPassDescriptor,
@@ -338,7 +341,8 @@ public final class ScreonView: MTKView, MTKViewDelegate, UIGestureRecognizerDele
               let buffer = renderer.makeCommandBuffer() else { return }
         let pointer = (showsRemoteCursor && drawsLocalCursor && touchMapper.hasPointer) ? touchMapper.pointer : nil
         renderer.encode(
-            into: buffer, pass: pass, geometry: geometry, deviceScale: Double(view.contentScaleFactor), pointer: pointer
+            into: buffer, pass: pass, geometry: geometry, deviceScale: Double(view.contentScaleFactor), pointer: pointer,
+            cornerRadius: Self.pictureCornerRadius
         )
         buffer.present(drawable)
         buffer.commit()

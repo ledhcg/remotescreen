@@ -344,9 +344,10 @@ struct RemoteWindowSceneView: View {
                 if let banner = shown.banner {
                     Label(banner.text, systemImage: "lock.fill")
                         .font(.footnote)
+                        .foregroundStyle(Theme.onChrome)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .chromeBanner()
                         .accessibilityIdentifier("secure-input-banner")
                 }
                 Spacer()
@@ -356,6 +357,7 @@ struct RemoteWindowSceneView: View {
             topBar
         }
         .background(.black)
+        .preferredColorScheme(.dark) // a Mac window is chrome over black: its menus and alerts are dark too
         .background {
             SceneBridge(
                 onScene: { scene in model.sceneAvailable(scene) },
@@ -411,10 +413,8 @@ struct RemoteWindowSceneView: View {
                         phone.showsSwitcher = true
                     } label: {
                         Image(systemName: "rectangle.stack")
-                            .font(.title3)
-                            .padding(8)
-                            .background(.ultraThinMaterial, in: Circle())
                     }
+                    .buttonStyle(ChromeRoundButtonStyle())
                     .accessibilityLabel("Windows")
                     .accessibilityIdentifier("window-switcher-button")
                 }
@@ -439,9 +439,12 @@ struct RemoteWindowSceneView: View {
                         Text(item.title.isEmpty ? item.appName : item.title)
                             .lineLimit(1)
                             .font(.footnote.weight(item.isCurrent ? .semibold : .regular))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(item.isCurrent ? AnyShapeStyle(Color.accentColor.opacity(0.35)) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+                            .foregroundStyle(Theme.onChrome)
+                            .padding(.horizontal, 14)
+                            .frame(minHeight: Theme.Size.hit - 8)
+                            .background(item.isCurrent ? Theme.accent : Theme.chrome, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.hairline, lineWidth: 1))
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("tab-\(item.id.rawValue)")
@@ -463,11 +466,7 @@ struct RemoteWindowSceneView: View {
                 RemoteMenuItems(entries: entries) { path in model.pressMenu(bundleID: bundleID, path: path) }
             }
         } label: {
-            Label("Menus", systemImage: "filemenu.and.selection")
-                .labelStyle(.iconOnly)
-                .font(.title3)
-                .padding(8)
-                .background(.ultraThinMaterial, in: Circle())
+            ChromeRoundLabel(systemImage: "filemenu.and.selection")
         }
         .accessibilityLabel("Menus")
         .accessibilityIdentifier("menus-button")
@@ -514,10 +513,7 @@ struct RemoteWindowSceneView: View {
             Button(phone == nil ? "Close this window" : "Back to apps", systemImage: "rectangle.portrait.and.arrow.right") { closeScene() }
                 .accessibilityIdentifier("action-close-scene")
         } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.title3)
-                .padding(8)
-                .background(.ultraThinMaterial, in: Circle())
+            ChromeRoundLabel(systemImage: "ellipsis")
         }
         .accessibilityLabel("Window options")
         .accessibilityIdentifier("window-menu")
@@ -585,10 +581,10 @@ struct RemoteWindowOverlayView: View {
         ZStack {
             if overlay.coversWindow { Color.black.opacity(0.78).ignoresSafeArea() } else { Color.black.opacity(0.25).ignoresSafeArea() }
             VStack(spacing: 14) {
-                if isBusy { ProgressView().controlSize(.large) } else { Image(systemName: symbol).font(.system(size: 38)).foregroundStyle(.secondary) }
+                if isBusy { ProgressView().controlSize(.large) } else { Image(systemName: symbol).font(.system(size: 38)).foregroundStyle(Theme.onChromeSecondary) }
                 Text(overlay.title).font(.headline).multilineTextAlignment(.center)
                 if let message = overlay.message {
-                    Text(message).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Text(message).font(.subheadline).foregroundStyle(Theme.onChromeSecondary).multilineTextAlignment(.center)
                 }
                 HStack(spacing: 12) {
                     ForEach(overlay.actions, id: \.self) { action in
@@ -602,7 +598,8 @@ struct RemoteWindowOverlayView: View {
             }
             .padding(24)
             .frame(maxWidth: 380)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .foregroundStyle(Theme.onChrome)
+            .chromeCard()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("window-status")
         }

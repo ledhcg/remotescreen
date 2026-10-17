@@ -28,7 +28,7 @@ run_pass() {
 }
 
 # Pass 1: machine selection, sign-in, toolbar, observe mode, display mode.
-run_pass ConnectionUITests SessionChromeUITests ObserveModeUITests DisplayModeUITests
+run_pass ConnectionUITests ComputerListUITests DesignShotsUITests SessionChromeUITests ObserveModeUITests DisplayModeUITests
 # Observe mode must send nothing to the server (the tests only act; the assertion is here).
 python3 -I Tools/mock-rfb-server/verify_observe.py "$LOG"
 

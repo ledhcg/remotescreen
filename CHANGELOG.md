@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Design system: one look for the whole app (`DesignSystem.swift`, rules in `.claude/rules/design-system.md`). Everything that floats
+  over a remote screen is now dark and opaque with a hairline edge (no more grey frosted glass that washed out over a bright Mac
+  screen), every icon is monochrome (blue only marks what is selected), all keys share one shape (modifiers, esc, tab, arrows,
+  clipboard, sidebar), round buttons are one 44 pt style, corners are continuous with radii from one table, and the Windows
+  sheet on iPhone is an opaque surface lighter than the black behind it instead of melting into it.
+- The Mac picture has rounded corners (12 pt for the whole screen, the window's own radius in App Mode), which also hides the white
+  or black wedges the Mac leaves in a window's corners.
+- Deleting a computer from the list asks first and says what goes and what stays on the Mac (the pairing is still listed there).
+  A full swipe no longer deletes.
+- Each computer in the list has quick actions at the end of its row: Screen Sharing and App Mode. A computer whose App Mode is not
+  set up shows a "set up" icon and opens the setup.
+- Availability: the list now probes the Screen Sharing port of every saved computer (its own address and the ones its helper
+  offered) and marks the ones that answer, instead of only trusting Bonjour, so computers reached over Tailscale show as available.
+- Tailscale: computers on a tailnet get a black tile instead of the blue one, and the list says "Tailscale" (or that Tailscale is not
+  connected). The network a computer was found on is saved with it. With an API token saved under Network (Keychain only, sent only to
+  api.tailscale.com), the Macs of your tailnet that answer on Screen Sharing are listed under "On Tailscale" even before you save them.
+- Fix: a hang in the App Mode TCP fallback (a lock held while a waiting task was resumed could deadlock with cancelling that task),
+  found by sampling a test run that never ended; and the approval-race tests no longer depend on the order of two unrelated events.
+
 - Fix: waits in the App Mode link (one-shot results, stream inboxes, the TCP fallback's stream reads) now end when their task
   is cancelled. Before, a cancelled task could wait forever, so shutting a session down did not stop it and a test run could
   hang for hours; replaced window and audio readers now drain their stream instead of being cancelled.

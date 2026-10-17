@@ -234,7 +234,8 @@
 "Status" = "Trạng thái";
 "Use Tailscale" = "Dùng Tailscale";
 "Tailscale on this device" = "Tailscale trên thiết bị này";
-"Connected (%@)" = "Đã kết nối (%@)";
+"Connected" = "Đã kết nối";
+"Tailscale address" = "Địa chỉ Tailscale";
 "Not connected" = "Chưa kết nối";
 "Screon detects Tailscale on this device by itself. When it is connected, Macs can be reached by their Tailscale address away from home, and on mobile data that address is tried first. Turn this off to use only the local network. Takes effect the next time you connect." = "Screon tự phát hiện Tailscale trên thiết bị này. Khi Tailscale đã kết nối, có thể truy cập máy Mac qua địa chỉ Tailscale khi ở xa nhà, và khi dùng dữ liệu di động thì địa chỉ đó được thử trước. Tắt tuỳ chọn này để chỉ dùng mạng cục bộ. Có hiệu lực từ lần kết nối tiếp theo.";
 "Offline" = "Ngoại tuyến";
@@ -245,3 +246,35 @@
 "No internet connection" = "Không có kết nối Internet";
 "No internet connection. Screon reconnects to %@ when the network is back." = "Không có kết nối Internet. Screon sẽ kết nối lại với %@ khi có mạng trở lại.";
 "Tailscale" = "Tailscale";
+
+/* Computer list: delete, quick actions, Tailscale */
+"Delete “%@”?" = "Xoá “%@”?";
+"This removes the computer and its saved password from this device." = "Thao tác này xoá máy tính và mật khẩu đã lưu khỏi thiết bị này.";
+"This removes the computer, its saved password and its App Mode pairing from this device. The Mac still lists this device as paired: remove it in the Screon Helper menu on the Mac to take that away too." = "Thao tác này xoá máy tính, mật khẩu đã lưu và liên kết App Mode khỏi thiết bị này. Máy Mac vẫn liệt kê thiết bị này là đã ghép nối: hãy gỡ nó trong menu Screon Helper trên máy Mac để xoá ở đó luôn.";
+"Tailscale is not connected" = "Tailscale chưa được kết nối";
+"available" = "sẵn sàng";
+"not seen" = "chưa thấy";
+"Share the screen of %@" = "Chia sẻ màn hình của %@";
+"Open App Mode windows of %@" = "Mở cửa sổ App Mode của %@";
+"Set up App Mode for %@" = "Thiết lập App Mode cho %@";
+"Looking for Macs on your tailnet…" = "Đang tìm máy Mac trong tailnet của bạn…";
+"No Mac of your tailnet answers on Screen Sharing." = "Không có máy Mac nào trong tailnet của bạn phản hồi Chia sẻ màn hình.";
+"On Tailscale" = "Trên Tailscale";
+"Tailscale did not accept the token. Tap to check it." = "Tailscale không chấp nhận token. Chạm để kiểm tra.";
+"Tailscale answered something unexpected. Tap for the network settings." = "Tailscale trả lời không như mong đợi. Chạm để mở cài đặt mạng.";
+"Couldn't reach Tailscale. Tap for the network settings." = "Không kết nối được tới Tailscale. Chạm để mở cài đặt mạng.";
+"Token saved" = "Đã lưu token";
+"Tailscale API token" = "Token API của Tailscale";
+"Save token" = "Lưu token";
+"Devices" = "Thiết bị";
+"Refresh now" = "Làm mới ngay";
+"Remove token" = "Xoá token";
+"Macs on your tailnet" = "Máy Mac trong tailnet của bạn";
+"To list the Macs of your tailnet that are not saved yet, Screon reads your device list from Tailscale: create an access token in the Tailscale admin console (Settings › Keys) and paste it here. It stays only in this device's Keychain and is sent only to api.tailscale.com. A token can manage your tailnet and expires within 90 days: remove it here, or revoke it in the admin console, when you no longer need it. Without a token, saved computers are still checked over Tailscale." = "Để liệt kê các máy Mac trong tailnet chưa được lưu, Screon đọc danh sách thiết bị của bạn từ Tailscale: hãy tạo access token trong trang quản trị Tailscale (Settings › Keys) rồi dán vào đây. Token chỉ nằm trong Keychain của thiết bị này và chỉ được gửi tới api.tailscale.com. Token có thể quản lý tailnet của bạn và hết hạn trong tối đa 90 ngày: hãy xoá nó ở đây, hoặc thu hồi trong trang quản trị, khi không cần nữa. Không có token thì các máy đã lưu vẫn được kiểm tra qua Tailscale.";
+"Waiting" = "Đang chờ";
+"Reading…" = "Đang đọc…";
+"%lld devices" = "%lld thiết bị";
+"Token not accepted" = "Token không được chấp nhận";
+"Unexpected answer" = "Phản hồi không như mong đợi";
+"Couldn't reach Tailscale" = "Không kết nối được tới Tailscale";
+"Couldn't remove: %@" = "Không xoá được: %@";

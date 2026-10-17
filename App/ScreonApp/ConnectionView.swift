@@ -27,9 +27,21 @@ struct ConnectionView: View {
     /// iPhone: the computer whose App Mode is open in this scene (iPhone has one scene, so windows cannot open beside it).
     @State private var phoneAppMode: SavedConnection?
     @State private var showsNetworkSettings = false
+    /// The saved computer the user asked to delete: nothing is deleted until the alert is confirmed.
+    @State private var deleting: SavedConnection?
+    /// Which computers answer on their Screen Sharing port (and so are available even when Bonjour cannot see them, as over Tailscale).
+    @State private var reachability = ReachabilityMonitor()
+    private let tailnet = TailnetDirectory.shared
+    private let network = NetworkMonitor.shared
 
     private var sections: ComputerList.Sections {
-        ComputerList.sections(saved: model.saved, discovered: browser.hosts)
+        ComputerList.sections(
+            saved: model.saved, discovered: browser.hosts, tailnet: tailnet.devices, reachable: reachability.reachable)
+    }
+
+    /// Everything that is probed while this screen is on: the saved computers' addresses and the tailnet Macs not saved yet.
+    private var probeTargets: Set<ProbeTarget> {
+        ComputerList.probeTargets(saved: model.saved, tailnet: tailnet.devices)
     }
 
     private var failureMessage: String? {
@@ -44,10 +56,10 @@ struct ConnectionView: View {
                 if !sections.saved.isEmpty {
                     Section("Saved computers") {
                         ForEach(sections.saved) { row in
-                            computerButton(row)
-                                .swipeActions {
+                            computerRow(row)
+                                .swipeActions(allowsFullSwipe: false) { // a swipe all the way must not delete without the alert
                                     if case .saved(let connection) = row.source {
-                                        Button("Delete", role: .destructive) { delete(connection) }
+                                        Button("Delete", role: .destructive) { deleting = connection }
                                     }
                                 }
                                 .contextMenu { contextMenu(for: row) }
@@ -55,6 +67,7 @@ struct ConnectionView: View {
                     }
                 }
                 nearbySection
+                tailnetSection
                 if sections.isEmpty { helpSection }
                 if let saveError = model.lastError {
                     Section { Text("Couldn't save: \(saveError)").foregroundStyle(.red) }
@@ -64,18 +77,39 @@ struct ConnectionView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Network", systemImage: "network") { showsNetworkSettings = true }
+                        .tint(.primary) // icon-only controls are monochrome
                         .accessibilityIdentifier("network-settings")
                 }
                 if UIDevice.current.userInterfaceIdiom == .pad {
-                    ToolbarItem(placement: .topBarTrailing) { AppPointerMenu() }
+                    ToolbarItem(placement: .topBarTrailing) { AppPointerMenu().tint(.primary) }
                 }
             }
             .sheet(isPresented: $showsNetworkSettings) { NetworkSettingsView() }
             .modifier(AppModePairingSheet(computer: $pairingFor, model: model))
             .sheet(item: $streamingFor) { computer in AppModeSettingsView(computer: computer, model: model) }
             .modifier(PhoneAppModeCover(computer: $phoneAppMode))
-            .onAppear { browser.start() }
-            .onDisappear { browser.stop() }
+            .onAppear {
+                browser.start()
+                // Tailscale addresses are probed only while Tailscale is connected here and allowed: otherwise they could not answer.
+                reachability.isProbeAllowed = { target in
+                    let snapshot = NetworkMonitor.shared.snapshot
+                    guard snapshot.isOnline else { return false }
+                    return !TailscaleNetwork.isTailscaleHost(target.host) || (NetworkPreferences.useTailscale && snapshot.usesTailscale)
+                }
+                reachability.setTargets(probeTargets)
+                reachability.start()
+                tailnet.refresh()
+            }
+            .onDisappear {
+                browser.stop()
+                reachability.stop()
+            }
+            .onChange(of: probeTargets) { _, targets in reachability.setTargets(targets) }
+            .onChange(of: network.snapshot) { _, _ in
+                // The network changed (Wi-Fi, mobile data, Tailscale up or down): look again now, not at the next tick.
+                tailnet.refresh(force: true)
+                Task { await reachability.refresh() }
+            }
             .overlay { if controller.state == .connecting && login == nil { connectingCard } }
             .sheet(item: $login, onDismiss: { controller.dismissFailure() }) { request in
                 LoginSheet(request: request, controller: controller) { username, password, remember in
@@ -84,6 +118,16 @@ struct ConnectionView: View {
                     controller.disconnect()
                     login = nil
                 }
+            }
+            .alert(
+                "Delete “\(deleting?.name ?? "")”?",
+                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                presenting: deleting
+            ) { connection in
+                Button("Delete", role: .destructive) { delete(connection) }
+                Button("Cancel", role: .cancel) {}
+            } message: { connection in
+                Text(deleteMessage(for: connection))
             }
             .alert("Couldn't connect", isPresented: failureAlertShown) {
                 if let lastSaved {
@@ -133,7 +177,7 @@ struct ConnectionView: View {
     private var nearbySection: some View {
         if !sections.nearby.isEmpty {
             Section("On the network") {
-                ForEach(sections.nearby) { computerButton($0) }
+                ForEach(sections.nearby) { computerRow($0) }
             }
         } else if browser.hosts.isEmpty, !browser.denied, !sections.saved.isEmpty {
             // Saved computers exist: just hint lightly that we are searching, without taking space with the help panel.
@@ -146,23 +190,118 @@ struct ConnectionView: View {
         }
     }
 
-    private func computerButton(_ row: ComputerRow) -> some View {
-        Button { open(row) } label: {
-            HStack(spacing: 12) {
-                ComputerIcon(size: 40, isOnline: row.isOnline)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(row.name).font(.headline).foregroundStyle(.primary)
-                    Text(row.subtitle).font(.subheadline).foregroundStyle(.secondary)
+    /// Macs of the user's tailnet, when Tailscale is connected here and a token is saved (see the Network settings).
+    @ViewBuilder
+    private var tailnetSection: some View {
+        let usable = tailnet.hasToken && NetworkPreferences.useTailscale && network.snapshot.usesTailscale
+        if !sections.tailnet.isEmpty || (usable && tailnet.status != .idle) {
+            Section {
+                ForEach(sections.tailnet) { computerRow($0) }
+                switch tailnet.status {
+                case .loading where sections.tailnet.isEmpty:
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Looking for Macs on your tailnet…").foregroundStyle(.secondary)
+                    }
+                case .failed(let failure):
+                    Button { showsNetworkSettings = true } label: {
+                        Label(tailnetFailureText(failure), systemImage: "exclamationmark.triangle")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                case .loaded where sections.tailnet.isEmpty:
+                    Text("No Mac of your tailnet answers on Screen Sharing.").font(.subheadline).foregroundStyle(.secondary)
+                default:
+                    EmptyView()
                 }
-                Spacer()
-                Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
+            } header: {
+                Text("On Tailscale")
             }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain) // keep the button tint from coloring the whole row
-        .disabled(controller.state == .connecting)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("computer.\(row.name)")
+    }
+
+    private func tailnetFailureText(_ failure: TailscaleAPI.Failure) -> String {
+        switch failure {
+        case .unauthorized: String(localized: "Tailscale did not accept the token. Tap to check it.")
+        case .unexpectedResponse: String(localized: "Tailscale answered something unexpected. Tap for the network settings.")
+        case .network: String(localized: "Couldn't reach Tailscale. Tap for the network settings.")
+        }
+    }
+
+    /// A computer: its tile and name connect with Screen Sharing; the buttons at the end are quick actions (Screen Sharing, App Mode).
+    private func computerRow(_ row: ComputerRow) -> some View {
+        HStack(spacing: 4) {
+            Button { open(row) } label: {
+                HStack(spacing: 12) {
+                    ComputerTile(size: 40, network: row.network.style, isOnline: row.isOnline)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.name).font(.headline).foregroundStyle(.primary)
+                        Text(row.subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                        if let note = networkNote(of: row) {
+                            Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain) // keep the button tint from coloring the whole row
+            .disabled(controller.state == .connecting)
+            .accessibilityLabel(accessibilityDescription(of: row))
+            .accessibilityIdentifier("computer.\(row.name)")
+            quickActions(for: row)
+        }
+    }
+
+    /// Where the computer is, on a second line: nothing for the local network; "Tailscale" for a tailnet computer, and when Tailscale is
+    /// not connected here, that, so a computer that does not answer is not a mystery.
+    private func networkNote(of row: ComputerRow) -> String? {
+        guard row.network == .tailscale else { return nil }
+        return row.isOnline || network.snapshot.usesTailscale
+            ? NetworkSource.tailscale.title
+            : String(localized: "Tailscale is not connected")
+    }
+
+    private func accessibilityDescription(of row: ComputerRow) -> String {
+        let state = row.isOnline ? String(localized: "available") : String(localized: "not seen")
+        // What a sighted user reads: the name, the network, where it is (with the reason when Tailscale is off), and whether it is there.
+        return [row.name, row.network.title, row.subtitle, networkNote(of: row), state].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// Screen Sharing for any row; App Mode for a saved computer. A computer whose App Mode is not set up gets the same button, and it
+    /// opens the setup instead (the icon says so).
+    @ViewBuilder
+    private func quickActions(for row: ComputerRow) -> some View {
+        Button { open(row) } label: { Image(systemName: "display") }
+            .buttonStyle(QuickActionStyle())
+            .disabled(controller.state == .connecting)
+            .accessibilityLabel(String(localized: "Share the screen of \(row.name)"))
+            .accessibilityIdentifier("screen.\(row.name)")
+        if case .saved(let connection) = row.source, #available(iOS 26, *) {
+            let isSetUp = connection.helper != nil
+            Button { openAppMode(of: connection) } label: {
+                Image(systemName: isSetUp ? "macwindow.on.rectangle" : "macwindow.badge.plus")
+            }
+            .buttonStyle(QuickActionStyle())
+            .accessibilityLabel(isSetUp
+                ? String(localized: "Open App Mode windows of \(row.name)")
+                : String(localized: "Set up App Mode for \(row.name)"))
+            .accessibilityIdentifier("app-mode.\(row.name)")
+        }
+    }
+
+    /// App Mode of a saved computer: its windows when it is set up, else the setup (pairing) sheet.
+    @available(iOS 26, *)
+    private func openAppMode(of connection: SavedConnection) {
+        guard connection.helper != nil else {
+            pairingFor = connection
+            return
+        }
+        if AppModeOpener.canOpenSeveralScenes {
+            openWindow(id: AppModeScene.id, value: SceneRole.launcher(computerID: connection.id))
+        } else {
+            phoneAppMode = connection
+        }
     }
 
     @ViewBuilder
@@ -172,13 +311,7 @@ struct ConnectionView: View {
             Button("Re-enter password…", systemImage: "key") { login = LoginRequest(saved: connection) }
             if #available(iOS 26, *) {
                 if connection.helper != nil {
-                    Button("Open App Mode windows", systemImage: "macwindow") {
-                        if AppModeOpener.canOpenSeveralScenes {
-                            openWindow(id: AppModeScene.id, value: SceneRole.launcher(computerID: connection.id))
-                        } else {
-                            phoneAppMode = connection
-                        }
-                    }
+                    Button("Open App Mode windows", systemImage: "macwindow") { openAppMode(of: connection) }
                 }
                 Button(connection.helper == nil ? "Set up App Mode…" : "Pair App Mode again…", systemImage: "qrcode.viewfinder") {
                     pairingFor = connection
@@ -187,8 +320,16 @@ struct ConnectionView: View {
                     Button("Streaming settings…", systemImage: "slider.horizontal.3") { streamingFor = connection }
                 }
             }
-            Button("Delete", systemImage: "trash", role: .destructive) { delete(connection) }
+            Button("Delete", systemImage: "trash", role: .destructive) { deleting = connection }
         }
+    }
+
+    /// What deleting really does, so it is not taken for "disconnect": the computer, its password and its App Mode pairing go from
+    /// this device, and the Mac keeps listing this device as paired until it is removed there.
+    private func deleteMessage(for connection: SavedConnection) -> String {
+        connection.helper == nil
+            ? String(localized: "This removes the computer and its saved password from this device.")
+            : String(localized: "This removes the computer, its saved password and its App Mode pairing from this device. The Mac still lists this device as paired: remove it in the Screon Helper menu on the Mac to take that away too.")
     }
 
     /// When there is nothing to choose yet: say what to do on the Mac side instead of leaving the screen empty.
@@ -231,7 +372,8 @@ struct ConnectionView: View {
         }
         .padding(24)
         .frame(maxWidth: 300)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .foregroundStyle(Theme.onChrome)
+        .chromeCard()
         .shadow(radius: 20)
         .transition(.opacity)
     }
@@ -262,7 +404,10 @@ struct ConnectionView: View {
             }
         case .discovered(let host):
             lastSaved = nil
-            login = LoginRequest(target: host.target, name: host.name, username: "")
+            login = LoginRequest(target: host.target, name: host.name, username: "", network: .lan)
+        case .tailnet(let device):
+            lastSaved = nil
+            login = LoginRequest(target: row.target, name: device.hostname, username: "", network: .tailscale)
         }
     }
 
@@ -288,9 +433,10 @@ struct ConnectionView: View {
         lastSaved = nil
         let target = request.target
         let name = request.name
+        let network = request.network
         controller.connect(target: target, username: username, password: password) {
             guard remember else { return }
-            model.remember(target: target, username: username, password: password, name: name)
+            model.remember(target: target, username: username, password: password, name: name, network: network)
         }
     }
 
@@ -306,11 +452,14 @@ struct LoginRequest: Identifiable {
     let name: String
     /// Prefilled account name (saved computer, or typed as `account@host`).
     let username: String
+    /// The network the computer was found on; `nil` reads it off the address.
+    let network: NetworkSource?
 
-    init(target: SavedConnection.Target, name: String, username: String) {
+    init(target: SavedConnection.Target, name: String, username: String, network: NetworkSource? = nil) {
         self.target = target
         self.name = name
         self.username = username
+        self.network = network
     }
 
     init(saved: SavedConnection) {
@@ -318,28 +467,9 @@ struct LoginRequest: Identifiable {
     }
 }
 
-/// Computer icon: a blue rounded tile, with a green dot while Bonjour can see the computer.
-struct ComputerIcon: View {
-    var size: CGFloat = 40
-    var isOnline = false
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-            .fill(LinearGradient(colors: [.blue, .indigo], startPoint: .top, endPoint: .bottom))
-            .frame(width: size, height: size)
-            .overlay { Image(systemName: "desktopcomputer").font(.system(size: size * 0.5)).foregroundStyle(.white) }
-            .overlay(alignment: .bottomTrailing) {
-                if isOnline {
-                    Circle()
-                        .fill(.green)
-                        .frame(width: size * 0.3, height: size * 0.3)
-                        .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
-                        .offset(x: 3, y: 3)
-                        .accessibilityHidden(true)
-                }
-            }
-            .accessibilityHidden(true)
-    }
+extension NetworkSource {
+    /// How the design system draws it.
+    var style: NetworkSourceStyle { self == .tailscale ? .tailscale : .lan }
 }
 
 /// The "Enter name and password" dialog, like Screen Sharing's: results (connecting, wrong password…) appear right here,
@@ -383,7 +513,7 @@ struct LoginSheet: View {
             Form {
                 Section {
                     VStack(spacing: 10) {
-                        ComputerIcon(size: 64)
+                        ComputerTile(size: 64, network: (request.network ?? NetworkSource(target: request.target)).style)
                         Text("Screen sharing with “\(request.name)”")
                             .font(.headline)
                             .multilineTextAlignment(.center)

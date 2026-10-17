@@ -1,3 +1,4 @@
+import ConnectionKit
 import Foundation
 import Network
 import Observation
@@ -33,6 +34,14 @@ final class NetworkMonitor {
     func start() {
         guard !started else { return }
         started = true
+        #if DEBUG
+        // UI tests: the simulator shares the Mac's network (and its Tailscale), so a test fixes the network instead of reading it.
+        // `SCREON_NETWORK` = `offline`, `wifi`, `cellular` or `tailscale` (Wi-Fi with Tailscale connected).
+        if let fixed = Self.fixedSnapshot() {
+            snapshot = fixed
+            return
+        }
+        #endif
         monitor.pathUpdateHandler = { path in
             // Tailscale is a VPN tunnel: its address appears on a `utun` interface, which a path update accompanies.
             let snapshot = NetworkSnapshot(
@@ -45,6 +54,18 @@ final class NetworkMonitor {
         }
         monitor.start(queue: DispatchQueue(label: "Screon.NetworkMonitor"))
     }
+
+    #if DEBUG
+    private static func fixedSnapshot() -> NetworkSnapshot? {
+        switch ProcessInfo.processInfo.environment["SCREON_NETWORK"] {
+        case "offline": .offline
+        case "wifi": NetworkSnapshot(isOnline: true, link: .wifi)
+        case "cellular": NetworkSnapshot(isOnline: true, link: .cellular)
+        case "tailscale": NetworkSnapshot(isOnline: true, link: .wifi, tailscaleAddress: "100.64.0.1")
+        default: nil
+        }
+    }
+    #endif
 
     /// Calls `handler` on every change, until the returned token is passed to `removeObserver`.
     func addObserver(_ handler: @escaping (NetworkSnapshot) -> Void) -> UUID {

@@ -1,3 +1,4 @@
+import ConnectionKit
 import Foundation
 import Localization
 import Testing

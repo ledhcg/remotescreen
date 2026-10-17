@@ -99,16 +99,33 @@ public struct SavedConnection: Codable, Identifiable, Equatable, Sendable {
     public var helper: HelperEndpoint?
     /// Streaming preferences for App Mode. Absent in older files: they decode with `nil`, which means `.standard`.
     public var appMode: AppModeSettings?
+    /// The network the computer was found on or saved from. Absent in older files: they decode with `nil`, and `network` derives it
+    /// from the address.
+    public var networkSource: NetworkSource?
 
     public init(id: UUID = UUID(), name: String, target: Target, username: String, lastUsed: Date? = nil,
-                helper: HelperEndpoint? = nil, appMode: AppModeSettings? = nil) {
+                helper: HelperEndpoint? = nil, appMode: AppModeSettings? = nil, networkSource: NetworkSource? = nil) {
         self.helper = helper
         self.appMode = appMode
+        self.networkSource = networkSource
         self.id = id
         self.name = name
         self.target = target
         self.username = username
         self.lastUsed = lastUsed
+    }
+
+    /// The network this computer belongs to: what was saved, else what its address says.
+    public var network: NetworkSource { networkSource ?? NetworkSource(target: target) }
+
+    /// What to probe to tell whether the computer is available: its own address, then the addresses its helper offered
+    /// (home LAN, `.local`, Tailscale), all on the Screen Sharing port. At most `maxProbes`, so one computer cannot cost many connections.
+    public func probeTargets(maxProbes: Int = 4) -> [ProbeTarget] {
+        var targets: [ProbeTarget] = []
+        if case .host(let host, let port) = target { targets.append(ProbeTarget(host: host, port: port)) }
+        for host in helper?.candidateHosts ?? [] { targets.append(ProbeTarget(host: host, port: TailnetDevice.screenSharingPort)) }
+        var seen = Set<ProbeTarget>()
+        return targets.filter { seen.insert($0).inserted }.prefix(maxProbes).map { $0 }
     }
 
     /// The App Mode settings in effect.

@@ -51,9 +51,13 @@ public final class ConnectionsModel {
 
     /// Remembers a computer that just connected successfully: updates it if one with the same target and username exists (no duplicate), then moves it
     /// to the top of the list. A save error is not thrown but stored in `lastError`, because this happens after connecting and nothing is left to receive it.
-    public func remember(target: SavedConnection.Target, username: String, password: String, name: String) {
-        let connection = matching(target: target, username: username)
+    public func remember(
+        target: SavedConnection.Target, username: String, password: String, name: String, network: NetworkSource? = nil
+    ) {
+        var connection = matching(target: target, username: username)
             ?? SavedConnection(name: name, target: target, username: username)
+        // The network it was found on wins (a Tailscale device picked from the list); else keep what is saved; else read it off the address.
+        connection.networkSource = network ?? connection.networkSource ?? NetworkSource(target: target)
         do {
             try save(connection, password: password)
             markUsed(connection)

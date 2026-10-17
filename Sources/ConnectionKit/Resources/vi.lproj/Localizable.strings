@@ -2,3 +2,7 @@
 
 /* ComputerList */
 "Screen Sharing" = "Chia sẻ màn hình";
+
+/* NetworkSource */
+"Local network" = "Mạng cục bộ";
+"Tailscale" = "Tailscale";

@@ -45,7 +45,7 @@ let package = Package(
         ),
         .target(name: "ConnectionKit", dependencies: ["Localization"], resources: [.process("Resources")]),
         .target(
-            name: "SessionKit", dependencies: ["RFBKit", "InputKit", "Localization"],
+            name: "SessionKit", dependencies: ["RFBKit", "InputKit", "ConnectionKit", "Localization"],
             resources: [.process("Resources")]
         ),
         // App Mode: wire format of the Screon link between the iPad app and the Mac helper. Pure, iOS + macOS.
@@ -77,7 +77,7 @@ let package = Package(
         .testTarget(name: "RFBKitTests", dependencies: ["RFBKit", "RFBCrypto"]),
         .testTarget(name: "RemoteDisplayTests", dependencies: ["RemoteDisplay", "RFBKit", "Localization"]),
         .testTarget(name: "InputKitTests", dependencies: ["InputKit", "RFBKit", "Localization"]),
-        .testTarget(name: "SessionKitTests", dependencies: ["SessionKit", "RFBKit", "InputKit", "CZlib", "Localization"]),
+        .testTarget(name: "SessionKitTests", dependencies: ["SessionKit", "ConnectionKit", "RFBKit", "InputKit", "CZlib", "Localization"]),
         .testTarget(name: "ConnectionKitTests", dependencies: ["ConnectionKit", "RFBKit", "Localization"]),
         .testTarget(name: "LinkProtocolTests", dependencies: ["LinkProtocol"]),
         .testTarget(name: "LinkTransportTests", dependencies: ["LinkTransport", "LinkProtocol"]),
